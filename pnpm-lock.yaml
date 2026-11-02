@@ -188,6 +188,12 @@ importers:
         specifier: ^5.0.5
         version: 5.0.5(@types/node@26.6.6)(@vitest/coverage-v8@5.0.5)(vite@8.3.5(@types/node@26.6.6))
 
+  adapters/coordination/memory:
+    dependencies:
+      '@blindsignal/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+
   adapters/storage/memory:
     dependencies:
       '@blindsignal/core':
