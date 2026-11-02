@@ -23,12 +23,27 @@ the roadmap, or an ADR in the same change.
 
 ## Current status
 
-Phase 0 (architecture and planning). The repository contains only docs. The toolchain is decided
-in `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
-`jose`, `ws`, Vitest, Playwright) but not scaffolded yet. Do not add a tool outside that ADR without
-a new ADR.
+Phase 1 (shared foundation and protocol). The workspace is scaffolded with the toolchain in
+`docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
+`jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a new ADR.
 
-Once tooling exists, document the install, build, lint, and test commands here.
+TypeScript stays on 6.0.x until `typescript-eslint` supports 7: type-aware linting is required.
+
+## Commands
+
+Node.js 26 (`.nvmrc`) and pnpm through corepack (`packageManager` in `package.json`).
+
+```sh
+pnpm install          # install the workspace
+pnpm lint             # ESLint, type-aware, with the ADR 0002 import rules
+pnpm typecheck        # tsc --noEmit in every package
+pnpm test             # Vitest across all packages
+pnpm format:check     # Prettier (pnpm format to fix)
+pnpm build            # tsc in every package
+```
+
+CI (`.github/workflows/ci.yml`) runs format check, lint, typecheck, and tests on every pull
+request.
 
 ## Decisions that block implementation
 
