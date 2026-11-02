@@ -122,11 +122,11 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 ### Tasks
 
-- [ ] Implement application registry, backed by the in-memory application repository.
+- [x] Implement application registry, backed by the in-memory application repository.
 - [ ] Implement the in-memory coordination adapter with the state this phase needs (`jti` replay tracking); Phase 3 extends it.
-- [ ] Define application status: active, suspended, revoked.
-- [ ] Implement trusted issuer configuration.
-- [ ] Implement trusted JWKS or public-key configuration.
+- [x] Define application status: active, suspended, revoked.
+- [x] Implement trusted issuer configuration.
+- [x] Implement trusted JWKS or public-key configuration.
 - [ ] Implement JWT signature verification.
 - [ ] Enforce algorithm allowlisting.
 - [ ] Validate `iss`, `aud`, `exp`, `iat`, `sub`, `app_id`, `device_id`, `jti`, and `namespaces`, and `nbf` when present.

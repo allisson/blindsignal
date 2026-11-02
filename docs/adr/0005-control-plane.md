@@ -16,6 +16,32 @@ application-issued access token can never reach it.
   quotas) and, per application, the revoked devices by `sub` and `device_id`. JSON validated with
   Zod, so no new parser enters the toolchain (ADR 0001). The development issuer is an ordinary
   entry with its static public key (ADR 0002).
+- **File format.** Keys are camelCase, matching `ApplicationRecord` in `packages/core`; the
+  §5.1 names (`app_id`, `jwks_uri`) are concepts, not keys. Unknown keys are rejected, so a
+  misspelled key fails the load instead of being ignored. Static keys are public JWKs (`OKP`
+  Ed25519 or `EC` P-256) with a unique `kid`; private key members are rejected. Quotas and rate
+  limits an entry leaves out take the server defaults (ADR 0011). The operator writes no
+  timestamps: the server sets `createdAt` when it first loads an application and `updatedAt` when
+  a reload changes its entry, both in memory until Phase 9.
+
+  ```json
+  {
+    "applications": [
+      {
+        "appId": "blindnotes",
+        "name": "BlindNotes",
+        "status": "active",
+        "issuer": "https://api.blindnotes.example",
+        "audience": "blindsignal",
+        "jwksUri": "https://api.blindnotes.example/.well-known/jwks.json",
+        "algorithms": ["EdDSA"],
+        "quotas": { "devices": 1000 },
+        "revokedDevices": [{ "userId": "user_123", "deviceId": "device_456" }]
+      }
+    ]
+  }
+  ```
+
 - **Reload is all or nothing.** An unreadable or invalid file, or one that breaks a rule below,
   is rejected whole: the server keeps the previous registry and logs the reason without secrets.
 - **Reload applies the difference immediately.** Suspending or revoking an application, removing
