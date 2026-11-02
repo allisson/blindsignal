@@ -193,7 +193,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement `auth.refresh` handling for credential renewal without reconnecting, rejecting tokens whose `app_id`, `sub`, or `device_id` differs from the connection's (spec §5.3).
 - [ ] Enforce token expiry on open connections: a connection whose token reaches `exp` without a successful `auth.refresh` is handled per the Phase 0 decision (spec §5.3).
 - [ ] Implement environment-driven configuration.
-- [ ] Implement client IP derivation from configured trusted proxies, ignoring forwarding headers from untrusted peers (spec §8.1).
+- [x] Implement client IP derivation from configured trusted proxies, ignoring forwarding headers from untrusted peers (spec §8.1).
 - [ ] Add Dockerfile and Docker Compose development workflow.
 
 ### Deliverables
