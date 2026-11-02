@@ -643,7 +643,7 @@ Connection type:
 
 The server must handle unexpected disconnects, duplicate connections, expired sessions, revoked applications, revoked devices, stale presence, invalid messages, and reconnection.
 
-The duplicate-connection policy must be decided before implementation: what happens when a device that already has an active connection connects again (for example, the newer connection replaces the older one, or the newer one is rejected). It is decided together with the per-device concurrent connection limit (§8.1, §8.2), since a replace policy implies a limit of one connection per device. The policy must account for several browser tabs or windows sharing one device identity, and must not let them replace each other in a reconnect loop (§8.3).
+A device has at most one connection. When a device authenticates a new connection while it already has one, the newer connection replaces the older, which is closed as superseded; an unauthenticated connection never affects an existing one. The SDK does not reconnect automatically after a superseded closure, so browser tabs sharing one device identity cannot replace each other in a loop (§8.3) (`docs/adr/0008-duplicate-connections.md`).
 
 Sessions are one-to-one (`docs/adr/0003-one-to-one-sessions.md`). A session is bound to the two connections that created and accepted it, and ends when either closes (`docs/adr/0004-sessions-bound-to-connections.md`).
 

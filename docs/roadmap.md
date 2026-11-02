@@ -43,7 +43,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [x] Define namespace and authorization semantics (`docs/adr/0007-namespace-authorization.md`).
 - [x] Decide the namespace authorization source for the MVP: token claims, stored policy, or both (spec §7.3) (token claims, `docs/adr/0007-namespace-authorization.md`).
 - [x] Decide session cardinality: one-to-one only or multi-party (spec §13) (`docs/adr/0003-one-to-one-sessions.md`).
-- [ ] Decide the duplicate-connection policy for a device that connects again while already connected, together with the per-device concurrent connection limit, accounting for several browser tabs sharing one device identity (spec §13, §8.1, §8.3).
+- [x] Decide the duplicate-connection policy for a device that connects again while already connected, together with the per-device concurrent connection limit, accounting for several browser tabs sharing one device identity (spec §13, §8.1, §8.3) (the newer replaces the older, `docs/adr/0008-duplicate-connections.md`).
 - [ ] Define pairing policy. *(Post-MVP: required before Phase 5 implements pairing; does not block the MVP.)*
 - [ ] Define `StorageAdapter`.
 - [ ] Define `CoordinationAdapter`.
@@ -185,7 +185,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement heartbeat and disconnect detection.
 - [ ] Implement stale presence cleanup.
 - [ ] Implement application suspension and revocation handling: reject new authentication and close the application's active WebSocket connections (spec §5.5).
-- [ ] Implement the duplicate-connection policy chosen in Phase 0.
+- [ ] Implement the duplicate-connection policy: an authenticated newer connection replaces the device's older one, closed with `superseded` (`docs/adr/0008-duplicate-connections.md`).
 - [ ] Implement the control plane for application registration, update, suspension, reactivation, and revocation, using the mechanism chosen in Phase 0 (spec §5.6).
 - [ ] Add health and readiness endpoints.
 - [ ] Add structured logs and basic metrics.
@@ -309,7 +309,6 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 - [ ] Define configurable application quotas. *(MVP)*
 - [ ] Implement concurrent connection limits per application. *(MVP)*
-- [ ] Implement concurrent connection limits per device. *(MVP)*
 - [ ] Implement WebSocket connection attempt rate limits, keyed by source IP (spec §8.1). *(MVP)*
 - [ ] Implement the authentication deadline for connections that do not authenticate (spec §8.4). *(MVP)*
 - [ ] Implement the unauthenticated connection cap, per source IP and global (spec §8.4). *(MVP)*

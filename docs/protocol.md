@@ -2,7 +2,7 @@
 
 **Status:** Draft, protocol version 1  
 **Reference:** `docs/spec.md` §11, §13; `docs/adr/0003-one-to-one-sessions.md`;
-`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`
+`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`
 
 JSON text messages over one WebSocket per connection. The protocol carries no application
 payload: application data travels only through WebRTC DataChannels. Administrative operations
@@ -210,10 +210,9 @@ Initial catalog:
 | `identity_mismatch` | retryable | no | `auth.refresh` token with a different `app_id`, `sub`, or `device_id`. |
 | `application_unavailable` | terminal | yes | Application suspended or revoked. |
 | `device_revoked` | terminal | yes | Device revoked. |
+| `superseded` | superseded | yes | The same device authenticated a newer connection (ADR 0008). |
 
 A failed `auth.refresh` with a retryable code leaves the connection on its current token until
 that token expires. An unknown application gets the same `invalid_token` as a bad signature, so
 the registry cannot be probed; only a validly signed token learns that its application is
 unavailable.
-
-The superseded-connection code is **TBD**, defined with the duplicate-connection policy.
