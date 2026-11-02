@@ -28,7 +28,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 
 - [x] Inspect repository conventions and existing code (repository contains only docs, AGENTS.md, README, LICENSE, and a Node.js `.gitignore` template; the spec's illustrative interfaces use TypeScript).
 - [x] Choose language, runtime, package and monorepo tooling, schema-validation library, and test frameworks, including browser automation for DataChannel tests (`docs/adr/0001-typescript-node-toolchain.md`).
-- [ ] Define server, SDK, and shared protocol boundaries.
+- [x] Define server, SDK, and shared protocol boundaries (`docs/adr/0002-package-boundaries.md`).
 - [ ] Define signaling protocol and versioning.
 - [ ] Define application registration and trust model.
 - [ ] Define application issuer and JWKS configuration, including HTTPS-only JWKS URIs, fetch timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
@@ -87,7 +87,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 ### Tasks
 
-- [ ] Create shared types and protocol package.
+- [ ] Create the `protocol` package and the server-side `core` package (domain types and adapter interfaces).
 - [ ] Implement versioned signaling message schemas.
 - [ ] Define message validation.
 - [ ] Define standard error codes, marking each authentication and connection-closure error as retryable, terminal, or superseded (spec §8.3).
