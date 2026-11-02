@@ -45,8 +45,8 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [x] Decide session cardinality: one-to-one only or multi-party (spec §13) (`docs/adr/0003-one-to-one-sessions.md`).
 - [x] Decide the duplicate-connection policy for a device that connects again while already connected, together with the per-device concurrent connection limit, accounting for several browser tabs sharing one device identity (spec §13, §8.1, §8.3) (the newer replaces the older, `docs/adr/0008-duplicate-connections.md`).
 - [ ] Define pairing policy. *(Post-MVP: required before Phase 5 implements pairing; does not block the MVP.)*
-- [ ] Define `StorageAdapter`.
-- [ ] Define `CoordinationAdapter`.
+- [x] Define `StorageAdapter` (`docs/adr/0010-adapter-interfaces.md`).
+- [x] Define `CoordinationAdapter` (`docs/adr/0010-adapter-interfaces.md`).
 - [ ] Define application and device quotas.
 - [ ] Define rate-limit categories and error responses, including pre-authentication limits keyed by source IP and client IP derivation from trusted proxies (spec §8.1).
 - [x] Define ICE configuration and direct/relay reporting: STUN from client configuration, TURN only through `rtc.ice_config`, and when the server sends `rtc.ice_config` beyond the post-authentication message (spec §11, §12.3) (`docs/adr/0009-ice-configuration.md`).
@@ -170,7 +170,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement WebSocket server.
 - [ ] Check `Origin` at the WebSocket upgrade against a configured allowlist, as defense in depth (spec §16).
 - [ ] Integrate application authentication, rejecting protected messages sent before authentication completes.
-- [ ] Create device records on first successful authentication, keyed by `(app_id, sub, device_id)` (`docs/adr/0006-token-profile-and-device-identity.md`).
+- [ ] Create device records on first successful authentication, keyed by `(app_id, sub, device_id)`, and expire them after a configurable inactivity period (`docs/adr/0006-token-profile-and-device-identity.md`, `docs/adr/0010-adapter-interfaces.md`).
 - [ ] Implement in-memory device repository.
 - [ ] Authorize namespaces from the token's `namespaces` claim, and apply namespace removals on `auth.refresh` (`docs/adr/0007-namespace-authorization.md`).
 - [ ] Implement `namespace.join` and `namespace.leave`, admitting a device only to namespaces it is authorized in (spec §7.3, §13).
