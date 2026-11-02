@@ -16,6 +16,7 @@ import {
   type ServerMessage,
 } from '@blindsignal/protocol';
 import { unavailability, type TokenVerifier } from '../domain/auth.ts';
+import { applicationLimits, type Limits } from '../domain/limits.ts';
 import type { Participant, Session, SessionRegistry } from '../domain/sessions.ts';
 import type { Logger, Metrics } from '../telemetry.ts';
 
@@ -40,8 +41,10 @@ export interface ConnectionDependencies {
   >;
   readonly iceServers: Payload<'rtc.ice_config'>['iceServers'];
   readonly clockSkewSeconds: number;
-  /** Server-wide device quota, unless the application sets its own (ADR 0011). */
-  readonly deviceLimits: { readonly ttlMs: number; readonly maxDevices: number };
+  /** A device record not seen for this long stops counting toward the device quota. */
+  readonly deviceTtlMs: number;
+  /** Server defaults; an application's registry entry overrides each limit it sets (ADR 0011). */
+  readonly limits: Limits;
   /** Renewed on every heartbeat, so it outlives a few missed ones. */
   readonly presenceLeaseMs: number;
   /** Shared by every connection of the process. */
@@ -217,7 +220,7 @@ export class Connection {
     const verified = await this.#deps.verifier.verify(message.payload.token);
     if (!verified.ok) return this.#rejectAuthentication(verified.code, requestId);
     const { application, context } = verified.token;
-    if (!(await this.#touch(context, application.quotas.devices))) {
+    if (!(await this.#touch(context, application))) {
       return this.#rejectAuthentication('quota_exceeded', requestId);
     }
     this.#deps.metrics.count('blindsignal_authentications_total', { result: 'ok' });
@@ -255,7 +258,7 @@ export class Connection {
     if (!verified.ok) return this.#error(verified.code, requestId);
     const { application, context } = verified.token;
     if (!sameDevice(context, current)) return this.#error('identity_mismatch', requestId);
-    if (!(await this.#touch(context, application.quotas.devices))) {
+    if (!(await this.#touch(context, application))) {
       return this.#error('quota_exceeded', requestId);
     }
     this.#accept({ ...context, protocolVersion: current.protocolVersion }, requestId);
@@ -448,11 +451,10 @@ export class Connection {
     this.#send({ type: 'ack', requestId, payload: {} });
   }
 
-  async #touch(device: DeviceIdentity, appMaxDevices: number | undefined): Promise<boolean> {
-    const { ttlMs, maxDevices } = this.#deps.deviceLimits;
+  async #touch(device: DeviceIdentity, application: ApplicationRecord): Promise<boolean> {
     const result = await this.#deps.devices.touch(identityOf(device), new Date(), {
-      ttlMs,
-      maxDevices: appMaxDevices ?? maxDevices,
+      ttlMs: this.#deps.deviceTtlMs,
+      maxDevices: applicationLimits(this.#deps.limits, application).quotas.devices,
     });
     return result.ok;
   }

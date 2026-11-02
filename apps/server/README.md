@@ -47,7 +47,27 @@ names the variable, never its value.
 | `BLINDSIGNAL_PRESENCE_LEASE_SECONDS` | `90` | Presence lease, renewed on every answered ping. |
 | `BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS` | `30` | How long a session may stay `pending`. |
 | `BLINDSIGNAL_DEVICE_TTL_DAYS` | `30` | A device record not seen for this long stops counting toward the quota. |
-| `BLINDSIGNAL_MAX_DEVICES_PER_APP` | `10000` | Device quota of an application that sets none (ADR 0011). |
+| `BLINDSIGNAL_MAX_MESSAGE_BYTES` | `65536` | Maximum message size in UTF-8 bytes, at most `65536` (docs/protocol.md §1). |
+
+Quotas and rate limits (ADR 0011) are server defaults: an application's registry entry overrides
+each one under `quotas` and `rateLimits`. The defaults are starting values until load testing sets
+them (spec §8.2). A rate limit is `rate,burst`: tokens added per second, and the bucket's size.
+
+| Variable | Default | Registry key |
+|---|---|---|
+| `BLINDSIGNAL_MAX_CONNECTIONS_PER_APP` | `10000` | `quotas.connections` |
+| `BLINDSIGNAL_MAX_DEVICES_PER_APP` | `10000` | `quotas.devices` |
+| `BLINDSIGNAL_MAX_SESSIONS_PER_APP` | `10000` | `quotas.sessions` |
+| `BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE` | `16` | `quotas.sessionsPerDevice` |
+| `BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE` | `100` | `quotas.namespacesPerDevice` |
+| `BLINDSIGNAL_RATE_LIMIT_DISCOVERY` | `2,10` | `rateLimits.discovery` |
+| `BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE` | `2,10` | `rateLimits.session_create` |
+| `BLINDSIGNAL_RATE_LIMIT_SIGNALING` | `50,100` | `rateLimits.signaling` |
+| `BLINDSIGNAL_RATE_LIMIT_RTC` | `10,30` | `rateLimits.rtc` |
+| `BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE` | `20,50` | `rateLimits.rtc_ice_candidate` |
+
+Only the device quota and the message size are enforced so far; the other limits are enforced as
+the Phase 6 tasks land (docs/roadmap.md).
 
 ## Signals
 

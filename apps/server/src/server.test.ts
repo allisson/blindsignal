@@ -15,6 +15,7 @@ import {
 import { BlockList } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
+import { loadConfig } from './config.ts';
 import { TokenVerifier } from './domain/auth.ts';
 import { parseRegistry } from './domain/registry.ts';
 import { SessionRegistry } from './domain/sessions.ts';
@@ -31,6 +32,9 @@ interface Options {
 }
 
 const servers: SignalingServer[] = [];
+const loaded = loadConfig({ BLINDSIGNAL_ENV: 'development', BLINDSIGNAL_REGISTRY_PATH: 'unused' });
+if (!loaded.ok) throw new Error(loaded.error);
+const defaults = loaded.config;
 
 afterEach(async () => {
   for (const server of servers.splice(0)) await server.close();
@@ -69,7 +73,8 @@ async function start(options: Options = {}) {
       sessions: new SessionRegistry(),
       iceServers: [],
       clockSkewSeconds: 60,
-      deviceLimits: { ttlMs: 86_400_000, maxDevices: 100 },
+      deviceTtlMs: 86_400_000,
+      limits: defaults.limits,
       presenceLeaseMs: options.presenceLeaseMs ?? 90_000,
       negotiationTimeoutMs: 30_000,
       maxMessageBytes: options.maxMessageBytes,
