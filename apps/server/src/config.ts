@@ -1,3 +1,4 @@
+import type { RateLimitPolicy } from '@blindsignal/core';
 import { MAX_MESSAGE_BYTES } from '@blindsignal/protocol';
 import { isIP, type BlockList } from 'node:net';
 import { z } from 'zod';
@@ -89,6 +90,11 @@ const environment = z
     BLINDSIGNAL_PRESENCE_LEASE_SECONDS: seconds.positive().default(90),
     BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS: seconds.positive().default(30),
     BLINDSIGNAL_DEVICE_TTL_DAYS: seconds.positive().default(30),
+    // Before authentication, keyed by client IP or global; no application can override them.
+    BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS: seconds.positive().default(10),
+    BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: count.default(20),
+    BLINDSIGNAL_MAX_UNAUTHENTICATED: count.default(1_000),
+    BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS: rateLimit(5, 20),
     // The protocol caps it at its default (docs/protocol.md §1).
     BLINDSIGNAL_MAX_MESSAGE_BYTES: count.max(MAX_MESSAGE_BYTES).default(MAX_MESSAGE_BYTES),
     // Server defaults for every application; a registry entry may override each (ADR 0011). They
@@ -130,8 +136,18 @@ export interface ServerConfig {
   readonly presenceLeaseMs: number;
   readonly negotiationTimeoutMs: number;
   readonly deviceTtlMs: number;
+  readonly preAuthentication: PreAuthentication;
   readonly maxMessageBytes: number;
   readonly limits: Limits;
+}
+
+/** Limits before authentication, when only the client IP is known (spec §8.1, §8.4). */
+export interface PreAuthentication {
+  readonly authenticationTimeoutMs: number;
+  /** Concurrent unauthenticated connections, per client IP and in all, on this instance. */
+  readonly maxUnauthenticatedPerIp: number;
+  readonly maxUnauthenticated: number;
+  readonly connectionAttempts: RateLimitPolicy;
 }
 
 export type ConfigResult =
@@ -171,6 +187,12 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       presenceLeaseMs: vars.BLINDSIGNAL_PRESENCE_LEASE_SECONDS * 1000,
       negotiationTimeoutMs: vars.BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS * 1000,
       deviceTtlMs: vars.BLINDSIGNAL_DEVICE_TTL_DAYS * 86_400_000,
+      preAuthentication: {
+        authenticationTimeoutMs: vars.BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS * 1000,
+        maxUnauthenticatedPerIp: vars.BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP,
+        maxUnauthenticated: vars.BLINDSIGNAL_MAX_UNAUTHENTICATED,
+        connectionAttempts: vars.BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS,
+      },
       maxMessageBytes: vars.BLINDSIGNAL_MAX_MESSAGE_BYTES,
       limits: {
         quotas: {

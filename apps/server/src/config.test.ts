@@ -32,6 +32,12 @@ describe('loadConfig', () => {
       presenceLeaseMs: 90_000,
       negotiationTimeoutMs: 30_000,
       deviceTtlMs: 30 * 86_400_000,
+      preAuthentication: {
+        authenticationTimeoutMs: 10_000,
+        maxUnauthenticatedPerIp: 20,
+        maxUnauthenticated: 1_000,
+        connectionAttempts: { ratePerSecond: 5, burst: 20 },
+      },
       maxMessageBytes: 65_536,
       limits: {
         quotas: {
@@ -72,6 +78,10 @@ describe('loadConfig', () => {
       BLINDSIGNAL_PRESENCE_LEASE_SECONDS: '25',
       BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS: '15',
       BLINDSIGNAL_DEVICE_TTL_DAYS: '7',
+      BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS: '4',
+      BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: '3',
+      BLINDSIGNAL_MAX_UNAUTHENTICATED: '30',
+      BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS: '1,4',
       BLINDSIGNAL_MAX_MESSAGE_BYTES: '1024',
       BLINDSIGNAL_MAX_CONNECTIONS_PER_APP: '40',
       BLINDSIGNAL_MAX_DEVICES_PER_APP: '50',
@@ -97,6 +107,12 @@ describe('loadConfig', () => {
       presenceLeaseMs: 25_000,
       negotiationTimeoutMs: 15_000,
       deviceTtlMs: 7 * 86_400_000,
+      preAuthentication: {
+        authenticationTimeoutMs: 4_000,
+        maxUnauthenticatedPerIp: 3,
+        maxUnauthenticated: 30,
+        connectionAttempts: { ratePerSecond: 1, burst: 4 },
+      },
       maxMessageBytes: 1024,
       limits: {
         quotas: {
@@ -165,6 +181,10 @@ describe('loadConfig', () => {
     ['BLINDSIGNAL_PRESENCE_LEASE_SECONDS', '1.5'],
     ['BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS', 'soon'],
     ['BLINDSIGNAL_DEVICE_TTL_DAYS', '0'],
+    ['BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS', '0'],
+    ['BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP', '0'],
+    ['BLINDSIGNAL_MAX_UNAUTHENTICATED', '2.5'],
+    ['BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS', '5'],
     ['BLINDSIGNAL_MAX_DEVICES_PER_APP', '0'],
     ['BLINDSIGNAL_MAX_MESSAGE_BYTES', '0'],
     ['BLINDSIGNAL_MAX_MESSAGE_BYTES', '65537'],

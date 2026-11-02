@@ -172,3 +172,52 @@ describe('InMemoryCoordinationAdapter publish and subscribe', () => {
     expect(seen).toEqual(['first', 'second', 'second']);
   });
 });
+
+describe('InMemoryCoordinationAdapter.consumeRateLimit', () => {
+  const policy = { ratePerSecond: 2, burst: 3 };
+
+  it('allows a burst, then refuses with the time until the next token', async () => {
+    const { adapter } = setup();
+    for (let i = 0; i < 3; i++) {
+      expect(await adapter.consumeRateLimit('k', policy)).toEqual({ allowed: true });
+    }
+    expect(await adapter.consumeRateLimit('k', policy)).toEqual({
+      allowed: false,
+      retryAfterMs: 500,
+    });
+  });
+
+  it('refills at the rate, up to the burst', async () => {
+    const { adapter, advance } = setup();
+    for (let i = 0; i < 3; i++) await adapter.consumeRateLimit('k', policy);
+    advance(250);
+    expect(await adapter.consumeRateLimit('k', policy)).toEqual({
+      allowed: false,
+      retryAfterMs: 250,
+    });
+    advance(250);
+    expect(await adapter.consumeRateLimit('k', policy)).toEqual({ allowed: true });
+    advance(10_000);
+    for (let i = 0; i < 3; i++) {
+      expect(await adapter.consumeRateLimit('k', policy)).toEqual({ allowed: true });
+    }
+    expect((await adapter.consumeRateLimit('k', policy)).allowed).toBe(false);
+  });
+
+  it('keeps a bucket per key', async () => {
+    const { adapter } = setup();
+    for (let i = 0; i < 3; i++) await adapter.consumeRateLimit('a', policy);
+    expect(await adapter.consumeRateLimit('b', policy)).toEqual({ allowed: true });
+  });
+
+  it('sweeps buckets that are full again', async () => {
+    const { adapter, advance } = setup();
+    await adapter.consumeRateLimit('short', policy);
+    for (let i = 0; i < 3; i++)
+      await adapter.consumeRateLimit('long', { ratePerSecond: 0.01, burst: 3 });
+    expect(adapter.trackedBuckets).toBe(2);
+    advance(60_000);
+    await adapter.consumeRateLimit('other', policy);
+    expect(adapter.trackedBuckets).toBe(2);
+  });
+});

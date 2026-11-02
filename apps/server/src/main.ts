@@ -49,6 +49,8 @@ async function main(): Promise<void> {
     allowedOrigins: config.allowedOrigins,
     proxyTrust: config.proxyTrust,
     heartbeatIntervalMs: config.heartbeatIntervalMs,
+    preAuthentication: config.preAuthentication,
+    coordination,
     connection: {
       verifier: new TokenVerifier({ applications, coordination, startedAt, ...config.token }),
       devices: new InMemoryDeviceRepository(),
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
       sessions,
       iceServers: config.iceServers.map(({ urls }) => ({ urls: [...urls] })),
       clockSkewSeconds: config.token.clockSkewSeconds,
+      authenticationTimeoutMs: config.preAuthentication.authenticationTimeoutMs,
       deviceTtlMs: config.deviceTtlMs,
       limits: config.limits,
       maxMessageBytes: config.maxMessageBytes,
