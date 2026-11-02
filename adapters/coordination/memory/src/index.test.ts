@@ -99,10 +99,11 @@ describe('InMemoryCoordinationAdapter presence', () => {
     const { adapter } = setup();
     await adapter.acquirePresence('notes:a', alice, 'c1', 1000);
     await adapter.acquirePresence('notes:a', alice, 'c2', 1000);
-    await adapter.releasePresence('notes:a', alice, 'c1');
-    await adapter.releasePresence('notes:b', alice, 'c2');
+    expect(await adapter.releasePresence('notes:a', alice, 'c1')).toBe(false);
+    expect(await adapter.releasePresence('notes:b', alice, 'c2')).toBe(false);
     expect(await adapter.listPresence('notes:a')).toEqual([alice]);
-    await adapter.releasePresence('notes:a', alice, 'c2');
+    expect(await adapter.releasePresence('notes:a', alice, 'c2')).toBe(true);
+    expect(await adapter.releasePresence('notes:a', alice, 'c2')).toBe(false);
     expect(await adapter.listPresence('notes:a')).toEqual([]);
     expect(adapter.trackedLeases).toBe(0);
   });

@@ -29,8 +29,12 @@ export interface CoordinationAdapter {
     connectionId: string,
     ttlMs: number,
   ): Promise<void>;
-  /** Removes the lease only while `connectionId` still holds it. */
-  releasePresence(namespace: string, device: DeviceIdentity, connectionId: string): Promise<void>;
+  /** Removes the lease only while `connectionId` still holds it; true when it did. */
+  releasePresence(
+    namespace: string,
+    device: DeviceIdentity,
+    connectionId: string,
+  ): Promise<boolean>;
   /** Devices with a live lease in the namespace. */
   listPresence(namespace: string): Promise<readonly DeviceIdentity[]>;
 
