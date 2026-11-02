@@ -38,13 +38,11 @@ on them is written. Never assume an answer:
 - Control-plane mechanism: config file, CLI, or admin API (§5.6).
 - Device enrollment, and whether the MVP requires device-key proof-of-possession (§6.2).
 - Namespace authorization source: token claims, stored policy, or both (§7.3).
-- Session cardinality: one-to-one or multi-party (§13).
 - Duplicate-connection policy, together with the per-device connection limit (§13, §8.1),
   accounting for several browser tabs sharing one device identity.
 - `jti` replay policy and the full token profile (§5.3), including the maximum token lifetime,
   clock-skew tolerance, and what happens when a connection's token expires without `auth.refresh`.
-- When `rtc.ice_config` is sent beyond post-authentication, and whether `rtc.ice_restart` stays a
-  separate message type (§11).
+- When `rtc.ice_config` is sent beyond post-authentication (§11).
 - Pairing protocol (§7.4, post-MVP). Never invent custom cryptography.
 
 ## Non-negotiable invariants

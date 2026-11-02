@@ -403,7 +403,6 @@ Application-level configurable quotas should include:
 - Maximum concurrent WebSocket connections.
 - Maximum registered or active devices, where applicable.
 - Maximum concurrent sessions.
-- Maximum session participants.
 - Maximum signaling messages per time window.
 - Maximum message size.
 - Maximum session duration, where required.
@@ -553,17 +552,19 @@ Initial message categories:
 | Category | Example messages |
 |---|---|
 | Authentication | `auth.authenticate`, `auth.refresh`, `auth.result` |
-| Device | `device.register`, `device.status` |
+| Device | `device.register` |
 | Namespace | `namespace.join`, `namespace.leave` |
-| Presence | `presence.update`, `presence.changed` |
+| Presence | `presence.changed` |
 | Discovery | `discovery.request`, `discovery.result` |
 | Pairing | `pairing.request`, `pairing.approve`, `pairing.reject` |
-| Session | `session.create`, `session.request`, `session.accept`, `session.reject`, `session.close`, `session.terminated` |
-| WebRTC | `rtc.offer`, `rtc.answer`, `rtc.ice_candidate`, `rtc.ice_restart` |
+| Session | `session.create`, `session.created`, `session.request`, `session.accept`, `session.reject`, `session.accepted`, `session.rejected`, `session.close`, `session.terminated` |
+| WebRTC | `rtc.offer`, `rtc.answer`, `rtc.ice_candidate` |
 | Configuration | `rtc.ice_config` |
-| Lifecycle | `connection.ping`, `connection.pong`, `error` |
+| Lifecycle | `connection.ping`, `connection.pong`, `ack`, `error` |
 
-`auth.refresh` renews the connection's credentials with a new application-issued token without reconnecting; the new token must keep the connection's identity (§5.3). `session.create` is sent by the requesting device to the server; `session.request` is sent by the server to the target device, which answers with `session.accept` or `session.reject`; the server forwards that answer to the requesting device. When a participant sends `session.close`, the server notifies the other participants; whether through a relayed `session.close` or through `session.terminated` is decided with the protocol draft. `session.terminated` is sent by the server to the remaining peers when a session ends for a reason outside their control, such as counterpart device revocation, and carries that reason (§6.4). Application suspension needs no such notice: all peers of a session belong to the same application, and their connections are closed (§5.5); each SDK closes its sessions when reauthentication is rejected (§6.4). `rtc.ice_config` is sent by the server and is the only channel for TURN credentials (§12.3). The server sends it after successful authentication, even when no TURN server is configured; whether it is also sent per session or when TURN credentials are renewed is decided together with the ICE configuration. `rtc.ice_restart` is relayed between session participants like `rtc.offer`; whether it remains a separate message type or ICE restart is expressed as a new `rtc.offer` is decided with the protocol draft. Pairing messages are finalized together with the pairing protocol (§7.4).
+The full message catalog, payloads, versioning rule, and error codes are in `docs/protocol.md`.
+
+`auth.refresh` renews the connection's credentials with a new application-issued token without reconnecting; the new token must keep the connection's identity (§5.3). `session.create` is sent by the requesting device to the server, which replies `session.created` with the server-generated session ID; `session.request` is sent by the server to the target device, which answers with `session.accept` or `session.reject`; the server sends the requesting device `session.accepted` or `session.rejected`. `session.close` is sent only from client to server; the other participant receives `session.terminated`. `session.terminated` is sent by the server whenever a session ends for a reason outside the recipient's control (the other participant closed it, disconnected, or was revoked, or the request timed out) and carries that reason (§6.4). Application suspension needs no such notice: all peers of a session belong to the same application, and their connections are closed (§5.5); each SDK closes its sessions when reauthentication is rejected (§6.4). `rtc.ice_config` is sent by the server and is the only channel for TURN credentials (§12.3). The server sends it after successful authentication, even when no TURN server is configured; whether it is also sent per session or when TURN credentials are renewed is decided together with the ICE configuration. ICE restart is a new `rtc.offer` within the same session; there is no separate message type. Pairing messages are finalized together with the pairing protocol (§7.4).
 
 The protocol defines the direction of every message type: client to server, server to client, or relayed between session participants. The server rejects a message sent in a direction its type does not allow, for example a client-sent `rtc.ice_config`, `session.request`, or `session.terminated`. Server-originated `rtc.ice_config` is not a relayed message and is not subject to the session-membership rule (§13).
 
@@ -646,7 +647,7 @@ The server must handle unexpected disconnects, duplicate connections, expired se
 
 The duplicate-connection policy must be decided before implementation: what happens when a device that already has an active connection connects again (for example, the newer connection replaces the older one, or the newer one is rejected). It is decided together with the per-device concurrent connection limit (§8.1, §8.2), since a replace policy implies a limit of one connection per device. The policy must account for several browser tabs or windows sharing one device identity, and must not let them replace each other in a reconnect loop (§8.3).
 
-Session cardinality must be decided before implementation: one-to-one sessions only, or multi-party sessions (and, if so, the topology, such as full mesh). The SDK API in §20 currently assumes one-to-one sessions; the "maximum session participants" quota (§8.2) only applies to multi-party sessions.
+Sessions are one-to-one (`docs/adr/0003-one-to-one-sessions.md`). A session is bound to the two connections that created and accepted it, and ends when either closes (`docs/adr/0004-sessions-bound-to-connections.md`).
 
 Every session is created within one namespace, and both devices must be authorized in it.
 
@@ -709,8 +710,8 @@ Requirements:
 - Heartbeats and dead-connection detection.
 - Reauthentication when required.
 - Presence re-registration.
-- Session state reconciliation.
-- ICE restart or session recovery where appropriate.
+- Session state reconciliation: after reconnecting, the SDK treats every server-side session as ended (§13).
+- ICE restart within a live session; after a signaling reconnect, a new session.
 - Graceful handling of duplicate connections, according to the policy decided in §13.
 - Token expiration handling and renewal through the consuming application backend.
 

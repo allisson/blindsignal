@@ -29,7 +29,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [x] Inspect repository conventions and existing code (repository contains only docs, AGENTS.md, README, LICENSE, and a Node.js `.gitignore` template; the spec's illustrative interfaces use TypeScript).
 - [x] Choose language, runtime, package and monorepo tooling, schema-validation library, and test frameworks, including browser automation for DataChannel tests (`docs/adr/0001-typescript-node-toolchain.md`).
 - [x] Define server, SDK, and shared protocol boundaries (`docs/adr/0002-package-boundaries.md`).
-- [ ] Define signaling protocol and versioning.
+- [x] Define signaling protocol and versioning (`docs/protocol.md`).
 - [ ] Define application registration and trust model.
 - [ ] Define application issuer and JWKS configuration, including HTTPS-only JWKS URIs, fetch timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
 - [ ] Define JWT claims and validation requirements.
@@ -42,7 +42,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [ ] Design and review the device enrollment protocol (required before Phase 4 implements enrollment), including proof-of-possession if the MVP requires it. *(Proof-of-possession design is post-MVP otherwise and must be done before Phase 5 implements it.)*
 - [ ] Define namespace and authorization semantics.
 - [ ] Decide the namespace authorization source for the MVP: token claims, stored policy, or both (spec §7.3).
-- [ ] Decide session cardinality: one-to-one only or multi-party (spec §13).
+- [x] Decide session cardinality: one-to-one only or multi-party (spec §13) (`docs/adr/0003-one-to-one-sessions.md`).
 - [ ] Decide the duplicate-connection policy for a device that connects again while already connected, together with the per-device concurrent connection limit, accounting for several browser tabs sharing one device identity (spec §13, §8.1, §8.3).
 - [ ] Define pairing policy. *(Post-MVP: required before Phase 5 implements pairing; does not block the MVP.)*
 - [ ] Define `StorageAdapter`.
@@ -50,7 +50,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [ ] Define application and device quotas.
 - [ ] Define rate-limit categories and error responses, including pre-authentication limits keyed by source IP and client IP derivation from trusted proxies (spec §8.1).
 - [ ] Define ICE configuration and direct/relay reporting: STUN from client configuration, TURN only through `rtc.ice_config`, and when the server sends `rtc.ice_config` beyond the post-authentication message (spec §11, §12.3).
-- [ ] Decide whether `rtc.ice_restart` remains a separate message type or ICE restart is a new `rtc.offer` (spec §11).
+- [x] Decide whether `rtc.ice_restart` remains a separate message type or ICE restart is a new `rtc.offer` (spec §11) (a new `rtc.offer`, `docs/protocol.md`).
 - [ ] Define WebSocket reconnect and token renewal behavior.
 - [ ] Decide what happens when a connection's token reaches `exp` without a successful `auth.refresh` (spec §5.3).
 - [ ] Define security and threat-model assumptions.
@@ -178,7 +178,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Extend the Phase 2 in-memory coordination adapter with presence leases, signaling event delivery, and TTL-based cleanup.
 - [ ] Implement device discovery.
 - [ ] Implement session creation and lifecycle, with each session scoped to one namespace in which both devices are authorized (spec §13).
-- [ ] Implement SDP offer/answer signaling, including ICE restart per the Phase 0 decision.
+- [ ] Implement SDP offer/answer signaling, including ICE restart as a new `rtc.offer`.
 - [ ] Implement ICE candidate exchange.
 - [ ] Relay `rtc.*` messages only between participants of an accepted session (spec §13).
 - [ ] Send `rtc.ice_config` after successful authentication, even when no TURN server is configured (spec §11).
@@ -240,7 +240,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Expose direct/relay/unknown connection type.
 - [ ] Implement heartbeats and dead-connection detection with `connection.ping` and `connection.pong` (spec §15).
 - [ ] Implement reconnect with exponential backoff and jitter, stopping on terminal authentication errors and not reconnecting automatically when superseded (spec §8.3).
-- [ ] After reconnecting, re-register presence and reconcile session state (spec §15).
+- [ ] After reconnecting, rejoin namespaces and treat every server-side session as ended (spec §15, `docs/adr/0004-sessions-bound-to-connections.md`).
 - [ ] Implement session cleanup and error handling, closing all sessions when reauthentication is rejected because the application is suspended or revoked or the device is revoked (spec §6.4).
 - [ ] Add browser integration tests.
 
