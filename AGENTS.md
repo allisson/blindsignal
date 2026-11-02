@@ -83,10 +83,11 @@ Treat a violation of any of these as a bug, regardless of the task:
   production trust configuration.
 - Resource limits (message size, rates, quotas, timeouts) are configurable, never hardcoded
   constants.
-- Repository layout follows spec §19 (`apps/server`, `packages/{sdk,protocol,core}`,
+- Repository layout follows spec §19 (`apps/server`, `packages/{sdk,protocol,core,dev-issuer}`,
   `adapters/{storage,coordination}/*`) unless an ADR changes it.
 - Package dependencies follow `docs/adr/0002-package-boundaries.md`: the SDK imports only
-  `protocol`; adapters import only `core`; nothing imports `apps/server`.
+  `protocol`; adapters import only `core`; nothing imports `apps/server`. In `apps/server/src`, only
+  `main.ts` imports adapters, and nothing imports `dev-issuer` (tests may import both).
 
 ## Protocol naming
 
