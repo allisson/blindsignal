@@ -75,8 +75,9 @@ them (spec §8.2). A rate limit is `rate,burst`: tokens added per second, and th
 | `BLINDSIGNAL_RATE_LIMIT_RTC` | `10,30` | `rateLimits.rtc` |
 | `BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE` | `20,50` | `rateLimits.rtc_ice_candidate` |
 
-Of these, only the connection and device quotas are enforced so far; the other limits are enforced as
-the Phase 6 tasks land (docs/roadmap.md).
+Every quota is enforced; the rate limits are enforced as the Phase 6 tasks land (docs/roadmap.md).
+A connection reads its application's limits at `auth.authenticate` and each `auth.refresh`, so a
+reloaded registry's limits apply from its next refresh.
 
 ## Signals
 

@@ -52,9 +52,10 @@ export class SessionRegistry {
     target: Participant,
     timeoutMs: number,
     onTimeout: (session: Session) => void,
+    id: string = crypto.randomUUID(),
   ): Session {
     const entry: Entry = {
-      id: crypto.randomUUID(),
+      id,
       namespace,
       requester,
       target,

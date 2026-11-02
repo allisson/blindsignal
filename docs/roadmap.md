@@ -319,9 +319,9 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement authentication attempt limits. *(MVP)*
 - [x] Implement maximum WebSocket message sizes. *(MVP)*
 - [x] Implement session and negotiation timeouts. *(MVP)*
-- [ ] Implement maximum concurrent sessions per application and per device (spec §8.2). *(MVP)*
+- [x] Implement maximum concurrent sessions per application and per device (spec §8.2). *(MVP)*
 - [x] Implement maximum registered devices per application (spec §8.2). *(MVP)*
-- [ ] Implement maximum joined namespaces per device (`docs/adr/0011-quotas-and-rate-limits.md`). *(MVP)*
+- [x] Implement maximum joined namespaces per device (`docs/adr/0011-quotas-and-rate-limits.md`). *(MVP)*
 - [ ] Implement maximum session duration, where configured (spec §8.2).
 - [ ] Implement bounded queues and backpressure.
 - [ ] Implement abuse-triggered application suspension and operational alerts (spec §8.3), reusing the Phase 3 suspension handling.

@@ -80,6 +80,17 @@ export const presenceTopic = (namespace: string) => `presence:${namespace}`;
 /** Each authenticated connection holds one slot of its application's connection quota. */
 const connectionSlot = (appId: string) => `connections:${appId}`;
 
+/**
+ * A session holds a slot of its application's session quota and one of each device's, from
+ * creation to its end (ADR 0011): the application's, the requester's, and the target's keys.
+ */
+const sessionSlots = (requester: DeviceIdentity, target: DeviceIdentity) =>
+  [
+    `sessions:${requester.appId}`,
+    `device_sessions:${JSON.stringify([requester.appId, requester.userId, requester.deviceId])}`,
+    `device_sessions:${JSON.stringify([target.appId, target.userId, target.deviceId])}`,
+  ] as const;
+
 const SUPERSEDED = { type: 'superseded' } as const;
 
 type Outbound = Omit<ServerMessage, 'version'>;
@@ -120,6 +131,8 @@ export class Connection {
   #context: ConnectionContext | undefined;
   /** The connection-quota key this connection holds a slot under, once it took one. */
   #slot: string | undefined;
+  /** The application's limits, read from the registry at each authentication and refresh. */
+  #limits: Limits;
   #expiryTimer: ReturnType<typeof setTimeout> | undefined;
   readonly #deadline: ReturnType<typeof setTimeout>;
   #unsubscribe: (() => Promise<void>) | undefined;
@@ -130,6 +143,7 @@ export class Connection {
     this.id = id;
     this.#port = port;
     this.#deps = deps;
+    this.#limits = deps.limits;
     // Queued, so an authentication in flight finishes first.
     this.#deadline = setTimeout(
       () => void this.#enqueue(() => Promise.resolve(this.#missedDeadline())),
@@ -251,10 +265,11 @@ export class Connection {
     const { application, context } = verified.token;
     // Released with the connection, whether or not the authentication completes.
     this.#slot = connectionSlot(context.appId);
-    const limit = applicationLimits(this.#deps.limits, application).quotas.connections;
+    this.#limits = applicationLimits(this.#deps.limits, application);
+    const limit = this.#limits.quotas.connections;
     if (
       !(await this.#deps.coordination.acquireSlots(this.id, [{ key: this.#slot, limit }])) ||
-      !(await this.#touch(context, application))
+      !(await this.#touch(context))
     ) {
       return this.#rejectAuthentication('quota_exceeded', requestId);
     }
@@ -320,7 +335,8 @@ export class Connection {
     if (!verified.ok) return this.#error(verified.code, requestId);
     const { application, context } = verified.token;
     if (!sameDevice(context, current)) return this.#error('identity_mismatch', requestId);
-    if (!(await this.#touch(context, application))) {
+    this.#limits = applicationLimits(this.#deps.limits, application);
+    if (!(await this.#touch(context))) {
       return this.#error('quota_exceeded', requestId);
     }
     this.#accept({ ...context, protocolVersion: current.protocolVersion }, requestId);
@@ -346,6 +362,10 @@ export class Connection {
     // Unauthorized and nonexistent namespaces look the same, so none can be enumerated.
     if (!this.#authorized(namespace)) return this.#error('not_authorized', requestId);
     const joining = !this.#joined.has(namespace);
+    // One connection per device (ADR 0008), so its joined namespaces are the device's.
+    if (joining && this.#joined.size >= this.#limits.quotas.namespacesPerDevice) {
+      return this.#error('quota_exceeded', requestId);
+    }
     if (joining) {
       const unsubscribe = await this.#deps.coordination.subscribe(
         presenceTopic(namespace),
@@ -401,14 +421,30 @@ export class Connection {
       return this.#error('peer_unavailable', requestId);
     }
     const requester: Participant = { connectionId: this.id, device: identityOf(self) };
-    const session = this.#deps.sessions.create(
+    const sessionId = crypto.randomUUID();
+    const [app, own, peer] = sessionSlots(requester.device, target);
+    const { sessions, sessionsPerDevice } = this.#limits.quotas;
+    const { coordination } = this.#deps;
+    const ownSlots = [
+      { key: app, limit: sessions },
+      { key: own, limit: sessionsPerDevice },
+    ];
+    if (!(await coordination.acquireSlots(sessionId, ownSlots))) {
+      return this.#error('quota_exceeded', requestId);
+    }
+    // A busy target looks unreachable, so its load is not revealed.
+    if (!(await coordination.acquireSlots(sessionId, [{ key: peer, limit: sessionsPerDevice }]))) {
+      await coordination.releaseSlots(sessionId, [app, own]);
+      return this.#error('peer_unavailable', requestId);
+    }
+    this.#deps.sessions.create(
       namespace,
       requester,
       { connectionId: targetId, device: target },
       this.#deps.negotiationTimeoutMs,
       (expired) => void this.#enqueue(() => this.#terminate(expired, 'timeout', true)),
+      sessionId,
     );
-    const sessionId = session.id;
     this.#deps.metrics.count('blindsignal_sessions_created_total');
     this.#send({ type: 'session.created', requestId, payload: { sessionId } });
     await this.#publish(targetId, {
@@ -437,7 +473,7 @@ export class Connection {
         payload: { sessionId },
       });
     }
-    this.#deps.sessions.end(sessionId);
+    await this.#end(session);
     await this.#publish(session.requester.connectionId, {
       type: 'session.rejected',
       payload: { sessionId },
@@ -457,11 +493,19 @@ export class Connection {
 
   /** Ends the session; tells the other participant, and this one too when `both` is set. */
   async #terminate(session: Session, reason: TerminationReason, both = false): Promise<void> {
-    if (!this.#deps.sessions.end(session.id)) return;
+    if (!(await this.#end(session))) return;
     this.#deps.metrics.count('blindsignal_sessions_terminated_total', { reason });
     const terminated = { type: 'session.terminated', payload: { sessionId: session.id, reason } };
     if (both) this.#send(terminated as Outbound);
     await this.#publish(this.#peerOf(session), terminated as Outbound);
+  }
+
+  /** Removes the session and frees its quota slots; true for the one caller that ended it. */
+  async #end(session: Session): Promise<boolean> {
+    if (!this.#deps.sessions.end(session.id)) return false;
+    const slots = sessionSlots(session.requester.device, session.target.device);
+    await this.#deps.coordination.releaseSlots(session.id, slots);
+    return true;
   }
 
   #participates(session: Session): boolean {
@@ -513,10 +557,10 @@ export class Connection {
     this.#send({ type: 'ack', requestId, payload: {} });
   }
 
-  async #touch(device: DeviceIdentity, application: ApplicationRecord): Promise<boolean> {
+  async #touch(device: DeviceIdentity): Promise<boolean> {
     const result = await this.#deps.devices.touch(identityOf(device), new Date(), {
       ttlMs: this.#deps.deviceTtlMs,
-      maxDevices: applicationLimits(this.#deps.limits, application).quotas.devices,
+      maxDevices: this.#limits.quotas.devices,
     });
     return result.ok;
   }
