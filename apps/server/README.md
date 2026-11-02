@@ -52,10 +52,11 @@ names the variable, never its value.
 | `BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP` | `20` | Concurrent unauthenticated connections per client IP; more get HTTP `429` at the upgrade. |
 | `BLINDSIGNAL_MAX_UNAUTHENTICATED` | `1000` | Concurrent unauthenticated connections in all; more get HTTP `429` at the upgrade. |
 | `BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS` | `5,20` | Connection attempts per client IP, as `rate,burst`; more get HTTP `429` with `Retry-After`. |
+| `BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION` | `1,10` | `auth.authenticate` and `auth.refresh` per client IP, as `rate,burst`; more get `rate_limited`. |
 
 The pre-authentication limits are keyed by the client IP (`BLINDSIGNAL_TRUSTED_PROXIES`) and apply
 to every application, which is not known yet (ADR 0011). The unauthenticated caps count this
-instance's connections; the connection-attempt buckets live in the coordination adapter.
+instance's connections; the rate-limit buckets live in the coordination adapter.
 
 Quotas and rate limits (ADR 0011) are server defaults: an application's registry entry overrides
 each one under `quotas` and `rateLimits`. The defaults are starting values until load testing sets
@@ -74,7 +75,7 @@ them (spec §8.2). A rate limit is `rate,burst`: tokens added per second, and th
 | `BLINDSIGNAL_RATE_LIMIT_RTC` | `10,30` | `rateLimits.rtc` |
 | `BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE` | `20,50` | `rateLimits.rtc_ice_candidate` |
 
-Of these, only the device quota is enforced so far; the other limits are enforced as
+Of these, only the connection and device quotas are enforced so far; the other limits are enforced as
 the Phase 6 tasks land (docs/roadmap.md).
 
 ## Signals
