@@ -38,7 +38,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [ ] Define revocation enforcement limits for established P2P sessions (spec §6.4).
 - [ ] Define the control-plane mechanism for application registration, suspension, revocation, and device revocation (spec §5.6).
 - [ ] Define user and device identity.
-- [ ] Decide whether MVP enrollment includes device-key proof-of-possession or relies only on the backend-asserted `device_id` claim (spec §6.2).
+- [ ] Decide whether MVP enrollment includes device-key proof-of-possession or relies only on the backend-asserted `device_id` claim (spec §6.2), and whether device records are created on first sight, which places the per-application device-count quota in the MVP (Phase 6).
 - [ ] Design and review the device enrollment protocol (required before Phase 4 implements enrollment), including proof-of-possession if the MVP requires it. *(Proof-of-possession design is post-MVP otherwise and must be done before Phase 5 implements it.)*
 - [ ] Define namespace and authorization semantics.
 - [ ] Decide the namespace authorization source for the MVP: token claims, stored policy, or both (spec §7.3).
@@ -304,7 +304,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 **Goal:** Prevent individual applications or devices from exhausting shared infrastructure resources.
 
-**MVP subset:** the tasks marked *(MVP)*: basic per-application and per-device connection limits, pre-authentication limits (authentication deadline and unauthenticated connection cap), connection-attempt, authentication, discovery, session-creation and signaling rate limits, maximum message size, and negotiation timeouts. Usage metrics, bounded queues, abuse-triggered suspension, and the concurrent-session, device-count, and session-duration quotas are post-MVP.
+**MVP subset:** the tasks marked *(MVP)*: basic per-application and per-device connection and concurrent-session limits, pre-authentication limits (authentication deadline and unauthenticated connection cap), connection-attempt, authentication, discovery, session-creation and signaling rate limits, maximum message size, and negotiation timeouts. Usage metrics, bounded queues, abuse-triggered suspension, and the session-duration quota are post-MVP. The device-count quota is part of the MVP only if the Phase 0 enrollment decision creates device records on first sight.
 
 ### Tasks
 
@@ -320,8 +320,8 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement authentication attempt limits. *(MVP)*
 - [ ] Implement maximum WebSocket message sizes. *(MVP)*
 - [ ] Implement session and negotiation timeouts. *(MVP)*
-- [ ] Implement maximum concurrent sessions per application and per device (spec §8.2).
-- [ ] Implement maximum registered or active devices per application, where applicable (spec §8.2).
+- [ ] Implement maximum concurrent sessions per application and per device (spec §8.2). *(MVP)*
+- [ ] Implement maximum registered or active devices per application, where applicable (spec §8.2). *(MVP if the Phase 0 enrollment decision creates device records on first sight)*
 - [ ] Implement maximum session duration, where configured (spec §8.2).
 - [ ] Implement bounded queues and backpressure.
 - [ ] Implement abuse-triggered application suspension and operational alerts (spec §8.3), reusing the Phase 3 suspension handling.
