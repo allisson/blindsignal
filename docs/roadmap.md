@@ -270,7 +270,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 ### Tasks
 
 - [ ] Design, review, and implement device proof-of-possession (`docs/adr/0006-token-profile-and-device-identity.md`).
-- [ ] Finalize namespace authorization. *(MVP)*
+- [x] Finalize namespace authorization. *(MVP)*
 - [ ] Implement session authorization.
 - [ ] Design and review pairing protocol.
 - [ ] Implement pairing approval policy.
@@ -326,7 +326,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement bounded queues and backpressure.
 - [ ] Implement abuse-triggered application suspension and operational alerts (spec §8.3), reusing the Phase 3 suspension handling.
 - [ ] Implement per-application usage metrics.
-- [ ] Add abuse and quota enforcement tests. *(MVP, for the MVP limits)*
+- [x] Add abuse and quota enforcement tests. *(MVP, for the MVP limits)*
 
 ### Deliverables
 
