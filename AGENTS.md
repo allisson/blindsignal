@@ -42,7 +42,8 @@ on them is written. Never assume an answer:
 - Namespace authorization source: token claims, stored policy, or both (§7.3). Decided:
   `docs/adr/0007-namespace-authorization.md`.
 - Duplicate-connection policy, together with the per-device connection limit (§13, §8.1),
-  accounting for several browser tabs sharing one device identity.
+  accounting for several browser tabs sharing one device identity. Decided:
+  `docs/adr/0008-duplicate-connections.md`.
 - `jti` replay policy and the full token profile (§5.3), including the maximum token lifetime,
   clock-skew tolerance, and what happens when a connection's token expires without `auth.refresh`.
   Decided: `docs/adr/0006-token-profile-and-device-identity.md`.
