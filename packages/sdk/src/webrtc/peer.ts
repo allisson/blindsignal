@@ -11,8 +11,12 @@ export type ChannelData = string | ArrayBuffer | ArrayBufferView<ArrayBuffer>;
 
 export type Relay = <T extends RelayType>(type: T, payload: Payload<T>) => void;
 
+/** `relay` when either candidate of the selected pair is a TURN relay; `unknown` before one is selected. */
+export type ConnectionType = 'direct' | 'relay' | 'unknown';
+
 export interface PeerLinkEvents extends Record<string, unknown> {
   open: undefined;
+  connectionType: ConnectionType;
   data: string | ArrayBuffer;
   /** The DataChannel closed, or negotiation failed before it opened. */
   close: undefined;
@@ -25,23 +29,37 @@ export interface PeerLinkEvents extends Record<string, unknown> {
 export class PeerLink extends Emitter<PeerLinkEvents> {
   readonly #sessionId: string;
   readonly #relay: Relay;
+  readonly #signaling: () => boolean;
+  readonly #configuration: () => RTCConfiguration;
+  readonly #maxIceRestarts: number;
   readonly #pc: RTCPeerConnection;
   #channel: RTCDataChannel | undefined;
   /** Candidates that arrived before the remote description; addIceCandidate needs it first. */
   readonly #early: RTCIceCandidateInit[] = [];
   #closed = false;
+  #iceRestarts = 0;
+  #connectionType: ConnectionType = 'unknown';
 
   constructor(init: {
     sessionId: string;
     role: 'requester' | 'target';
-    configuration: RTCConfiguration;
+    /** The latest ICE servers: for the connection, and again before each ICE restart (ADR 0009). */
+    configuration: () => RTCConfiguration;
     relay: Relay;
+    /** Whether the session can still signal; ICE restart needs it (ADR 0004). */
+    signaling: () => boolean;
+    /** ICE restarts tried in a row before a failed connection closes. */
+    maxIceRestarts: number;
     createPeerConnection: PeerConnectionFactory;
   }) {
     super();
     this.#sessionId = init.sessionId;
     this.#relay = init.relay;
-    const pc = init.createPeerConnection(init.configuration);
+    this.#signaling = init.signaling;
+    this.#configuration = init.configuration;
+    this.#maxIceRestarts = init.maxIceRestarts;
+    const role = init.role;
+    const pc = init.createPeerConnection(init.configuration());
     this.#pc = pc;
     pc.addEventListener('icecandidate', ({ candidate }) => {
       if (candidate === null) return;
@@ -50,16 +68,24 @@ export class PeerLink extends Emitter<PeerLinkEvents> {
         candidate: JSON.stringify(candidate),
       });
     });
-    // shortcut: a failed connection just closes; ICE restart (decision 5) replaces this in PR F2.
     pc.addEventListener('connectionstatechange', () => {
-      if (pc.connectionState === 'failed') this.close();
+      if (pc.connectionState === 'connected') {
+        this.#iceRestarts = 0;
+        void this.#readConnectionType();
+      } else if (pc.connectionState === 'failed') {
+        this.#failed(role);
+      }
     });
-    if (init.role === 'requester') this.#attach(pc.createDataChannel('blindsignal'));
+    if (role === 'requester') this.#attach(pc.createDataChannel('blindsignal'));
     else pc.addEventListener('datachannel', ({ channel }) => this.#attach(channel), { once: true });
   }
 
   get open(): boolean {
     return this.#channel?.readyState === 'open';
+  }
+
+  get connectionType(): ConnectionType {
+    return this.#connectionType;
   }
 
   /** Requester only: sends the offer once the target accepted. */
@@ -103,6 +129,43 @@ export class PeerLink extends Emitter<PeerLinkEvents> {
     this.#channel?.close();
     this.#pc.close();
     this.emit('close', undefined);
+  }
+
+  /**
+   * Only the requester restarts ICE, so the two sides never offer at once; the target waits for
+   * that offer while the session can still signal.
+   */
+  #failed(role: 'requester' | 'target'): void {
+    if (!this.#signaling()) return this.close();
+    if (role === 'target') return;
+    if (this.#iceRestarts++ >= this.#maxIceRestarts) return this.close();
+    this.#pc.setConfiguration(this.#configuration());
+    this.#pc.restartIce();
+    this.offer();
+  }
+
+  /** From the selected candidate pair (ADR 0009). */
+  async #readConnectionType(): Promise<void> {
+    const stats = await this.#pc.getStats().catch(() => undefined);
+    if (stats === undefined || this.#closed) return;
+    let pair: RTCIceCandidatePairStats | undefined;
+    for (const report of stats.values() as Iterable<RTCStats>) {
+      // Chrome and Safari name the pair on the transport; Firefox marks it `selected`.
+      if (report.type === 'transport') {
+        const id = (report as RTCTransportStats).selectedCandidatePairId;
+        if (id !== undefined) pair = stats.get(id) as RTCIceCandidatePairStats | undefined;
+      } else if (report.type === 'candidate-pair' && (report as { selected?: boolean }).selected) {
+        pair ??= report as RTCIceCandidatePairStats;
+      }
+    }
+    const relayed = [pair?.localCandidateId, pair?.remoteCandidateId].some(
+      (id) =>
+        (stats.get(id ?? '') as { candidateType?: string } | undefined)?.candidateType === 'relay',
+    );
+    const type: ConnectionType = pair === undefined ? 'unknown' : relayed ? 'relay' : 'direct';
+    if (type === this.#connectionType) return;
+    this.#connectionType = type;
+    this.emit('connectionType', type);
   }
 
   #attach(channel: RTCDataChannel): void {

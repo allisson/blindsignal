@@ -6,14 +6,17 @@ const sessionId = '6f1c1c52-1d43-4a8b-9a33-2a3f5a2b9b10';
 const candidate = { candidate: 'candidate:1 1 udp 1 192.0.2.1 9 typ host', sdpMid: '0' };
 
 function link(role: 'requester' | 'target') {
+  const control = { signaling: true, servers: 'stun:stun.example' };
   const relayed: { type: string; payload: object }[] = [];
   const events: unknown[] = [];
   let pc!: FakePeerConnection;
   const peer = new PeerLink({
     sessionId,
     role,
-    configuration: { iceServers: [{ urls: 'stun:stun.example' }] },
+    configuration: () => ({ iceServers: [{ urls: control.servers }] }),
     relay: (type, payload) => relayed.push({ type, payload }),
+    signaling: () => control.signaling,
+    maxIceRestarts: 2,
     createPeerConnection: (configuration) => {
       pc = new FakePeerConnection(configuration);
       return pc as unknown as RTCPeerConnection;
@@ -22,7 +25,8 @@ function link(role: 'requester' | 'target') {
   peer.on('open', () => events.push('open'));
   peer.on('data', (data) => events.push(data));
   peer.on('close', () => events.push('close'));
-  return { peer, pc, relayed, events };
+  peer.on('connectionType', (type) => events.push(type));
+  return { peer, pc, relayed, events, control };
 }
 
 const message = (type: string, payload: object) =>
@@ -137,6 +141,7 @@ describe('PeerLink', () => {
     expect(closed.events).toEqual(['close']);
 
     const failed = link('requester');
+    failed.control.signaling = false;
     failed.pc.state('connected');
     expect(failed.events).toEqual([]);
     failed.pc.state('failed');
@@ -147,5 +152,109 @@ describe('PeerLink', () => {
     remote.pc.channels[0]!.close();
     expect(remote.pc.connectionState).toBe('closed');
     expect(remote.events).toEqual(['close']);
+  });
+
+  it('restarts ICE as the requester with the latest servers, up to the limit in a row', async () => {
+    const { peer, pc, relayed, events, control } = link('requester');
+    peer.offer();
+    await settle();
+    peer.receive(message('rtc.answer', { sdp: 'answer sdp' }));
+    await settle();
+    control.servers = 'stun:fresh.example';
+    for (const restarts of [1, 2]) {
+      pc.state('failed');
+      await settle();
+      expect(pc.iceRestarts).toBe(restarts);
+      expect(pc.configuration).toEqual({ iceServers: [{ urls: 'stun:fresh.example' }] });
+      expect(relayed.at(-1)).toEqual({
+        type: 'rtc.offer',
+        payload: { sessionId, sdp: 'offer sdp' },
+      });
+    }
+    // Connecting again starts the count over.
+    pc.state('connected');
+    pc.state('failed');
+    pc.state('failed');
+    expect(pc.iceRestarts).toBe(4);
+    expect(events).toEqual([]);
+    pc.state('failed');
+    expect(pc.iceRestarts).toBe(4);
+    expect(pc.connectionState).toBe('closed');
+    expect(events).toEqual(['close']);
+  });
+
+  it('leaves the restart to the requester as the target, and closes without signaling', () => {
+    const target = link('target');
+    target.pc.state('failed');
+    expect(target.pc.iceRestarts).toBe(0);
+    expect(target.events).toEqual([]);
+    target.control.signaling = false;
+    target.pc.state('failed');
+    expect(target.events).toEqual(['close']);
+
+    const requester = link('requester');
+    requester.control.signaling = false;
+    requester.pc.state('failed');
+    expect(requester.pc.iceRestarts).toBe(0);
+    expect(requester.events).toEqual(['close']);
+  });
+
+  it('reports the connection type from the selected candidate pair', async () => {
+    const { peer, pc, events } = link('requester');
+    const candidates = {
+      host: { type: 'local-candidate', candidateType: 'host' },
+      srflx: { type: 'remote-candidate', candidateType: 'srflx' },
+      relay: { type: 'remote-candidate', candidateType: 'relay' },
+    };
+    const connect = async (stats: Record<string, object> | undefined) => {
+      pc.stats = stats && new Map(Object.entries({ ...candidates, ...stats }));
+      pc.state('connected');
+      await settle();
+    };
+    expect(peer.connectionType).toBe('unknown');
+    // Chrome and Safari: the transport names the pair, over any pair marked selected.
+    await connect({
+      t: { type: 'transport', selectedCandidatePairId: 'p' },
+      p: { type: 'candidate-pair', localCandidateId: 'host', remoteCandidateId: 'srflx' },
+      other: { type: 'candidate-pair', localCandidateId: 'host', remoteCandidateId: 'relay' },
+      marked: { type: 'candidate-pair', selected: true, remoteCandidateId: 'relay' },
+    });
+    expect(peer.connectionType).toBe('direct');
+    await connect({
+      t: { type: 'transport', selectedCandidatePairId: 'p' },
+      p: { type: 'candidate-pair', localCandidateId: 'host', remoteCandidateId: 'srflx' },
+    });
+    // Firefox: the pair is marked selected, and a transport may name none.
+    await connect({
+      x: { type: 'candidate-pair', localCandidateId: 'host', remoteCandidateId: 'srflx' },
+      p: {
+        type: 'candidate-pair',
+        selected: true,
+        localCandidateId: 'relay',
+        remoteCandidateId: 'srflx',
+      },
+      t: { type: 'transport' },
+    });
+    expect(peer.connectionType).toBe('relay');
+    await connect({ t: { type: 'transport', selectedCandidatePairId: 'gone' } });
+    expect(peer.connectionType).toBe('unknown');
+    await connect({ p: { type: 'candidate-pair', selected: true, remoteCandidateId: 'relay' } });
+    await connect(undefined);
+    expect(events).toEqual(['direct', 'relay', 'unknown', 'relay']);
+  });
+
+  it('drops a connection type read after close', async () => {
+    const { peer, pc, events } = link('requester');
+    pc.stats = new Map(
+      Object.entries({
+        p: { type: 'candidate-pair', selected: true, localCandidateId: 'h' },
+        h: { type: 'local-candidate', candidateType: 'host' },
+      }),
+    );
+    pc.state('connected');
+    peer.close();
+    await settle();
+    expect(peer.connectionType).toBe('unknown');
+    expect(events).toEqual(['close']);
   });
 });

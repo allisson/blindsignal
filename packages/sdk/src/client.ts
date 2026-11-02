@@ -29,6 +29,8 @@ export interface BlindSignalClientOptions {
   heartbeat?: HeartbeatOptions;
   /** STUN servers only; TURN servers and credentials come from the server (spec §12.3). */
   iceServers?: RTCIceServer[];
+  /** ICE restarts the requester tries in a row before a failed connection closes. Defaults to 3. */
+  maxIceRestarts?: number;
   /** Creates the WebSocket; tests replace it. */
   createSocket?: SocketFactory;
   /** Creates each session's RTCPeerConnection; tests replace it. */
@@ -273,24 +275,27 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   }
 
   #track(id: string, peer: Peer, role: Session['role'], state: 'pending' | 'active'): Session {
+    // Only while the session lasts: after it ends, the server has no session to relay through.
+    const signaling = (): boolean => this.#sessions.get(id) === session;
     const link = new PeerLink({
       sessionId: id,
       role,
-      configuration: {
+      configuration: () => ({
         iceServers: [...(this.#options.iceServers ?? []), ...(this.#iceConfig?.iceServers ?? [])],
-      },
-      // Only while the session lasts: after it ends, the server has no session to relay through.
+      }),
       // A relay the server refuses gets an `error` that nothing waits for; session.terminated follows.
       relay: (type, payload) => {
-        if (this.#sessions.get(id) === session) this.#signaling?.relay(type, payload);
+        if (signaling()) this.#signaling?.relay(type, payload);
       },
+      signaling,
+      maxIceRestarts: this.#options.maxIceRestarts ?? 3,
       createPeerConnection:
         this.#options.createPeerConnection ??
         ((configuration) => new RTCPeerConnection(configuration)),
     });
     this.#links.add(link);
     link.on('close', () => this.#links.delete(link));
-    const session = new Session({ id, peer, role, state }, link, () => {
+    const session: Session = new Session({ id, peer, role, state }, link, () => {
       this.#sessions.delete(id);
       // Best effort: a session the server already ended answers session_unavailable.
       this.#signaling?.request('session.close', { sessionId: id }).catch(() => undefined);

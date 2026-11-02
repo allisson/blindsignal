@@ -1,6 +1,6 @@
 import type { Payload, RelayedMessage } from '@blindsignal/protocol';
 import { Emitter } from './emitter.ts';
-import type { ChannelData, PeerLink } from './webrtc/peer.ts';
+import type { ChannelData, ConnectionType, PeerLink } from './webrtc/peer.ts';
 
 export type TerminationReason = Payload<'session.terminated'>['reason'];
 
@@ -26,8 +26,10 @@ export interface SessionEvents extends Record<string, unknown> {
   /** The DataChannel opened: send() works from now on. */
   open: undefined;
   data: string | ArrayBuffer;
-  /** The DataChannel closed, or the connection failed before it opened. */
+  /** The DataChannel closed, or the connection failed for good; the session ends with it. */
   close: undefined;
+  /** Read each time the connection connects, ICE restarts included. */
+  connectionType: ConnectionType;
 }
 
 /** Signaling ends but an open DataChannel stays: only the signaling path was lost (spec §6.4). */
@@ -57,11 +59,23 @@ export class Session extends Emitter<SessionEvents> {
     this.#onClose = onClose;
     link.on('open', () => this.emit('open', undefined));
     link.on('data', (data) => this.emit('data', data));
-    link.on('close', () => this.emit('close', undefined));
+    link.on('connectionType', (type) => this.emit('connectionType', type));
+    link.on('close', () => {
+      this.emit('close', undefined);
+      // A session whose DataChannel is gone has nothing left to signal for.
+      if (this.#state !== 'ended') {
+        this.#onClose();
+        this.end('closed');
+      }
+    });
   }
 
   get state(): SessionState {
     return this.#state;
+  }
+
+  get connectionType(): ConnectionType {
+    return this.#link.connectionType;
   }
 
   /** Sends on the DataChannel; throws `InvalidStateError` unless it is open. */

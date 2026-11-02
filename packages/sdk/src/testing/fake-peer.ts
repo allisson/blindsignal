@@ -33,7 +33,7 @@ export class FakeDataChannel extends EventTarget {
 
 /** The part of a browser RTCPeerConnection the SDK uses, driven by the test. */
 export class FakePeerConnection extends EventTarget {
-  readonly configuration: RTCConfiguration;
+  configuration: RTCConfiguration;
   localDescription: RTCSessionDescriptionInit | null = null;
   remoteDescription: RTCSessionDescriptionInit | null = null;
   connectionState: RTCPeerConnectionState = 'new';
@@ -41,6 +41,9 @@ export class FakePeerConnection extends EventTarget {
   readonly candidates: RTCIceCandidateInit[] = [];
   /** Makes the next setRemoteDescription or addIceCandidate reject. */
   fail = false;
+  iceRestarts = 0;
+  /** What getStats() resolves to; `undefined` makes it reject. */
+  stats: Map<string, object> | undefined = new Map();
 
   constructor(configuration: RTCConfiguration) {
     super();
@@ -73,6 +76,20 @@ export class FakePeerConnection extends EventTarget {
 
   close() {
     this.connectionState = 'closed';
+  }
+
+  setConfiguration(configuration: RTCConfiguration) {
+    this.configuration = configuration;
+  }
+
+  restartIce() {
+    this.iceRestarts++;
+  }
+
+  getStats() {
+    return this.stats
+      ? Promise.resolve(this.stats)
+      : Promise.reject(new DOMException('', 'InvalidStateError'));
   }
 
   /** Gathers a local candidate; `null` ends gathering. */
