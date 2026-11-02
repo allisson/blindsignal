@@ -496,6 +496,8 @@ interface StorageAdapter {
 }
 ```
 
+The MVP contract has only `applications` and `devices`, with device records that expire after a period of inactivity; the other repositories arrive with the features that use them (`docs/adr/0010-adapter-interfaces.md`).
+
 Initial implementation:
 - `InMemoryStorageAdapter`
 
@@ -521,6 +523,8 @@ Initial implementation:
 
 Future implementation:
 - `RedisCoordinationAdapter` or another compatible distributed backend.
+
+Its operations are domain-level and atomic, such as claiming a `jti` or taking a rate-limit token, not generic key-value primitives (`docs/adr/0010-adapter-interfaces.md`).
 
 Redis Pub/Sub alone is not a durable presence store. Presence must use expiring leases or equivalent TTL-based state, with ownership and cleanup semantics.
 
