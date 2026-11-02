@@ -48,13 +48,13 @@ An application-scoped boundary within which devices may discover each other and 
 _Avoid_: room, channel, workspace
 
 **Presence**:
-The server's knowledge that a device is currently reachable in a namespace.
+The server's knowledge that a device is currently reachable in a namespace it has joined.
 _Avoid_: online status
 
 **Session**:
-A signaling-coordinated relationship between devices in one namespace, from creation until it closes or is terminated.
+A signaling-coordinated relationship between exactly two devices in one namespace, from creation until it closes or is terminated.
 _Avoid_: call, room, peer connection
 
 **Participant**:
-A device that is a member of an accepted session.
+One of the two devices of an accepted session.
 _Avoid_: peer (reserved for the remote end of a DataChannel)
