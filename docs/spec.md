@@ -120,7 +120,7 @@ Each application record should include:
 
 - `app_id`
 - Display name and metadata.
-- Status: `active`, `suspended`, or `revoked`.
+- Status: `active`, `suspended`, or `revoked`. Suspension is reversible; revocation is terminal.
 - Trusted token issuer (`iss`).
 - Trusted JWKS URI or configured public verification keys.
 - Allowed signing algorithms.
@@ -244,7 +244,7 @@ The system must define how quickly application status changes propagate across i
 
 ### 5.6 Control plane
 
-Operators must be able to register, update, suspend, and revoke applications, and revoke devices, without code changes.
+Operators must be able to register, update, suspend, reactivate, and revoke applications, and revoke devices, without code changes. Only a suspended application can be reactivated.
 
 The control-plane mechanism (configuration file, CLI, or authenticated administrative API) must be decided before implementation.
 
@@ -422,6 +422,8 @@ The server must support:
 
 Return consistent error codes and avoid leaking sensitive internal details.
 
+Authentication error codes must tell the SDK whether a rejection is retryable (for example, an expired token that a new token from the application backend can replace) or terminal (the application is suspended or revoked, or the device is revoked). The SDK stops reconnecting on a terminal rejection and closes its sessions (§6.4, §15).
+
 ### 8.4 Resource controls
 
 Implement:
@@ -559,7 +561,7 @@ Initial message categories:
 | Configuration | `rtc.ice_config` |
 | Lifecycle | `connection.ping`, `connection.pong`, `error` |
 
-`auth.refresh` renews the connection's credentials with a new application-issued token without reconnecting; the new token must keep the connection's identity (§5.3). `session.create` is sent by the requesting device to the server; `session.request` is sent by the server to the target device, which answers with `session.accept` or `session.reject`. `session.terminated` is sent by the server to the remaining peers when a session ends for a reason outside their control, such as counterpart device revocation, and carries that reason (§6.4). Application suspension needs no such notice: all peers of a session belong to the same application, and their connections are closed (§5.5); each SDK closes its sessions when reauthentication is rejected (§6.4). `rtc.ice_config` is sent by the server and is the only channel for TURN credentials (§12.3). The server sends it after successful authentication, even when no TURN server is configured; whether it is also sent per session or when TURN credentials are renewed is decided together with the ICE configuration. `rtc.ice_restart` is relayed between session participants like `rtc.offer`; whether it remains a separate message type or ICE restart is expressed as a new `rtc.offer` is decided with the protocol draft. Pairing messages are finalized together with the pairing protocol (§7.4).
+`auth.refresh` renews the connection's credentials with a new application-issued token without reconnecting; the new token must keep the connection's identity (§5.3). `session.create` is sent by the requesting device to the server; `session.request` is sent by the server to the target device, which answers with `session.accept` or `session.reject`; the server forwards that answer to the requesting device. When a participant sends `session.close`, the server notifies the other participants; whether through a relayed `session.close` or through `session.terminated` is decided with the protocol draft. `session.terminated` is sent by the server to the remaining peers when a session ends for a reason outside their control, such as counterpart device revocation, and carries that reason (§6.4). Application suspension needs no such notice: all peers of a session belong to the same application, and their connections are closed (§5.5); each SDK closes its sessions when reauthentication is rejected (§6.4). `rtc.ice_config` is sent by the server and is the only channel for TURN credentials (§12.3). The server sends it after successful authentication, even when no TURN server is configured; whether it is also sent per session or when TURN credentials are renewed is decided together with the ICE configuration. `rtc.ice_restart` is relayed between session participants like `rtc.offer`; whether it remains a separate message type or ICE restart is expressed as a new `rtc.offer` is decided with the protocol draft. Pairing messages are finalized together with the pairing protocol (§7.4).
 
 The protocol defines the direction of every message type: client to server, server to client, or relayed between session participants. The server rejects a message sent in a direction its type does not allow, for example a client-sent `rtc.ice_config`, `session.request`, or `session.terminated`. Server-originated `rtc.ice_config` is not a relayed message and is not subject to the session-membership rule (§13).
 
@@ -627,15 +629,16 @@ Connection type:
 2. SDK establishes WebSocket connection.
 3. BlindSignal validates application registration and token.
 4. Server validates device identity and authorization.
-5. Device registers presence.
-6. Device discovers authorized peers.
-7. A device requests a session.
-8. The other device accepts or rejects.
-9. SDK instances exchange SDP and ICE information through signaling.
-10. WebRTC establishes a direct or relayed connection.
-11. Applications exchange data through DataChannels.
-12. Session closes or expires.
-13. Presence and session state are cleaned up.
+5. Device joins a namespace it is authorized in.
+6. Device registers presence.
+7. Device discovers authorized peers.
+8. A device requests a session.
+9. The other device accepts or rejects.
+10. SDK instances exchange SDP and ICE information through signaling.
+11. WebRTC establishes a direct or relayed connection.
+12. Applications exchange data through DataChannels.
+13. Session closes or expires.
+14. Presence and session state are cleaned up.
 
 The server must handle unexpected disconnects, duplicate connections, expired sessions, revoked applications, revoked devices, stale presence, invalid messages, and reconnection.
 
@@ -645,7 +648,7 @@ Session cardinality must be decided before implementation: one-to-one sessions o
 
 Every session is created within one namespace, and both devices must be authorized in it.
 
-In the MVP, session-level authorization (§7.2) is not yet enforced beyond namespace authorization: any device authorized in a namespace may request a session with any other device in it, and the target device accepts or rejects (step 8).
+In the MVP, session-level authorization (§7.2) is not yet enforced beyond namespace authorization: any device authorized in a namespace may request a session with any other device in it, and the target device accepts or rejects (step 9).
 
 Session membership is enforced from the MVP onward: the server relays `rtc.*` messages only between the participants of a session that the target device has accepted, and rejects them otherwise.
 

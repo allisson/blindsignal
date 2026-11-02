@@ -73,7 +73,7 @@ The design and decision records specify that:
 
 - Application access and user authentication are separate.
 - Browser clients require no permanent application secret.
-- Unknown and suspended applications are rejected.
+- Unknown, suspended, and revoked applications are rejected.
 - Authorization is server-side and deny-by-default.
 - No cloud provider or infrastructure service is mandatory for local development.
 
@@ -88,7 +88,7 @@ The design and decision records specify that:
 - [ ] Create shared types and protocol package.
 - [ ] Implement versioned signaling message schemas.
 - [ ] Define message validation.
-- [ ] Define standard error codes.
+- [ ] Define standard error codes, marking each authentication error as retryable or terminal (spec §8.3).
 - [ ] Define request correlation.
 - [ ] Define the allowed direction of every message type and reject messages sent in the wrong direction (spec §11).
 - [ ] Define message size limits.
@@ -128,9 +128,9 @@ The design and decision records specify that:
 - [ ] Enforce algorithm allowlisting.
 - [ ] Validate `iss`, `aud`, `exp`, `iat`, `sub`, `app_id`, and `device_id`, and `nbf` when present.
 - [ ] Validate `kid` and support signing-key rotation.
-- [ ] Reject unknown and suspended applications.
+- [ ] Reject unknown, suspended, and revoked applications.
 - [ ] Implement in-memory `jti` replay protection per the token profile (spec §5.3).
-- [ ] Implement token expiration handling per the renewal and expiry behavior defined in Phase 0.
+- [ ] Reject expired tokens at authentication; enforcement on open connections lands in Phase 3.
 - [ ] Implement application-scoped authentication context.
 - [ ] Document backend token issuance requirements.
 - [ ] Implement a development token issuer for tests and examples, with test keys isolated from production trust configuration.
@@ -181,10 +181,11 @@ The design and decision records specify that:
 - [ ] Implement stale presence cleanup.
 - [ ] Implement application suspension and revocation handling: reject new authentication and close the application's active WebSocket connections (spec §5.5).
 - [ ] Implement the duplicate-connection policy chosen in Phase 0.
-- [ ] Implement the control plane for application registration, update, suspension, and revocation, using the mechanism chosen in Phase 0 (spec §5.6).
+- [ ] Implement the control plane for application registration, update, suspension, reactivation, and revocation, using the mechanism chosen in Phase 0 (spec §5.6).
 - [ ] Add health and readiness endpoints.
 - [ ] Add structured logs and basic metrics.
 - [ ] Implement `auth.refresh` handling for credential renewal without reconnecting, rejecting tokens whose `app_id`, `sub`, or `device_id` differs from the connection's (spec §5.3).
+- [ ] Enforce token expiry on open connections: a connection whose token reaches `exp` without a successful `auth.refresh` is handled per the Phase 0 decision (spec §5.3).
 - [ ] Implement environment-driven configuration.
 - [ ] Implement client IP derivation from configured trusted proxies, ignoring forwarding headers from untrusted peers (spec §8.1).
 - [ ] Add Dockerfile and Docker Compose development workflow.
@@ -232,7 +233,7 @@ The design and decision records specify that:
 - [ ] Implement DataChannel creation and lifecycle.
 - [ ] Expose connection state.
 - [ ] Expose direct/relay/unknown connection type.
-- [ ] Implement reconnect with exponential backoff and jitter.
+- [ ] Implement reconnect with exponential backoff and jitter, stopping on terminal authentication errors (spec §8.3).
 - [ ] Implement session cleanup and error handling, closing all sessions when reauthentication is rejected because the application is suspended or revoked or the device is revoked (spec §6.4).
 - [ ] Add browser integration tests.
 
