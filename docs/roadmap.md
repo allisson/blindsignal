@@ -123,7 +123,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 ### Tasks
 
 - [x] Implement application registry, backed by the in-memory application repository.
-- [ ] Implement the in-memory coordination adapter with the state this phase needs (`jti` replay tracking); Phase 3 extends it.
+- [x] Implement the in-memory coordination adapter with the state this phase needs (`jti` replay tracking); Phase 3 extends it.
 - [x] Define application status: active, suspended, revoked.
 - [x] Implement trusted issuer configuration.
 - [x] Implement trusted JWKS or public-key configuration.
