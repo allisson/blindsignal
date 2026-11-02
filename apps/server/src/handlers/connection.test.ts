@@ -246,6 +246,37 @@ describe('Connection', () => {
     });
   });
 
+  describe('joined-namespace quota', () => {
+    const namespaces = ['notes:a', 'notes:b'];
+
+    it('refuses a new namespace beyond the quota, without closing', async () => {
+      const { connect } = await setup([
+        { ...devApplication('notes'), quotas: { namespacesPerDevice: 1 } },
+      ]);
+      const client = connect();
+      await client.authenticate({ namespaces });
+      await client.request('namespace.join', { namespace: 'notes:a' });
+      await client.request('namespace.join', { namespace: 'notes:a' });
+      await client.request('namespace.join', { namespace: 'notes:b' });
+      expect(client.errors()).toEqual(['quota_exceeded']);
+      expect(client.closes).toEqual([]);
+      await client.request('namespace.leave', { namespace: 'notes:a' });
+      await client.request('namespace.join', { namespace: 'notes:b' });
+      expect(client.errors()).toEqual(['quota_exceeded']);
+    });
+
+    it('reads the quota from the registry again on auth.refresh', async () => {
+      const { connect, load } = await setup();
+      const client = connect();
+      await client.authenticate({ namespaces });
+      await load([{ ...devApplication('notes'), quotas: { namespacesPerDevice: 1 } }]);
+      await client.refresh({ namespaces });
+      await client.request('namespace.join', { namespace: 'notes:a' });
+      await client.request('namespace.join', { namespace: 'notes:b' });
+      expect(client.errors()).toEqual(['quota_exceeded']);
+    });
+  });
+
   describe('application connection quota', () => {
     const oneConnection = [{ ...devApplication('notes'), quotas: { connections: 1 } }];
 
@@ -904,8 +935,8 @@ describe('Connection', () => {
       return client;
     }
 
-    async function pair() {
-      const context = await setup();
+    async function pair(entries?: object[]) {
+      const context = await setup(entries);
       const alice = await member(context.connect, d1);
       const bob = await member(context.connect, bobClaims);
       return { ...context, alice, bob };
@@ -958,6 +989,57 @@ describe('Connection', () => {
     it('allows concurrent sessions between the same devices', async () => {
       const { alice } = await pair();
       expect(await create(alice)).not.toBe(await create(alice));
+    });
+
+    describe('session quotas', () => {
+      const quotas = (q: object) => [{ ...devApplication('notes'), quotas: q }];
+      const carolClaims = { sub: 'u3', device_id: 'd3' };
+      const to = (userId: string, deviceId: string) => ({ namespace: 'notes:a', userId, deviceId });
+
+      it("refuses the requester's device beyond its quota, until a session ends", async () => {
+        const { alice, bob } = await pair(quotas({ sessionsPerDevice: 1 }));
+        const sessionId = await create(alice);
+        await alice.request('session.create', bobDevice);
+        expect(alice.errors()).toEqual(['quota_exceeded']);
+        expect(alice.closes).toEqual([]);
+        expect(bob.sent.filter((m) => m.type === 'session.request')).toHaveLength(1);
+        await alice.request('session.close', { sessionId });
+        await create(alice);
+      });
+
+      it("answers peer_unavailable when the target's device is full, freeing the requester's slots", async () => {
+        const { connect, alice } = await pair(quotas({ sessionsPerDevice: 1, sessions: 2 }));
+        const carol = await member(connect, carolClaims);
+        await member(connect, { sub: 'u4', device_id: 'd4' });
+        await carol.request('session.create', bobDevice);
+        await alice.request('session.create', bobDevice);
+        expect(alice.errors()).toEqual(['peer_unavailable']);
+        await alice.request('session.create', to('u4', 'd4'));
+        expect(alice.last()?.type).toBe('session.created');
+      });
+
+      it("refuses beyond the application's quota, and frees a slot on reject and timeout", async () => {
+        const { connect, alice, bob } = await pair(quotas({ sessions: 1 }));
+        await member(connect, carolClaims);
+        const first = await create(alice);
+        await alice.request('session.create', to('u3', 'd3'));
+        expect(alice.errors()).toEqual(['quota_exceeded']);
+        await bob.request('session.reject', { sessionId: first });
+        await settle();
+        await create(alice);
+        await vi.advanceTimersByTimeAsync(NEGOTIATION_MS);
+        await create(alice);
+      });
+
+      it('frees the slots of the sessions of a connection that closes', async () => {
+        const { connect, alice, bob } = await pair(quotas({ sessions: 1 }));
+        const carol = await member(connect, carolClaims);
+        await create(alice);
+        await bob.connection.closed();
+        await settle();
+        await carol.request('session.create', to('u1', 'd1'));
+        expect(carol.last()?.type).toBe('session.created');
+      });
     });
 
     it('refuses a namespace outside the token with not_authorized', async () => {
