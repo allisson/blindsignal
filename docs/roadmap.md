@@ -31,7 +31,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [x] Define server, SDK, and shared protocol boundaries (`docs/adr/0002-package-boundaries.md`).
 - [x] Define signaling protocol and versioning (`docs/protocol.md`).
 - [ ] Define application registration and trust model.
-- [ ] Define application issuer and JWKS configuration, including HTTPS-only JWKS URIs, fetch timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
+- [x] Define application issuer and JWKS configuration, including HTTPS-only JWKS URIs, fetch timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
 - [x] Define JWT claims and validation requirements (`docs/adr/0006-token-profile-and-device-identity.md`).
 - [x] Define the issuer-to-application mapping, the `app_id` claim rule, the `jti` replay policy, the maximum token lifetime, and the clock-skew tolerance (`docs/adr/0006-token-profile-and-device-identity.md`).
 - [ ] Define application suspension and revocation behavior.
