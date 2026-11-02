@@ -168,8 +168,8 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 ### Tasks
 
-- [ ] Implement WebSocket server.
-- [ ] Check `Origin` at the WebSocket upgrade against a configured allowlist, as defense in depth (spec §16).
+- [x] Implement WebSocket server.
+- [x] Check `Origin` at the WebSocket upgrade against a configured allowlist, as defense in depth (spec §16).
 - [x] Integrate application authentication, rejecting protected messages sent before authentication completes.
 - [x] Create device records on first successful authentication, keyed by `(app_id, sub, device_id)`, and expire them after a configurable inactivity period (`docs/adr/0006-token-profile-and-device-identity.md`, `docs/adr/0010-adapter-interfaces.md`).
 - [x] Implement in-memory device repository.
@@ -183,16 +183,16 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement ICE candidate exchange.
 - [x] Relay `rtc.*` messages only between participants of an accepted session (spec §13).
 - [x] Send `rtc.ice_config` after every successful authentication and `auth.refresh`, even when no TURN server is configured (spec §11, `docs/adr/0009-ice-configuration.md`).
-- [ ] Implement heartbeat and disconnect detection.
-- [ ] Implement stale presence cleanup.
+- [x] Implement heartbeat and disconnect detection.
+- [x] Implement stale presence cleanup.
 - [ ] Implement application suspension and revocation handling: reject new authentication and close the application's active WebSocket connections (spec §5.5).
 - [x] Implement the duplicate-connection policy: an authenticated newer connection replaces the device's older one, closed with `superseded` (`docs/adr/0008-duplicate-connections.md`).
 - [ ] Implement the control plane for application registration, update, suspension, reactivation, and revocation, using the mechanism chosen in Phase 0 (spec §5.6).
-- [ ] Add health and readiness endpoints.
+- [x] Add health and readiness endpoints.
 - [ ] Add structured logs and basic metrics.
 - [x] Implement `auth.refresh` handling for credential renewal without reconnecting, rejecting tokens whose `app_id`, `sub`, or `device_id` differs from the connection's (spec §5.3).
 - [x] Enforce token expiry on open connections: a connection whose token reaches `exp` without a successful `auth.refresh` is handled per the Phase 0 decision (spec §5.3).
-- [ ] Implement environment-driven configuration.
+- [x] Implement environment-driven configuration.
 - [x] Implement client IP derivation from configured trusted proxies, ignoring forwarding headers from untrusted peers (spec §8.1).
 - [ ] Add Dockerfile and Docker Compose development workflow.
 

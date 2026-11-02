@@ -5,17 +5,20 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "start": "node src/main.ts"
   },
   "dependencies": {
+    "@blindsignal/coordination-memory": "workspace:*",
     "@blindsignal/core": "workspace:*",
     "@blindsignal/protocol": "workspace:*",
+    "@blindsignal/storage-memory": "workspace:*",
     "jose": "^6.2.14",
+    "ws": "^8.22.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@blindsignal/coordination-memory": "workspace:*",
     "@blindsignal/dev-issuer": "workspace:*",
-    "@blindsignal/storage-memory": "workspace:*"
+    "@types/ws": "^8.18.2"
   }
 }
