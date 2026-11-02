@@ -31,7 +31,24 @@ describe('loadConfig', () => {
       heartbeatIntervalMs: 30_000,
       presenceLeaseMs: 90_000,
       negotiationTimeoutMs: 30_000,
-      devices: { ttlMs: 30 * 86_400_000, maxDevices: 10_000 },
+      deviceTtlMs: 30 * 86_400_000,
+      maxMessageBytes: 65_536,
+      limits: {
+        quotas: {
+          connections: 10_000,
+          devices: 10_000,
+          sessions: 10_000,
+          sessionsPerDevice: 16,
+          namespacesPerDevice: 100,
+        },
+        rateLimits: {
+          discovery: { ratePerSecond: 2, burst: 10 },
+          session_create: { ratePerSecond: 2, burst: 10 },
+          signaling: { ratePerSecond: 50, burst: 100 },
+          rtc: { ratePerSecond: 10, burst: 30 },
+          rtc_ice_candidate: { ratePerSecond: 20, burst: 50 },
+        },
+      },
     });
     expect(proxyTrust.header).toBe('x-forwarded-for');
     expect(proxyTrust.proxies.rules).toEqual([]);
@@ -55,7 +72,17 @@ describe('loadConfig', () => {
       BLINDSIGNAL_PRESENCE_LEASE_SECONDS: '25',
       BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS: '15',
       BLINDSIGNAL_DEVICE_TTL_DAYS: '7',
+      BLINDSIGNAL_MAX_MESSAGE_BYTES: '1024',
+      BLINDSIGNAL_MAX_CONNECTIONS_PER_APP: '40',
       BLINDSIGNAL_MAX_DEVICES_PER_APP: '50',
+      BLINDSIGNAL_MAX_SESSIONS_PER_APP: '60',
+      BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE: '3',
+      BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE: '7',
+      BLINDSIGNAL_RATE_LIMIT_DISCOVERY: '0.5,1',
+      BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE: '1,2',
+      BLINDSIGNAL_RATE_LIMIT_SIGNALING: '30,60',
+      BLINDSIGNAL_RATE_LIMIT_RTC: '5,15',
+      BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE: '8,40',
     });
     expect(rest).toEqual({
       development: true,
@@ -69,7 +96,24 @@ describe('loadConfig', () => {
       heartbeatIntervalMs: 10_000,
       presenceLeaseMs: 25_000,
       negotiationTimeoutMs: 15_000,
-      devices: { ttlMs: 7 * 86_400_000, maxDevices: 50 },
+      deviceTtlMs: 7 * 86_400_000,
+      maxMessageBytes: 1024,
+      limits: {
+        quotas: {
+          connections: 40,
+          devices: 50,
+          sessions: 60,
+          sessionsPerDevice: 3,
+          namespacesPerDevice: 7,
+        },
+        rateLimits: {
+          discovery: { ratePerSecond: 0.5, burst: 1 },
+          session_create: { ratePerSecond: 1, burst: 2 },
+          signaling: { ratePerSecond: 30, burst: 60 },
+          rtc: { ratePerSecond: 5, burst: 15 },
+          rtc_ice_candidate: { ratePerSecond: 8, burst: 40 },
+        },
+      },
     });
     expect(proxyTrust.header).toBe('cf-connecting-ip');
     expect(proxyTrust.proxies.check('10.1.2.3', 'ipv4')).toBe(true);
@@ -122,6 +166,17 @@ describe('loadConfig', () => {
     ['BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS', 'soon'],
     ['BLINDSIGNAL_DEVICE_TTL_DAYS', '0'],
     ['BLINDSIGNAL_MAX_DEVICES_PER_APP', '0'],
+    ['BLINDSIGNAL_MAX_MESSAGE_BYTES', '0'],
+    ['BLINDSIGNAL_MAX_MESSAGE_BYTES', '65537'],
+    ['BLINDSIGNAL_MAX_CONNECTIONS_PER_APP', '1.5'],
+    ['BLINDSIGNAL_MAX_SESSIONS_PER_APP', 'many'],
+    ['BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE', '-1'],
+    ['BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE', '0'],
+    ['BLINDSIGNAL_RATE_LIMIT_DISCOVERY', '2'],
+    ['BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE', '2,10,3'],
+    ['BLINDSIGNAL_RATE_LIMIT_SIGNALING', '0,10'],
+    ['BLINDSIGNAL_RATE_LIMIT_RTC', '10,0'],
+    ['BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE', ' 20, 50'],
   ])('rejects %s=%s', (name, value) => {
     expect(error({ ...production, [name]: value })).toContain(name);
   });

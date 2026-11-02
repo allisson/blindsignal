@@ -308,7 +308,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 ### Tasks
 
-- [ ] Define configurable application quotas. *(MVP)*
+- [x] Define configurable application quotas. *(MVP)*
 - [ ] Implement concurrent connection limits per application. *(MVP)*
 - [ ] Implement WebSocket connection attempt rate limits, keyed by source IP (spec §8.1). *(MVP)*
 - [ ] Implement the authentication deadline for connections that do not authenticate (spec §8.4). *(MVP)*
@@ -317,7 +317,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement signaling message rate limits. *(MVP)*
 - [ ] Implement discovery rate limits. *(MVP)*
 - [ ] Implement authentication attempt limits. *(MVP)*
-- [ ] Implement maximum WebSocket message sizes. *(MVP)*
+- [x] Implement maximum WebSocket message sizes. *(MVP)*
 - [x] Implement session and negotiation timeouts. *(MVP)*
 - [ ] Implement maximum concurrent sessions per application and per device (spec §8.2). *(MVP)*
 - [x] Implement maximum registered devices per application (spec §8.2). *(MVP)*

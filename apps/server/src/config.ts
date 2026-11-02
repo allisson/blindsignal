@@ -1,10 +1,25 @@
+import { MAX_MESSAGE_BYTES } from '@blindsignal/protocol';
 import { isIP, type BlockList } from 'node:net';
 import { z } from 'zod';
 import { parseTrustedProxies, type ForwardedHeader } from './domain/client-ip.ts';
+import type { Limits } from './domain/limits.ts';
 import type { AllowedOrigins } from './domain/origin.ts';
 
 const seconds = z.coerce.number().int().nonnegative();
 const port = z.coerce.number().int().min(0).max(65_535);
+const count = z.coerce.number().int().positive();
+
+/** `rate,burst`: tokens added per second, and the bucket's size (ADR 0011). */
+const rateLimit = (ratePerSecond: number, burst: number) =>
+  z
+    .string()
+    .regex(/^\d+(\.\d+)?,\d+$/, 'must be rate,burst')
+    .transform((value) => {
+      const [rate, size] = value.split(',').map(Number) as [number, number];
+      return { ratePerSecond: rate, burst: size };
+    })
+    .pipe(z.object({ ratePerSecond: z.number().positive(), burst: z.number().int().positive() }))
+    .default({ ratePerSecond, burst });
 
 const list = (value: string) =>
   value
@@ -74,7 +89,20 @@ const environment = z
     BLINDSIGNAL_PRESENCE_LEASE_SECONDS: seconds.positive().default(90),
     BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS: seconds.positive().default(30),
     BLINDSIGNAL_DEVICE_TTL_DAYS: seconds.positive().default(30),
-    BLINDSIGNAL_MAX_DEVICES_PER_APP: seconds.positive().default(10_000),
+    // The protocol caps it at its default (docs/protocol.md §1).
+    BLINDSIGNAL_MAX_MESSAGE_BYTES: count.max(MAX_MESSAGE_BYTES).default(MAX_MESSAGE_BYTES),
+    // Server defaults for every application; a registry entry may override each (ADR 0011). They
+    // are starting values until load testing sets them (spec §8.2).
+    BLINDSIGNAL_MAX_CONNECTIONS_PER_APP: count.default(10_000),
+    BLINDSIGNAL_MAX_DEVICES_PER_APP: count.default(10_000),
+    BLINDSIGNAL_MAX_SESSIONS_PER_APP: count.default(10_000),
+    BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE: count.default(16),
+    BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE: count.default(100),
+    BLINDSIGNAL_RATE_LIMIT_DISCOVERY: rateLimit(2, 10),
+    BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE: rateLimit(2, 10),
+    BLINDSIGNAL_RATE_LIMIT_SIGNALING: rateLimit(50, 100),
+    BLINDSIGNAL_RATE_LIMIT_RTC: rateLimit(10, 30),
+    BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE: rateLimit(20, 50),
   })
   .refine(
     (vars) => vars.BLINDSIGNAL_ENV === 'development' || vars.BLINDSIGNAL_ALLOWED_ORIGINS.length > 0,
@@ -101,7 +129,9 @@ export interface ServerConfig {
   readonly heartbeatIntervalMs: number;
   readonly presenceLeaseMs: number;
   readonly negotiationTimeoutMs: number;
-  readonly devices: { readonly ttlMs: number; readonly maxDevices: number };
+  readonly deviceTtlMs: number;
+  readonly maxMessageBytes: number;
+  readonly limits: Limits;
 }
 
 export type ConfigResult =
@@ -140,9 +170,23 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       heartbeatIntervalMs: vars.BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS * 1000,
       presenceLeaseMs: vars.BLINDSIGNAL_PRESENCE_LEASE_SECONDS * 1000,
       negotiationTimeoutMs: vars.BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS * 1000,
-      devices: {
-        ttlMs: vars.BLINDSIGNAL_DEVICE_TTL_DAYS * 86_400_000,
-        maxDevices: vars.BLINDSIGNAL_MAX_DEVICES_PER_APP,
+      deviceTtlMs: vars.BLINDSIGNAL_DEVICE_TTL_DAYS * 86_400_000,
+      maxMessageBytes: vars.BLINDSIGNAL_MAX_MESSAGE_BYTES,
+      limits: {
+        quotas: {
+          connections: vars.BLINDSIGNAL_MAX_CONNECTIONS_PER_APP,
+          devices: vars.BLINDSIGNAL_MAX_DEVICES_PER_APP,
+          sessions: vars.BLINDSIGNAL_MAX_SESSIONS_PER_APP,
+          sessionsPerDevice: vars.BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE,
+          namespacesPerDevice: vars.BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE,
+        },
+        rateLimits: {
+          discovery: vars.BLINDSIGNAL_RATE_LIMIT_DISCOVERY,
+          session_create: vars.BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE,
+          signaling: vars.BLINDSIGNAL_RATE_LIMIT_SIGNALING,
+          rtc: vars.BLINDSIGNAL_RATE_LIMIT_RTC,
+          rtc_ice_candidate: vars.BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE,
+        },
       },
     },
   };

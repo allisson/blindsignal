@@ -7,7 +7,9 @@ import {
   InMemoryDeviceRepository,
 } from '@blindsignal/storage-memory';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { loadConfig } from '../config.ts';
 import { TokenVerifier } from '../domain/auth.ts';
+import type { Limits } from '../domain/limits.ts';
 import { parseRegistry } from '../domain/registry.ts';
 import { SessionRegistry } from '../domain/sessions.ts';
 import { Metrics } from '../telemetry.ts';
@@ -24,6 +26,16 @@ const LIFETIME_MS = 300_000;
 const LEASE_MS = 90_000;
 const NEGOTIATION_MS = 30_000;
 const ICE = [{ urls: ['stun:stun.example:3478'] }];
+const defaults = loadConfig({
+  BLINDSIGNAL_ENV: 'development',
+  BLINDSIGNAL_REGISTRY_PATH: 'unused',
+});
+if (!defaults.ok) throw new Error(defaults.error);
+/** The server defaults, with a device quota. */
+const limits = (devices: number): Limits => ({
+  ...defaults.config.limits,
+  quotas: { ...defaults.config.limits.quotas, devices },
+});
 const d1 = { app_id: 'notes', sub: 'u1', device_id: 'd1' };
 
 beforeEach(() => {
@@ -66,7 +78,8 @@ async function setup(
     coordination,
     iceServers: ICE,
     clockSkewSeconds: SKEW_MS / 1000,
-    deviceLimits: { ttlMs: 86_400_000, maxDevices: 10 },
+    deviceTtlMs: 86_400_000,
+    limits: limits(10),
     presenceLeaseMs: LEASE_MS,
     sessions: new SessionRegistry(),
     negotiationTimeoutMs: NEGOTIATION_MS,
@@ -194,7 +207,7 @@ describe('Connection', () => {
 
     it('creates the device record and refuses a device beyond the quota', async () => {
       const { connect, devices } = await setup(undefined, {
-        deviceLimits: { ttlMs: 86_400_000, maxDevices: 1 },
+        limits: limits(1),
       });
       await connect().authenticate();
       const second = connect();
@@ -472,9 +485,19 @@ describe('Connection', () => {
       expect(client.connection.context).toBe(before);
     });
 
+    it('stops counting a device not seen for the device TTL', async () => {
+      const { connect } = await setup(undefined, { deviceTtlMs: 1_000, limits: limits(1) });
+      await connect().authenticate();
+      await vi.advanceTimersByTimeAsync(2_000);
+      const second = connect();
+      await second.authenticate({ sub: 'u2', device_id: 'd2' });
+      expect(second.errors()).toEqual([]);
+    });
+
     it('keeps the connection on quota_exceeded', async () => {
       const { connect, devices } = await setup(undefined, {
-        deviceLimits: { ttlMs: 1_000, maxDevices: 1 },
+        deviceTtlMs: 1_000,
+        limits: limits(1),
       });
       const client = connect();
       await client.authenticate();
@@ -1157,7 +1180,7 @@ describe('Connection', () => {
 
     it('counts an authentication refused by the device quota', async () => {
       const { connect, metrics } = await setup(undefined, {
-        deviceLimits: { ttlMs: 86_400_000, maxDevices: 1 },
+        limits: limits(1),
       });
       await connect().authenticate();
       await connect().authenticate({ sub: 'u2', device_id: 'd2' });
