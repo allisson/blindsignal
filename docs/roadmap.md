@@ -40,8 +40,8 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [x] Define user and device identity (`docs/adr/0006-token-profile-and-device-identity.md`).
 - [x] Decide whether MVP enrollment includes device-key proof-of-possession or relies only on the backend-asserted `device_id` claim (spec §6.2), and whether device records are created on first sight, which places the per-application device-count quota in the MVP (Phase 6) (backend-asserted, created on first authentication: `docs/adr/0006-token-profile-and-device-identity.md`).
 - [x] Design and review the device enrollment protocol (enrollment is the first successful authentication, `docs/adr/0006-token-profile-and-device-identity.md`). *(Proof-of-possession design is post-MVP and must be done before Phase 5 implements it.)*
-- [ ] Define namespace and authorization semantics.
-- [ ] Decide the namespace authorization source for the MVP: token claims, stored policy, or both (spec §7.3).
+- [x] Define namespace and authorization semantics (`docs/adr/0007-namespace-authorization.md`).
+- [x] Decide the namespace authorization source for the MVP: token claims, stored policy, or both (spec §7.3) (token claims, `docs/adr/0007-namespace-authorization.md`).
 - [x] Decide session cardinality: one-to-one only or multi-party (spec §13) (`docs/adr/0003-one-to-one-sessions.md`).
 - [ ] Decide the duplicate-connection policy for a device that connects again while already connected, together with the per-device concurrent connection limit, accounting for several browser tabs sharing one device identity (spec §13, §8.1, §8.3).
 - [ ] Define pairing policy. *(Post-MVP: required before Phase 5 implements pairing; does not block the MVP.)*
@@ -172,7 +172,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Integrate application authentication, rejecting protected messages sent before authentication completes.
 - [ ] Create device records on first successful authentication, keyed by `(app_id, sub, device_id)` (`docs/adr/0006-token-profile-and-device-identity.md`).
 - [ ] Implement in-memory device repository.
-- [ ] Implement in-memory namespace and authorization repository.
+- [ ] Authorize namespaces from the token's `namespaces` claim, and apply namespace removals on `auth.refresh` (`docs/adr/0007-namespace-authorization.md`).
 - [ ] Implement `namespace.join` and `namespace.leave`, admitting a device only to namespaces it is authorized in (spec §7.3, §13).
 - [ ] Implement in-memory presence management.
 - [ ] Extend the Phase 2 in-memory coordination adapter with presence leases, signaling event delivery, and TTL-based cleanup.

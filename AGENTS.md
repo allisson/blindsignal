@@ -39,7 +39,8 @@ on them is written. Never assume an answer:
   `docs/adr/0005-control-plane.md`.
 - Device enrollment, and whether the MVP requires device-key proof-of-possession (§6.2). Decided:
   `docs/adr/0006-token-profile-and-device-identity.md`.
-- Namespace authorization source: token claims, stored policy, or both (§7.3).
+- Namespace authorization source: token claims, stored policy, or both (§7.3). Decided:
+  `docs/adr/0007-namespace-authorization.md`.
 - Duplicate-connection policy, together with the per-device connection limit (§13, §8.1),
   accounting for several browser tabs sharing one device identity.
 - `jti` replay policy and the full token profile (§5.3), including the maximum token lifetime,

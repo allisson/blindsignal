@@ -2,7 +2,7 @@
 
 **Status:** Draft, protocol version 1  
 **Reference:** `docs/spec.md` §11, §13; `docs/adr/0003-one-to-one-sessions.md`;
-`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`
+`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`
 
 JSON text messages over one WebSocket per connection. The protocol carries no application
 payload: application data travels only through WebRTC DataChannels. Administrative operations
@@ -103,7 +103,12 @@ sender, such as a client-sent `session.request` or `rtc.ice_config`.
 - The server checks the permission in §4 on every protected message, deny by default. Permissions
   are server-side checkpoints and never appear on the wire.
 - In the MVP, a device authorized in a namespace holds every namespace and session permission in
-  it. The source of namespace authorization is **TBD** (roadmap: namespace authorization source).
+  it. A connection is authorized exactly in the namespaces of its current token's `namespaces`
+  claim, each of the form `<app_id>:<scope>` (ADR 0007).
+- `auth.refresh` replaces that set. For each namespace no longer listed, the server removes the
+  device from it and ends the connection's sessions there with `session.terminated` reason
+  `namespace_unauthorized`, sent to both participants. New namespaces are not joined
+  automatically.
 
 ## 6. Presence and discovery
 
@@ -148,6 +153,7 @@ States: `pending` → `active` on accept; `pending` → `ended` on reject or tim
 | `peer_disconnected` | The other participant's connection closed. |
 | `peer_revoked` | The other participant's device was revoked (spec §6.4). |
 | `timeout` | The session stayed `pending` past the negotiation timeout. |
+| `namespace_unauthorized` | A participant's `auth.refresh` removed the session's namespace (sent to both). |
 
 Application suspension and revocation send no `session.terminated`: every connection of the
 application is closed (spec §5.5).
@@ -199,7 +205,7 @@ Initial catalog:
 | `peer_unavailable` | retryable | no | `session.create` target not reachable (§7). |
 | `session_unavailable` | retryable | no | Unknown session, wrong state, or sender not a participant. |
 | `rate_limited` | retryable | no | Rate limit exceeded; carries `retryAfterMs`. |
-| `invalid_token` | retryable | on `auth.authenticate` | Bad signature, header, or claims; lifetime above the maximum; future `iat`; replayed `jti`; unknown issuer or application. |
+| `invalid_token` | retryable | on `auth.authenticate` | Bad signature, header, or claims (including a namespace without the application's prefix); lifetime above the maximum; future `iat`; replayed `jti`; unknown issuer or application. |
 | `token_expired` | retryable | except on `auth.refresh` | Token past `exp` plus the clock-skew tolerance, at authentication or on an open connection. |
 | `identity_mismatch` | retryable | no | `auth.refresh` token with a different `app_id`, `sub`, or `device_id`. |
 | `application_unavailable` | terminal | yes | Application suspended or revoked. |

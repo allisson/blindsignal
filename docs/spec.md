@@ -125,7 +125,6 @@ Each application record should include:
 - Trusted JWKS URI or configured public verification keys.
 - Allowed signing algorithms.
 - Expected token audience.
-- Allowed namespaces or namespace policy.
 - Resource quotas and rate-limit policies.
 - Creation and modification timestamps.
 - Optional token and key rotation metadata.
@@ -359,7 +358,7 @@ Namespace identifiers are not credentials.
 
 A device must not be able to enumerate arbitrary namespaces or discover unauthorized devices.
 
-The source of namespace authorization must be decided before implementation: claims asserted in the application-issued token (for example, a list of allowed namespaces), policy stored by BlindSignal, or a combination. The MVP needs a mechanism that does not depend on pairing (§7.4).
+Namespace IDs have the form `<app_id>:<scope>`. A connection is authorized exactly in the namespaces listed in the `namespaces` claim of its current token, which must all carry its application's prefix; `auth.refresh` replaces that set, and the device leaves every namespace no longer listed, ending its sessions there (`docs/adr/0007-namespace-authorization.md`). BlindSignal stores no namespace policy in the MVP.
 
 ### 7.4 Pairing
 
@@ -882,6 +881,8 @@ The final API must define token refresh, authentication errors, device enrollmen
 - The same `sub` in two applications sharing no identity, devices, or namespaces (§6.1).
 - Session creation and acceptance.
 - `session.create` rejection when the target device is not authorized in the session's namespace.
+- Rejection of a token whose `namespaces` claim names another application's namespace.
+- `auth.refresh` removing a namespace: the device leaves it, and its sessions there end with `namespace_unauthorized` for both participants.
 - SDP and ICE signaling.
 - `rtc.*` message rejection outside an accepted session or between non-participants.
 - `rtc.ice_config` delivery after authentication, with and without TURN configured.
