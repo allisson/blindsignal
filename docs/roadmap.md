@@ -98,6 +98,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Define authentication handshake.
 - [ ] Define application and device context representation.
 - [ ] Add unit tests for schemas and validation.
+- [x] Define test coverage floors and enforce them in CI (`AGENTS.md`, "Testing").
 
 ### Deliverables
 

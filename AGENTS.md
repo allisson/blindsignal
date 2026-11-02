@@ -38,12 +38,13 @@ pnpm install          # install the workspace
 pnpm lint             # ESLint, type-aware, with the ADR 0002 import rules
 pnpm typecheck        # tsc --noEmit in every package
 pnpm test             # Vitest across all packages
+pnpm test:coverage    # Vitest with V8 coverage and the floors below
 pnpm format:check     # Prettier (pnpm format to fix)
 pnpm build            # tsc in every package
 ```
 
-CI (`.github/workflows/ci.yml`) runs format check, lint, typecheck, and tests on every pull
-request.
+CI (`.github/workflows/ci.yml`) runs format check, lint, typecheck, and tests with coverage on
+every pull request.
 
 ## Decisions that block implementation
 
@@ -123,6 +124,10 @@ Treat a violation of any of these as a bug, regardless of the task:
 - Security paths need negative tests: every rejection case (bad signature, issuer, audience,
   expiry, replayed `jti`, unknown/suspended app, unauthorized namespace, `rtc.*` outside a session).
 - Tests run against in-memory adapters and need no network services.
+- Coverage floors, enforced in CI by `vitest.config.ts`: 90% of lines and 85% of branches in
+  `packages/protocol`, `packages/core`, and the server's `domain` and `handlers` layers, where
+  authorization lives. Transport code and the SDK's WebRTC layer have no floor: integration and
+  Playwright tests cover them. Never lower a floor to make a change pass; add the missing tests.
 
 ## Language
 
