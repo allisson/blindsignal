@@ -47,8 +47,8 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [ ] Define pairing policy. *(Post-MVP: required before Phase 5 implements pairing; does not block the MVP.)*
 - [x] Define `StorageAdapter` (`docs/adr/0010-adapter-interfaces.md`).
 - [x] Define `CoordinationAdapter` (`docs/adr/0010-adapter-interfaces.md`).
-- [ ] Define application and device quotas.
-- [ ] Define rate-limit categories and error responses, including pre-authentication limits keyed by source IP and client IP derivation from trusted proxies (spec §8.1).
+- [x] Define application and device quotas (`docs/adr/0011-quotas-and-rate-limits.md`).
+- [x] Define rate-limit categories and error responses, including pre-authentication limits keyed by source IP and client IP derivation from trusted proxies (spec §8.1) (`docs/adr/0011-quotas-and-rate-limits.md`).
 - [x] Define ICE configuration and direct/relay reporting: STUN from client configuration, TURN only through `rtc.ice_config`, and when the server sends `rtc.ice_config` beyond the post-authentication message (spec §11, §12.3) (`docs/adr/0009-ice-configuration.md`).
 - [x] Decide whether `rtc.ice_restart` remains a separate message type or ICE restart is a new `rtc.offer` (spec §11) (a new `rtc.offer`, `docs/protocol.md`).
 - [ ] Define WebSocket reconnect and token renewal behavior.
@@ -320,6 +320,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement session and negotiation timeouts. *(MVP)*
 - [ ] Implement maximum concurrent sessions per application and per device (spec §8.2). *(MVP)*
 - [ ] Implement maximum registered devices per application (spec §8.2). *(MVP)*
+- [ ] Implement maximum joined namespaces per device (`docs/adr/0011-quotas-and-rate-limits.md`). *(MVP)*
 - [ ] Implement maximum session duration, where configured (spec §8.2).
 - [ ] Implement bounded queues and backpressure.
 - [ ] Implement abuse-triggered application suspension and operational alerts (spec §8.3), reusing the Phase 3 suspension handling.

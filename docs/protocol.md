@@ -2,7 +2,7 @@
 
 **Status:** Draft, protocol version 1  
 **Reference:** `docs/spec.md` §11, §13; `docs/adr/0003-one-to-one-sessions.md`;
-`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`; `docs/adr/0009-ice-configuration.md`
+`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`; `docs/adr/0009-ice-configuration.md`; `docs/adr/0011-quotas-and-rate-limits.md`
 
 JSON text messages over one WebSocket per connection. The protocol carries no application
 payload: application data travels only through WebRTC DataChannels. Administrative operations
@@ -135,8 +135,9 @@ them (ADR 0004).
 States: `pending` → `active` on accept; `pending` → `ended` on reject or timeout; `active` →
 `ended` on close, disconnect, or revocation. `rtc.*` is accepted only in `active`.
 
-- A target that does not exist, is not authorized in the namespace, has not joined it, or is the
-  requester itself gets the same `peer_unavailable`, so devices cannot be enumerated.
+- A target that does not exist, is not authorized in the namespace, has not joined it, is the
+  requester itself, or has no free session slot gets the same `peer_unavailable`, so devices and
+  their load cannot be enumerated. A session holds its quota slots from creation (ADR 0011).
 - A `pending` session expires after a configurable negotiation timeout; both sides get
   `session.terminated` with reason `timeout`.
 - `session.close` is only client to server. The other participant gets `session.terminated`.
@@ -206,12 +207,16 @@ Initial catalog:
 | `peer_unavailable` | retryable | no | `session.create` target not reachable (§7). |
 | `session_unavailable` | retryable | no | Unknown session, wrong state, or sender not a participant. |
 | `rate_limited` | retryable | no | Rate limit exceeded; carries `retryAfterMs`. |
+| `quota_exceeded` | retryable | on `auth.authenticate` | Application connection or device-count quota on authentication; application or device session quota on `session.create`; joined-namespace quota on `namespace.join` (ADR 0011). |
 | `invalid_token` | retryable | on `auth.authenticate` | Bad signature, header, or claims (including a namespace without the application's prefix); lifetime above the maximum; future `iat`; replayed `jti`; unknown issuer or application. |
 | `token_expired` | retryable | except on `auth.refresh` | Token past `exp` plus the clock-skew tolerance, at authentication or on an open connection. |
 | `identity_mismatch` | retryable | no | `auth.refresh` token with a different `app_id`, `sub`, or `device_id`. |
 | `application_unavailable` | terminal | yes | Application suspended or revoked. |
 | `device_revoked` | terminal | yes | Device revoked. |
 | `superseded` | superseded | yes | The same device authenticated a newer connection (ADR 0008). |
+
+Connection attempts above the rate limit or the unauthenticated connection cap are refused with
+HTTP `429` before the WebSocket upgrade, so they get no `error` message (ADR 0011).
 
 A failed `auth.refresh` with a retryable code leaves the connection on its current token until
 that token expires. An unknown application gets the same `invalid_token` as a bad signature, so
