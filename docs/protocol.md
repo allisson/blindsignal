@@ -247,7 +247,7 @@ Initial catalog:
 | `invalid_token` | retryable | on `auth.authenticate` | Bad signature, header, or claims (including a namespace without the application's prefix); lifetime above the maximum; future `iat`; `iat` before the server started (ADR 0006); replayed `jti`; unknown issuer or application. |
 | `token_expired` | retryable | except on `auth.refresh` | Token past `exp` plus the clock-skew tolerance, at authentication or on an open connection. |
 | `identity_mismatch` | retryable | no | `auth.refresh` token with a different `app_id`, `sub`, or `device_id`. |
-| `application_unavailable` | terminal | yes | Application suspended or revoked. |
+| `application_unavailable` | terminal | yes | Application suspended, revoked, or, on an open connection, removed from the registry. |
 | `device_revoked` | terminal | yes | Device revoked. |
 | `superseded` | superseded | yes | The same device authenticated a newer connection (ADR 0008). |
 

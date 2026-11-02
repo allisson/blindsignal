@@ -1,5 +1,6 @@
 import { InMemoryCoordinationAdapter } from '@blindsignal/coordination-memory';
 import { devApplication, mintDevToken } from '@blindsignal/dev-issuer';
+import type { ApplicationRecord } from '@blindsignal/core';
 import type { ServerMessage } from '@blindsignal/protocol';
 import {
   InMemoryApplicationRepository,
@@ -46,6 +47,7 @@ async function setup(
     });
     if (!result.ok) throw new Error(result.error);
     await applications.replaceAll(result.registry.applications);
+    return result.registry.applications;
   };
   await load(entries);
   const deps: ConnectionDependencies = {
@@ -1039,6 +1041,80 @@ describe('Connection', () => {
         expect(carol.errors()).toEqual(['session_unavailable']);
         expect(alice.errors()).toEqual(['session_unavailable', 'session_unavailable']);
         expect(bob.sent.filter((message) => message.type.startsWith('rtc.'))).toHaveLength(1);
+      });
+    });
+
+    describe('registry reload (ADR 0005)', () => {
+      const notes = devApplication('notes');
+      // Like the server: every connection's check is queued before any of them closes.
+      const enforce = (apps: readonly ApplicationRecord[], ...clients: Client[]) =>
+        Promise.all(clients.map((client) => client.connection.enforce(apps)));
+
+      it('closes a revoked device with device_revoked and tells its peers peer_revoked', async () => {
+        const { alice, bob, sessionId, load } = await active();
+        const apps = await load([{ ...notes, revokedDevices: [{ userId: 'u1', deviceId: 'd1' }] }]);
+        await enforce(apps, alice, bob);
+        await settle();
+        expect(alice.last()).toEqual({
+          version: 1,
+          type: 'error',
+          payload: { code: 'device_revoked' },
+        });
+        expect(alice.closes).toEqual([4002]);
+        expect(sessionEvents(bob)).toEqual([terminated(sessionId, 'peer_revoked')]);
+        expect(bob.closes).toEqual([]);
+      });
+
+      it.each([
+        ['suspended', [{ ...notes, status: 'suspended' }]],
+        ['revoked', [{ ...notes, status: 'revoked' }]],
+        ['removed', []],
+      ])(
+        'closes every connection of a %s application, with no session.terminated',
+        async (_, entries) => {
+          const { alice, bob, load } = await active();
+          await enforce(await load(entries), alice, bob);
+          await settle();
+          for (const client of [alice, bob]) {
+            expect(client.errors()).toEqual(['application_unavailable']);
+            expect(client.closes).toEqual([4002]);
+            expect(sessionEvents(client)).toEqual([]);
+          }
+        },
+      );
+
+      it('leaves other devices, other applications, and unauthenticated connections open', async () => {
+        const { connect, load } = await setup([notes, devApplication('chat')]);
+        const alice = await member(connect, d1);
+        const bob = await member(connect, bobClaims);
+        const carol = connect();
+        await carol.authenticate({ app_id: 'chat', namespaces: ['chat:a'] });
+        const anonymous = connect();
+        const apps = await load([
+          { ...notes, revokedDevices: [{ userId: 'u1', deviceId: 'd9' }] },
+          devApplication('chat'),
+        ]);
+        await enforce(apps, alice, bob, carol, anonymous);
+        for (const client of [alice, bob, carol, anonymous]) {
+          expect(client.errors()).toEqual([]);
+          expect(client.closes).toEqual([]);
+        }
+      });
+
+      it('checks an authentication still in flight', async () => {
+        const { connect } = await setup();
+        const alice = connect();
+        const token = await mintDevToken(d1, { now: new Date() });
+        // The repository still holds the active application, so the token verifies.
+        const auth = alice.request('auth.authenticate', { token });
+        const suspended = parseRegistry(
+          JSON.stringify({ applications: [{ ...notes, status: 'suspended' }] }),
+          { now: START, development: true },
+        );
+        if (!suspended.ok) throw new Error(suspended.error);
+        await Promise.all([auth, enforce(suspended.registry.applications, alice)]);
+        expect(alice.errors()).toEqual(['application_unavailable']);
+        expect(alice.closes).toEqual([4002]);
       });
     });
   });
