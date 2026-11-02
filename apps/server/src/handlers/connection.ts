@@ -15,6 +15,7 @@ import {
   type ServerMessage,
 } from '@blindsignal/protocol';
 import type { TokenVerifier } from '../domain/auth.ts';
+import type { Participant, Session, SessionRegistry } from '../domain/sessions.ts';
 
 /** What a handler needs from the transport. */
 export interface ConnectionPort {
@@ -41,6 +42,10 @@ export interface ConnectionDependencies {
   readonly deviceLimits: { readonly ttlMs: number; readonly maxDevices: number };
   /** Renewed on every heartbeat, so it outlives a few missed ones. */
   readonly presenceLeaseMs: number;
+  /** Shared by every connection of the process. */
+  readonly sessions: SessionRegistry;
+  /** How long a session may stay `pending` (docs/protocol.md §7). */
+  readonly negotiationTimeoutMs: number;
   readonly maxMessageBytes?: number;
 }
 
@@ -52,7 +57,17 @@ export const presenceTopic = (namespace: string) => `presence:${namespace}`;
 
 const SUPERSEDED = { type: 'superseded' } as const;
 
+type Outbound = Omit<ServerMessage, 'version'>;
+
+/** A message for another connection, sent through its topic. */
+const deliver = (message: Outbound) => ({ type: 'deliver', message }) as const;
+
 type PresenceChanged = Payload<'presence.changed'>;
+type TerminationReason = Payload<'session.terminated'>['reason'];
+type SessionMessage = ClientMessage & {
+  type: 'session.accept' | 'session.reject' | 'session.close';
+};
+type RtcMessage = ClientMessage & { type: 'rtc.offer' | 'rtc.answer' | 'rtc.ice_candidate' };
 
 /** Only the identity leaves the handler: adapters never see a token's namespaces or expiry. */
 const identityOf = ({ appId, userId, deviceId }: DeviceIdentity): DeviceIdentity => ({
@@ -116,12 +131,18 @@ export class Connection {
   }
 
   async #release(): Promise<void> {
+    const device = this.#context === undefined ? undefined : identityOf(this.#context);
+    // Unregistered in the same tick as the session scan, so no new session can slip in between.
+    if (device !== undefined) this.#deps.sessions.unregister(device, this.id);
+    for (const session of this.#deps.sessions.of(this.id)) {
+      await this.#terminate(session, 'peer_disconnected');
+    }
     for (const namespace of [...this.#joined.keys()]) await this.#leave(namespace);
     const unsubscribe = this.#unsubscribe;
     this.#unsubscribe = undefined;
     await unsubscribe?.();
-    if (this.#context !== undefined) {
-      await this.#deps.coordination.releaseDeviceConnection(identityOf(this.#context), this.id);
+    if (device !== undefined) {
+      await this.#deps.coordination.releaseDeviceConnection(device, this.id);
     }
   }
 
@@ -146,11 +167,23 @@ export class Connection {
         return this.#ack(message.requestId);
       case 'discovery.request':
         return this.#discover(message);
+      case 'session.create':
+        return this.#createSession(message);
+      case 'session.accept':
+      case 'session.reject':
+      case 'session.close':
+        return this.#answerSession(message);
+      case 'rtc.offer':
+      case 'rtc.answer':
+      case 'rtc.ice_candidate':
+        return this.#relay(message);
       case 'connection.ping':
         return this.#send({ type: 'connection.pong', requestId: message.requestId, payload: {} });
-      default:
+      default: {
         // Deny by default: a type with no handler is never authorized.
-        return this.#error('not_authorized', message.requestId);
+        const unhandled: never = message;
+        return this.#error('not_authorized', (unhandled as ClientMessage).requestId);
+      }
     }
   }
 
@@ -175,6 +208,7 @@ export class Connection {
     if (previous !== undefined) {
       await this.#deps.coordination.publish(connectionTopic(previous), SUPERSEDED);
     }
+    this.#deps.sessions.register(identityOf(context), this.id);
     this.#accept({ ...context, protocolVersion: message.version }, requestId);
   }
 
@@ -190,9 +224,14 @@ export class Connection {
       return this.#error('quota_exceeded', requestId);
     }
     this.#accept({ ...context, protocolVersion: current.protocolVersion }, requestId);
-    // The new token replaces the authorized set: leave what it no longer lists (ADR 0007).
+    // The new token replaces the authorized set: end and leave what it no longer lists (ADR 0007).
+    for (const session of this.#deps.sessions.of(this.id)) {
+      if (!this.#authorized(session.namespace)) {
+        await this.#terminate(session, 'namespace_unauthorized', true);
+      }
+    }
     for (const namespace of [...this.#joined.keys()]) {
-      if (!context.namespaces.includes(namespace)) await this.#leave(namespace);
+      if (!this.#authorized(namespace)) await this.#leave(namespace);
     }
   }
 
@@ -242,6 +281,99 @@ export class Connection {
       .filter((device) => !this.#isSelf(device))
       .map(({ userId, deviceId }) => ({ userId, deviceId }));
     this.#send({ type: 'discovery.result', requestId, payload: { namespace, devices } });
+  }
+
+  async #createSession(message: ClientMessage & { type: 'session.create' }): Promise<void> {
+    const { requestId, payload } = message;
+    const { namespace, userId, deviceId } = payload;
+    if (!this.#authorized(namespace)) return this.#error('not_authorized', requestId);
+    const self = this.#context as ConnectionContext;
+    const target = { appId: self.appId, userId, deviceId };
+    // Joining requires authorization, so a present target is authorized in the namespace.
+    // Every unreachable target looks the same, so devices cannot be enumerated (§7).
+    const present = await this.#deps.coordination.listPresence(namespace);
+    const targetId = this.#deps.sessions.connectionOf(target);
+    if (
+      this.#isSelf(target) ||
+      targetId === undefined ||
+      !present.some((d) => sameDevice(d, target))
+    ) {
+      return this.#error('peer_unavailable', requestId);
+    }
+    const requester: Participant = { connectionId: this.id, device: identityOf(self) };
+    const session = this.#deps.sessions.create(
+      namespace,
+      requester,
+      { connectionId: targetId, device: target },
+      this.#deps.negotiationTimeoutMs,
+      (expired) => void this.#enqueue(() => this.#terminate(expired, 'timeout', true)),
+    );
+    const sessionId = session.id;
+    this.#send({ type: 'session.created', requestId, payload: { sessionId } });
+    await this.#publish(targetId, {
+      type: 'session.request',
+      payload: { sessionId, namespace, userId: self.userId, deviceId: self.deviceId },
+    });
+  }
+
+  /** `session.accept` and `session.reject` from the target; `session.close` from either side. */
+  async #answerSession(message: SessionMessage): Promise<void> {
+    const { requestId, type } = message;
+    const { sessionId } = message.payload;
+    const session = this.#deps.sessions.get(sessionId);
+    const allowed =
+      session !== undefined &&
+      (type === 'session.close'
+        ? this.#participates(session)
+        : session.state === 'pending' && session.target.connectionId === this.id);
+    if (!allowed) return this.#error('session_unavailable', requestId);
+    this.#ack(requestId);
+    if (type === 'session.close') return this.#terminate(session, 'closed_by_peer');
+    if (type === 'session.accept') {
+      this.#deps.sessions.activate(sessionId);
+      return this.#publish(session.requester.connectionId, {
+        type: 'session.accepted',
+        payload: { sessionId },
+      });
+    }
+    this.#deps.sessions.end(sessionId);
+    await this.#publish(session.requester.connectionId, {
+      type: 'session.rejected',
+      payload: { sessionId },
+    });
+  }
+
+  /** Rebuilds an `rtc.*` message for the other participant of an active session (§7). */
+  async #relay(message: RtcMessage): Promise<void> {
+    const { requestId, type, payload } = message;
+    const session = this.#deps.sessions.get(payload.sessionId);
+    if (session?.state !== 'active' || !this.#participates(session)) {
+      return this.#error('session_unavailable', requestId);
+    }
+    // The parsed payload holds only the schema's fields: no requestId, no sender, no extra keys.
+    await this.#publish(this.#peerOf(session), { type, payload });
+  }
+
+  /** Ends the session; tells the other participant, and this one too when `both` is set. */
+  async #terminate(session: Session, reason: TerminationReason, both = false): Promise<void> {
+    if (!this.#deps.sessions.end(session.id)) return;
+    const terminated = { type: 'session.terminated', payload: { sessionId: session.id, reason } };
+    if (both) this.#send(terminated as Outbound);
+    await this.#publish(this.#peerOf(session), terminated as Outbound);
+  }
+
+  #participates(session: Session): boolean {
+    return session.requester.connectionId === this.id || session.target.connectionId === this.id;
+  }
+
+  #peerOf(session: Session): string {
+    return session.requester.connectionId === this.id
+      ? session.target.connectionId
+      : session.requester.connectionId;
+  }
+
+  #publish(connectionId: string, message: Outbound): Promise<void> {
+    return this.#deps.coordination.publish(connectionTopic(connectionId), deliver(message));
   }
 
   #acquirePresence(namespace: string): Promise<void> {
@@ -307,12 +439,16 @@ export class Connection {
   }
 
   #onEvent(event: unknown): void {
-    if ((event as { type?: unknown } | null)?.type === SUPERSEDED.type) {
+    const type = (event as { type?: unknown } | null)?.type;
+    if (type === SUPERSEDED.type) {
       void this.#enqueue(() => Promise.resolve(this.#error('superseded', undefined, true)));
+    } else if (type === 'deliver') {
+      const { message } = event as ReturnType<typeof deliver>;
+      void this.#enqueue(() => Promise.resolve(this.#send(message)));
     }
   }
 
-  #send(message: Omit<ServerMessage, 'version'>): void {
+  #send(message: Outbound): void {
     if (!this.#closed) this.#port.send({ version: PROTOCOL_VERSION, ...message } as ServerMessage);
   }
 

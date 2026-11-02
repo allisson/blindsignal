@@ -153,15 +153,18 @@ them (ADR 0004).
 3. B replies `session.accept` or `session.reject`. The server sends A `session.accepted` or
    `session.rejected`.
 
-States: `pending` → `active` on accept; `pending` → `ended` on reject or timeout; `active` →
-`ended` on close, disconnect, or revocation. `rtc.*` is accepted only in `active`.
+States: `pending` → `active` on accept; `pending` → `ended` on reject, timeout, close, or
+disconnect; `active` → `ended` on close, disconnect, or revocation. `rtc.*` is accepted only in
+`active`. Only the target accepts or rejects, and only a `pending` session; any other
+`session.accept`, `session.reject`, or `session.close` gets `session_unavailable`.
 
 - A target that does not exist, is not authorized in the namespace, has not joined it, is the
   requester itself, or has no free session slot gets the same `peer_unavailable`, so devices and
   their load cannot be enumerated. A session holds its quota slots from creation (ADR 0011).
 - A `pending` session expires after a configurable negotiation timeout; both sides get
   `session.terminated` with reason `timeout`.
-- `session.close` is only client to server. The other participant gets `session.terminated`.
+- `session.close` is only client to server, from either participant, in `pending` or `active`.
+  The other participant gets `session.terminated` with reason `closed_by_peer`.
 - When a participant's connection closes, the server ends the session and the other participant
   gets `session.terminated` with reason `peer_disconnected`. An established DataChannel is not
   affected (spec §6.4); after reconnecting, the SDK treats every server-side session as ended.
