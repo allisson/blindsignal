@@ -27,7 +27,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 ### Tasks
 
 - [x] Inspect repository conventions and existing code (repository contains only docs, AGENTS.md, README, LICENSE, and a Node.js `.gitignore` template; the spec's illustrative interfaces use TypeScript).
-- [ ] Choose language, runtime, package and monorepo tooling, schema-validation library, and test frameworks, including browser automation for DataChannel tests.
+- [x] Choose language, runtime, package and monorepo tooling, schema-validation library, and test frameworks, including browser automation for DataChannel tests (`docs/adr/0001-typescript-node-toolchain.md`).
 - [ ] Define server, SDK, and shared protocol boundaries.
 - [ ] Define signaling protocol and versioning.
 - [ ] Define application registration and trust model.
