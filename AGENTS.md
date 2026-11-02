@@ -24,10 +24,12 @@ the roadmap, or an ADR in the same change.
 
 ## Current status
 
-Phase 2 (application access control and authentication foundation). Phase 1 delivered the
-`protocol` and `core` packages. The workspace uses the toolchain in
-`docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
-`jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a new ADR.
+Phase 3 (MVP signaling server) is complete: `apps/server` serves authentication, presence,
+sessions, and `rtc.*` relay over WebSocket, with in-memory adapters, registry reload on `SIGHUP`,
+logs, metrics, and a Docker image. Next is Phase 4 (browser SDK and local WebRTC). The workspace
+uses the toolchain in `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm
+workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a
+new ADR.
 
 TypeScript stays on 6.0.x until `typescript-eslint` supports 7: type-aware linting is required.
 
