@@ -72,14 +72,17 @@ export class InMemoryCoordinationAdapter implements Omit<
     return Promise.resolve();
   }
 
-  releasePresence(namespace: string, device: DeviceIdentity, connectionId: string): Promise<void> {
+  releasePresence(
+    namespace: string,
+    device: DeviceIdentity,
+    connectionId: string,
+  ): Promise<boolean> {
     const leases = this.#presence.get(namespace);
     const key = deviceKey(device);
-    if (leases?.get(key)?.connectionId === connectionId) {
-      leases.delete(key);
-      if (leases.size === 0) this.#presence.delete(namespace);
-    }
-    return Promise.resolve();
+    if (leases?.get(key)?.connectionId !== connectionId) return Promise.resolve(false);
+    leases.delete(key);
+    if (leases.size === 0) this.#presence.delete(namespace);
+    return Promise.resolve(true);
   }
 
   listPresence(namespace: string): Promise<readonly DeviceIdentity[]> {
