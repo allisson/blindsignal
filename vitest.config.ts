@@ -14,6 +14,8 @@ export default defineConfig({
         'packages/protocol/src/**': floor,
         'packages/core/src/**': floor,
         'apps/server/src/{domain,handlers}/**': floor,
+        // The SDK's signaling layer; its WebRTC layer lives in src/webrtc/ and has no floor.
+        'packages/sdk/src/*.ts': floor,
       },
     },
   },

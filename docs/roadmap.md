@@ -223,7 +223,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 ### Tasks
 
-- [ ] Implement SDK WebSocket client, refusing `ws://` URLs except for loopback hosts and never placing the access token in the connection URL (spec §16).
+- [x] Implement SDK WebSocket client, refusing `ws://` URLs except for loopback hosts and never placing the access token in the connection URL (spec §16).
 - [ ] Implement access-token provider interface.
 - [ ] Implement token refresh through the access-token provider and `auth.refresh`.
 - [ ] Implement authentication flow.
