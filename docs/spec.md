@@ -396,6 +396,8 @@ Before authentication completes, the server does not yet know the connection's a
 
 Behind a reverse proxy, load balancer, or tunnel (§14.2, §14.3), the TCP peer address is the proxy's, not the client's. The server must derive the client IP from forwarding headers (such as `X-Forwarded-For` or `CF-Connecting-IP`) only when the request comes from an explicitly configured trusted proxy, and must otherwise use the TCP peer address. Forwarding headers from untrusted peers must be ignored, since clients can forge them.
 
+The key of each category, the token-bucket algorithm, the responses (HTTP `429` before the upgrade, `rate_limited` after it), and the client IP derivation are in `docs/adr/0011-quotas-and-rate-limits.md`.
+
 ### 8.2 Quotas
 
 Application-level configurable quotas should include:
@@ -409,6 +411,8 @@ Application-level configurable quotas should include:
 Device-level limits should prevent a single device from exhausting an application's allocation.
 
 Initial values must be configurable and validated through load testing rather than treated as universal constants.
+
+The MVP quotas, where each is checked, and the `quota_exceeded` error are in `docs/adr/0011-quotas-and-rate-limits.md`.
 
 ### 8.3 Abuse response
 
@@ -917,7 +921,7 @@ The final API must define token refresh, authentication errors, device enrollmen
 - Connections that never authenticate are closed at the authentication deadline.
 - Unauthenticated connection cap enforcement.
 - Rate-limit enforcement.
-- Quota enforcement.
+- Quota enforcement, including session slots held from creation: a target with no free slot gets the requester `peer_unavailable`.
 - Oversized signaling messages.
 - Messages sent in a direction their type does not allow, such as a client-sent `rtc.ice_config` or `session.request`.
 - Excessive session creation.
