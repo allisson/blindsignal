@@ -216,6 +216,12 @@ Requirements:
 - A token presented through `auth.refresh` must carry the same `app_id`, `sub`, and `device_id` as the connection's current context; a mismatch is rejected. Changing identity requires a new connection.
 - A connection whose token reaches `exp` plus the clock-skew tolerance without a successful `auth.refresh` is closed with a retryable error, with no grace period. A connection must not remain authenticated indefinitely on an expired token.
 
+Issuer key configuration:
+- Each application has either a `jwks_uri` or static public keys in the registry file (§5.6), never both.
+- A `jwks_uri` must use HTTPS; the registry load rejects any other scheme, so a reload with one is rejected whole.
+- Remote key sets are fetched with the `jose` library's `createRemoteJWKSet`, one per issuer, with its defaults as configurable starting values: a 5-second fetch timeout, a 10-minute cache lifetime, and a 30-second cooldown before an unknown `kid` can trigger another fetch for that issuer.
+- A token whose `kid` is still unknown, including during the cooldown, is rejected with `invalid_token`.
+
 The token is a credential for a specific application and service, not a general-purpose authorization grant.
 
 ### 5.4 Backend-to-server trust
