@@ -1014,6 +1014,58 @@ describe('BlindSignalClient WebRTC', () => {
     }
   });
 
+  it('restarts ICE up to 3 times with the latest rtc.ice_config, then ends the session', async () => {
+    const harness = await connected();
+    const { session, sessionId, pc, events } = await accepted(harness);
+    const ended: unknown[] = [];
+    session.on('ended', (e) => ended.push(e));
+    const fresh = {
+      iceServers: [{ urls: ['turn:other.example'], username: 'v', credential: 'd' }],
+    };
+    harness.socket().receive(event('rtc.ice_config', fresh));
+    for (let i = 0; i < 3; i++) {
+      pc.state('failed');
+      await flush();
+    }
+    expect(pc.iceRestarts).toBe(3);
+    expect(pc.configuration).toEqual(fresh);
+    expect(harness.sent('rtc.offer')).toHaveLength(4);
+    pc.state('failed');
+    expect(events).toEqual(['close']);
+    expect(ended).toEqual([{ reason: 'closed' }]);
+    expect(harness.last()).toMatchObject({ type: 'session.close', payload: { sessionId } });
+  });
+
+  it('does not restart ICE once the session ended', async () => {
+    const harness = await connected();
+    const { sessionId, pc, channel, events } = await accepted(harness);
+    channel.open();
+    harness
+      .socket()
+      .receive(event('session.terminated', { sessionId, reason: 'peer_disconnected' }));
+    pc.state('failed');
+    expect(pc.iceRestarts).toBe(0);
+    expect(events).toEqual(['open', 'close']);
+    expect(harness.sent('session.close')).toHaveLength(0);
+  });
+
+  it('reports the connection type', async () => {
+    const harness = await connected();
+    const { session, pc } = await accepted(harness);
+    const types: unknown[] = [];
+    session.on('connectionType', (type) => types.push(type));
+    pc.stats = new Map(
+      Object.entries({
+        p: { type: 'candidate-pair', selected: true, localCandidateId: 'r' },
+        r: { type: 'local-candidate', candidateType: 'relay' },
+      }),
+    );
+    pc.state('connected');
+    await flush();
+    expect(session.connectionType).toBe('relay');
+    expect(types).toEqual(['relay']);
+  });
+
   it('leaves open DataChannels to their sessions on close()', async () => {
     const harness = await connected();
     const { channel } = await accepted(harness);
