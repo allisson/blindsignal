@@ -5,6 +5,7 @@ import {
   InMemoryApplicationRepository,
   InMemoryDeviceRepository,
 } from '@blindsignal/storage-memory';
+import { BlockList } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { TokenVerifier } from './domain/auth.ts';
@@ -12,12 +13,14 @@ import { parseRegistry } from './domain/registry.ts';
 import { SessionRegistry } from './domain/sessions.ts';
 import type { AllowedOrigins } from './domain/origin.ts';
 import { GOING_AWAY, SignalingServer } from './server.ts';
+import { Metrics } from './telemetry.ts';
 
 interface Options {
   readonly allowedOrigins?: AllowedOrigins;
   readonly heartbeatIntervalMs?: number;
   readonly presenceLeaseMs?: number;
   readonly maxMessageBytes?: number;
+  readonly trustedProxies?: BlockList;
 }
 
 const servers: SignalingServer[] = [];
@@ -36,8 +39,13 @@ async function start(options: Options = {}) {
   const applications = new InMemoryApplicationRepository();
   await applications.replaceAll(registry.registry.applications);
   const coordination = new InMemoryCoordinationAdapter();
+  const logs: Record<string, unknown>[] = [];
   const server = new SignalingServer({
     allowedOrigins: options.allowedOrigins ?? '*',
+    proxyTrust: {
+      proxies: options.trustedProxies ?? new BlockList(),
+      header: 'x-forwarded-for',
+    },
     heartbeatIntervalMs: options.heartbeatIntervalMs ?? 60_000,
     connection: {
       verifier: new TokenVerifier({
@@ -58,6 +66,8 @@ async function start(options: Options = {}) {
       presenceLeaseMs: options.presenceLeaseMs ?? 90_000,
       negotiationTimeoutMs: 30_000,
       maxMessageBytes: options.maxMessageBytes,
+      metrics: new Metrics(),
+      logger: { log: (level, event, fields) => logs.push({ level, event, ...fields }) },
     },
   });
   servers.push(server);
@@ -111,7 +121,7 @@ async function start(options: Options = {}) {
 
   const http = (path: string) => fetch(`http://${base}${path}`).then((r) => r.status);
 
-  return { server, coordination, client, refusedUpgrade, http };
+  return { server, coordination, client, refusedUpgrade, http, logs };
 }
 
 describe('SignalingServer', () => {
@@ -210,6 +220,42 @@ describe('SignalingServer', () => {
     expect(await coordination.listPresence('notes:a')).toEqual([
       { appId: 'notes', userId: 'u1', deviceId: 'd1' },
     ]);
+  });
+
+  it('logs the client IP, read through a trusted proxy, and the close code', async () => {
+    const trustedProxies = new BlockList();
+    trustedProxies.addAddress('127.0.0.1');
+    const { server, client, logs } = await start({ trustedProxies });
+    const proxied = await client({ headers: { 'x-forwarded-for': '203.0.113.7' } });
+    expect(server.connections).toBe(1);
+    proxied.ws.close(1000);
+    await vi.waitFor(() => {
+      if (!logs.some((l) => l.event === 'connection.closed')) throw new Error('not closed');
+    });
+    expect(server.connections).toBe(0);
+    const connectionId = logs[0]?.connectionId;
+    expect(connectionId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(logs).toEqual([
+      {
+        level: 'info',
+        event: 'connection.opened',
+        connectionId,
+        ip: '203.0.113.7',
+      },
+      {
+        level: 'info',
+        event: 'connection.closed',
+        connectionId,
+        appId: undefined,
+        code: 1000,
+      },
+    ]);
+  });
+
+  it('logs the TCP peer when no proxy is trusted', async () => {
+    const { client, logs } = await start();
+    await client({ headers: { 'x-forwarded-for': '203.0.113.7' } });
+    expect(logs).toMatchObject([{ event: 'connection.opened', ip: '127.0.0.1' }]);
   });
 
   it('closes the connections a reloaded registry makes unavailable', async () => {

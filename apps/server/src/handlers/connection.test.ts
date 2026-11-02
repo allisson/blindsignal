@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TokenVerifier } from '../domain/auth.ts';
 import { parseRegistry } from '../domain/registry.ts';
 import { SessionRegistry } from '../domain/sessions.ts';
+import { Metrics } from '../telemetry.ts';
 import {
   Connection,
   connectionTopic,
@@ -50,6 +51,8 @@ async function setup(
     return result.registry.applications;
   };
   await load(entries);
+  const metrics = new Metrics();
+  const logs: object[] = [];
   const deps: ConnectionDependencies = {
     verifier: new TokenVerifier({
       applications,
@@ -67,6 +70,8 @@ async function setup(
     presenceLeaseMs: LEASE_MS,
     sessions: new SessionRegistry(),
     negotiationTimeoutMs: NEGOTIATION_MS,
+    metrics,
+    logger: { log: (level, event, fields) => logs.push({ level, event, ...fields }) },
     ...options,
   };
 
@@ -105,7 +110,7 @@ async function setup(
     return { connection, sent, closes, request, authenticate, refresh, errors, presence, last };
   };
 
-  return { connect, load, coordination, devices, deps };
+  return { connect, load, coordination, devices, deps, metrics, logs };
 }
 
 type Connect = Awaited<ReturnType<typeof setup>>['connect'];
@@ -1044,6 +1049,17 @@ describe('Connection', () => {
       });
     });
 
+    it('counts created and terminated sessions', async () => {
+      const { alice, sessionId, metrics, deps } = await active();
+      expect(deps.sessions.size).toBe(1);
+      await alice.request('session.close', { sessionId });
+      await settle();
+      expect(deps.sessions.size).toBe(0);
+      const text = metrics.render();
+      expect(text).toContain('blindsignal_sessions_created_total 1\n');
+      expect(text).toContain('blindsignal_sessions_terminated_total{reason="closed_by_peer"} 1\n');
+    });
+
     describe('registry reload (ADR 0005)', () => {
       const notes = devApplication('notes');
       // Like the server: every connection's check is queued before any of them closes.
@@ -1116,6 +1132,63 @@ describe('Connection', () => {
         expect(alice.errors()).toEqual(['application_unavailable']);
         expect(alice.closes).toEqual([4002]);
       });
+    });
+  });
+
+  describe('telemetry', () => {
+    it('counts messages, authentications, and errors', async () => {
+      const { connect, metrics } = await setup();
+      const alice = connect();
+      await alice.authenticate();
+      await alice.request('namespace.join', { namespace: 'notes:other' });
+      await connect().request('auth.authenticate', { token: 'not-a-jwt' });
+      const text = metrics.render();
+      for (const line of [
+        'blindsignal_messages_total{type="auth.authenticate"} 2',
+        'blindsignal_messages_total{type="namespace.join"} 1',
+        'blindsignal_authentications_total{result="ok"} 1',
+        'blindsignal_authentications_total{result="invalid_token"} 1',
+        'blindsignal_errors_total{code="invalid_token"} 1',
+        'blindsignal_errors_total{code="not_authorized"} 1',
+      ]) {
+        expect(text).toContain(`${line}\n`);
+      }
+    });
+
+    it('counts an authentication refused by the device quota', async () => {
+      const { connect, metrics } = await setup(undefined, {
+        deviceLimits: { ttlMs: 86_400_000, maxDevices: 1 },
+      });
+      await connect().authenticate();
+      await connect().authenticate({ sub: 'u2', device_id: 'd2' });
+      expect(metrics.render()).toContain(
+        'blindsignal_authentications_total{result="quota_exceeded"} 1\n',
+      );
+    });
+
+    it('logs authentications and closing errors, never the user or the device', async () => {
+      const { connect, logs } = await setup();
+      const alice = connect();
+      await alice.authenticate();
+      await alice.request('namespace.join', { namespace: 'notes:other' });
+      const bob = connect();
+      await bob.connection.receive('{');
+      expect(logs).toEqual([
+        {
+          level: 'info',
+          event: 'connection.authenticated',
+          connectionId: alice.connection.id,
+          appId: 'notes',
+        },
+        {
+          level: 'info',
+          event: 'connection.error',
+          connectionId: bob.connection.id,
+          appId: undefined,
+          code: 'malformed_frame',
+        },
+      ]);
+      expect(JSON.stringify(logs)).not.toMatch(/"(u1|d1)"/);
     });
   });
 

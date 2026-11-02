@@ -1,4 +1,4 @@
-import type { BlockList } from 'node:net';
+import { isIP, type BlockList } from 'node:net';
 import { z } from 'zod';
 import { parseTrustedProxies, type ForwardedHeader } from './domain/client-ip.ts';
 import type { AllowedOrigins } from './domain/origin.ts';
@@ -43,6 +43,11 @@ const environment = z
     BLINDSIGNAL_ENV: z.enum(['development', 'production']).default('production'),
     BLINDSIGNAL_PORT: port.default(8080),
     BLINDSIGNAL_ADMIN_PORT: port.default(9090),
+    // Loopback by default: metrics are for the operator, never for clients.
+    BLINDSIGNAL_ADMIN_HOST: z
+      .string()
+      .refine((value) => isIP(value) !== 0, 'must be an IP address')
+      .default('127.0.0.1'),
     BLINDSIGNAL_REGISTRY_PATH: z.string().min(1),
     BLINDSIGNAL_ALLOWED_ORIGINS: z
       .string()
@@ -83,6 +88,7 @@ export interface ServerConfig {
   readonly development: boolean;
   readonly port: number;
   readonly adminPort: number;
+  readonly adminHost: string;
   readonly registryPath: string;
   readonly allowedOrigins: AllowedOrigins;
   readonly proxyTrust: { readonly proxies: BlockList; readonly header: ForwardedHeader };
@@ -117,6 +123,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       development: vars.BLINDSIGNAL_ENV === 'development',
       port: vars.BLINDSIGNAL_PORT,
       adminPort: vars.BLINDSIGNAL_ADMIN_PORT,
+      adminHost: vars.BLINDSIGNAL_ADMIN_HOST,
       registryPath: vars.BLINDSIGNAL_REGISTRY_PATH,
       // Only development reaches here with an empty list; it allows every origin.
       allowedOrigins: origins.length === 0 || origins.includes('*') ? '*' : new Set(origins),

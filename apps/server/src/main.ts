@@ -13,6 +13,9 @@ import {
 } from './domain/registry.ts';
 import { SessionRegistry } from './domain/sessions.ts';
 import { SignalingServer } from './server.ts';
+import { jsonLogger, Metrics, serveMetrics } from './telemetry.ts';
+
+const logger = jsonLogger();
 
 async function readRegistry(path: string, options: ParseRegistryOptions): Promise<RegistryResult> {
   let text: string;
@@ -40,22 +43,31 @@ async function main(): Promise<void> {
   const applications = new InMemoryApplicationRepository();
   await applications.replaceAll(registry.applications);
   const coordination = new InMemoryCoordinationAdapter();
+  const sessions = new SessionRegistry();
+  const metrics = new Metrics();
   const server = new SignalingServer({
     allowedOrigins: config.allowedOrigins,
+    proxyTrust: config.proxyTrust,
     heartbeatIntervalMs: config.heartbeatIntervalMs,
     connection: {
       verifier: new TokenVerifier({ applications, coordination, startedAt, ...config.token }),
       devices: new InMemoryDeviceRepository(),
       coordination,
-      sessions: new SessionRegistry(),
+      sessions,
       iceServers: config.iceServers.map(({ urls }) => ({ urls: [...urls] })),
       clockSkewSeconds: config.token.clockSkewSeconds,
       deviceLimits: config.devices,
       presenceLeaseMs: config.presenceLeaseMs,
       negotiationTimeoutMs: config.negotiationTimeoutMs,
+      metrics,
+      logger,
     },
   });
-  await server.listen(config.port);
+  metrics.gauge('blindsignal_connections', 'Open WebSocket connections.', () => server.connections);
+  metrics.gauge('blindsignal_sessions', 'Sessions pending or active.', () => sessions.size);
+  const port = await server.listen(config.port);
+  const admin = await serveMetrics(metrics, config.adminPort, config.adminHost);
+  logger.log('info', 'server.listening', { port, adminPort: admin.port });
 
   // All or nothing: a rejected reload keeps the current registry (ADR 0005).
   const reload = async () => {
@@ -64,14 +76,15 @@ async function main(): Promise<void> {
       previous: registry,
       development,
     });
+    metrics.count('blindsignal_registry_reloads_total', { result: next.ok ? 'ok' : 'rejected' });
     if (!next.ok) {
-      console.error(`registry reload rejected: ${next.error}`);
+      logger.log('warn', 'registry.reload_rejected', { reason: next.error });
       return;
     }
     registry = next.registry;
     await applications.replaceAll(registry.applications);
     await server.enforce(registry.applications);
-    console.error('registry reloaded');
+    logger.log('info', 'registry.reloaded', { applications: registry.applications.length });
   };
   // One reload at a time, so each is checked against the registry the previous one installed.
   let reloading = Promise.resolve();
@@ -80,8 +93,10 @@ async function main(): Promise<void> {
   });
 
   const shutdown = async () => {
+    logger.log('info', 'server.draining');
     await server.drain();
     await server.close();
+    admin.server.close();
   };
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, () => void shutdown().finally(() => process.exit(0)));
@@ -89,6 +104,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : 'startup failed');
+  // Configuration and registry errors name keys, never values.
+  const reason = error instanceof Error ? error.message : 'startup failed';
+  logger.log('error', 'server.start_failed', { reason });
   process.exit(1);
 });
