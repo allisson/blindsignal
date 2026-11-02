@@ -26,14 +26,14 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 
 ### Tasks
 
-- [x] Inspect repository conventions and existing code (repository contains only docs, README, LICENSE, and a Node.js `.gitignore` template; the spec's illustrative interfaces use TypeScript).
+- [x] Inspect repository conventions and existing code (repository contains only docs, AGENTS.md, README, LICENSE, and a Node.js `.gitignore` template; the spec's illustrative interfaces use TypeScript).
 - [ ] Choose language, runtime, package and monorepo tooling, schema-validation library, and test frameworks, including browser automation for DataChannel tests.
 - [ ] Define server, SDK, and shared protocol boundaries.
 - [ ] Define signaling protocol and versioning.
 - [ ] Define application registration and trust model.
-- [ ] Define application issuer and JWKS configuration.
+- [ ] Define application issuer and JWKS configuration, including HTTPS-only JWKS URIs, fetch timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
 - [ ] Define JWT claims and validation requirements.
-- [ ] Define the issuer-to-application mapping, the `app_id` claim rule, and the `jti` replay policy.
+- [ ] Define the issuer-to-application mapping, the `app_id` claim rule, the `jti` replay policy, the maximum token lifetime, and the clock-skew tolerance.
 - [ ] Define application suspension and revocation behavior.
 - [ ] Define revocation enforcement limits for established P2P sessions (spec §6.4).
 - [ ] Define the control-plane mechanism for application registration, suspension, revocation, and device revocation (spec §5.6).
@@ -43,7 +43,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [ ] Define namespace and authorization semantics.
 - [ ] Decide the namespace authorization source for the MVP: token claims, stored policy, or both (spec §7.3).
 - [ ] Decide session cardinality: one-to-one only or multi-party (spec §13).
-- [ ] Decide the duplicate-connection policy for a device that connects again while already connected, together with the per-device concurrent connection limit (spec §13, §8.1).
+- [ ] Decide the duplicate-connection policy for a device that connects again while already connected, together with the per-device concurrent connection limit, accounting for several browser tabs sharing one device identity (spec §13, §8.1, §8.3).
 - [ ] Define pairing policy. *(Post-MVP: required before Phase 5 implements pairing; does not block the MVP.)*
 - [ ] Define `StorageAdapter`.
 - [ ] Define `CoordinationAdapter`.
@@ -77,6 +77,8 @@ The design and decision records specify that:
 - Authorization is server-side and deny-by-default.
 - No cloud provider or infrastructure service is mandatory for local development.
 
+Every decision the spec requires before implementation (listed in `AGENTS.md`, "Decisions that block implementation") is recorded in an ADR, except the tasks marked post-MVP.
+
 ---
 
 ## Phase 1 — Shared foundation and protocol
@@ -88,7 +90,7 @@ The design and decision records specify that:
 - [ ] Create shared types and protocol package.
 - [ ] Implement versioned signaling message schemas.
 - [ ] Define message validation.
-- [ ] Define standard error codes, marking each authentication error as retryable or terminal (spec §8.3).
+- [ ] Define standard error codes, marking each authentication and connection-closure error as retryable, terminal, or superseded (spec §8.3).
 - [ ] Define request correlation.
 - [ ] Define the allowed direction of every message type and reject messages sent in the wrong direction (spec §11).
 - [ ] Define message size limits.
@@ -127,7 +129,8 @@ The design and decision records specify that:
 - [ ] Implement JWT signature verification.
 - [ ] Enforce algorithm allowlisting.
 - [ ] Validate `iss`, `aud`, `exp`, `iat`, `sub`, `app_id`, and `device_id`, and `nbf` when present.
-- [ ] Validate `kid` and support signing-key rotation.
+- [ ] Enforce the maximum token lifetime and the clock-skew tolerance (spec §5.3).
+- [ ] Validate `kid` and support signing-key rotation, with HTTPS-only JWKS fetches, timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
 - [ ] Reject unknown, suspended, and revoked applications.
 - [ ] Implement in-memory `jti` replay protection per the token profile (spec §5.3).
 - [ ] Reject expired tokens at authentication; enforcement on open connections lands in Phase 3.
@@ -135,7 +138,7 @@ The design and decision records specify that:
 - [ ] Document backend token issuance requirements.
 - [ ] Implement a development token issuer for tests and examples, with test keys isolated from production trust configuration.
 - [ ] Ensure no application secret is required or embedded in browser code.
-- [ ] Add tests for invalid, expired, unknown, suspended, and revoked credentials, wrong issuer or audience, `app_id` claim and issuer mismatch, and replayed `jti`.
+- [ ] Add tests for invalid, expired, unknown, suspended, and revoked credentials, wrong issuer or audience, `app_id` claim and issuer mismatch, replayed `jti`, excessive token lifetime, future `iat`, and unknown-`kid` refetch limits.
 
 ### Deliverables
 
@@ -165,10 +168,12 @@ The design and decision records specify that:
 ### Tasks
 
 - [ ] Implement WebSocket server.
-- [ ] Integrate application authentication.
+- [ ] Check `Origin` at the WebSocket upgrade against a configured allowlist, as defense in depth (spec §16).
+- [ ] Integrate application authentication, rejecting protected messages sent before authentication completes.
 - [ ] Implement device registration.
 - [ ] Implement in-memory device repository.
 - [ ] Implement in-memory namespace and authorization repository.
+- [ ] Implement `namespace.join` and `namespace.leave`, admitting a device only to namespaces it is authorized in (spec §7.3, §13).
 - [ ] Implement in-memory presence management.
 - [ ] Extend the Phase 2 in-memory coordination adapter with presence leases, signaling event delivery, and TTL-based cleanup.
 - [ ] Implement device discovery.
@@ -217,7 +222,7 @@ The design and decision records specify that:
 
 ### Tasks
 
-- [ ] Implement SDK WebSocket client, refusing `ws://` URLs except for loopback hosts (spec §16).
+- [ ] Implement SDK WebSocket client, refusing `ws://` URLs except for loopback hosts and never placing the access token in the connection URL (spec §16).
 - [ ] Implement access-token provider interface.
 - [ ] Implement token refresh through the access-token provider and `auth.refresh`.
 - [ ] Implement authentication flow.
@@ -233,7 +238,9 @@ The design and decision records specify that:
 - [ ] Implement DataChannel creation and lifecycle.
 - [ ] Expose connection state.
 - [ ] Expose direct/relay/unknown connection type.
-- [ ] Implement reconnect with exponential backoff and jitter, stopping on terminal authentication errors (spec §8.3).
+- [ ] Implement heartbeats and dead-connection detection with `connection.ping` and `connection.pong` (spec §15).
+- [ ] Implement reconnect with exponential backoff and jitter, stopping on terminal authentication errors and not reconnecting automatically when superseded (spec §8.3).
+- [ ] After reconnecting, re-register presence and reconcile session state (spec §15).
 - [ ] Implement session cleanup and error handling, closing all sessions when reauthentication is rejected because the application is suspended or revoked or the device is revoked (spec §6.4).
 - [ ] Add browser integration tests.
 
@@ -297,7 +304,7 @@ The design and decision records specify that:
 
 **Goal:** Prevent individual applications or devices from exhausting shared infrastructure resources.
 
-**MVP subset:** the tasks marked *(MVP)*: basic per-application and per-device connection limits, pre-authentication limits (authentication deadline and unauthenticated connection cap), connection-attempt, authentication, discovery, session-creation and signaling rate limits, maximum message size, and negotiation timeouts. Usage metrics, bounded queues, and abuse-triggered suspension are post-MVP.
+**MVP subset:** the tasks marked *(MVP)*: basic per-application and per-device connection limits, pre-authentication limits (authentication deadline and unauthenticated connection cap), connection-attempt, authentication, discovery, session-creation and signaling rate limits, maximum message size, and negotiation timeouts. Usage metrics, bounded queues, abuse-triggered suspension, and the concurrent-session, device-count, and session-duration quotas are post-MVP.
 
 ### Tasks
 
@@ -313,6 +320,9 @@ The design and decision records specify that:
 - [ ] Implement authentication attempt limits. *(MVP)*
 - [ ] Implement maximum WebSocket message sizes. *(MVP)*
 - [ ] Implement session and negotiation timeouts. *(MVP)*
+- [ ] Implement maximum concurrent sessions per application and per device (spec §8.2).
+- [ ] Implement maximum registered or active devices per application, where applicable (spec §8.2).
+- [ ] Implement maximum session duration, where configured (spec §8.2).
 - [ ] Implement bounded queues and backpressure.
 - [ ] Implement abuse-triggered application suspension and operational alerts (spec §8.3), reusing the Phase 3 suspension handling.
 - [ ] Implement per-application usage metrics.

@@ -204,8 +204,10 @@ Requirements:
 - Asymmetric signing, such as EdDSA or ES256, subject to library and platform support.
 - Explicit algorithm allowlisting.
 - Validation of `iss`, `aud`, `exp`, `iat`, and required claims, and of `nbf` when present.
+- A configurable maximum token lifetime (`exp` − `iat`), enforced by the server: a token exceeding it is rejected, whatever lifetime the issuer chose. This also bounds `jti` replay tracking.
+- A configurable clock-skew tolerance applied to `exp`, `nbf`, and `iat`. A token whose `iat` is in the future beyond that tolerance is rejected.
 - Key identification through `kid`.
-- Public-key retrieval through trusted JWKS configuration or static key configuration.
+- Public-key retrieval through trusted JWKS configuration or static key configuration. JWKS URIs use HTTPS only, and fetches have timeouts. Refetching keys on an unknown `kid` is rate-limited per issuer, so unauthenticated clients cannot force repeated JWKS fetches.
 - Safe key rotation and cache refresh.
 - Rejection of unknown, suspended, or revoked applications.
 - No acceptance of tokens issued for unrelated services.
@@ -422,7 +424,7 @@ The server must support:
 
 Return consistent error codes and avoid leaking sensitive internal details.
 
-Authentication error codes must tell the SDK whether a rejection is retryable (for example, an expired token that a new token from the application backend can replace) or terminal (the application is suspended or revoked, or the device is revoked). The SDK stops reconnecting on a terminal rejection and closes its sessions (§6.4, §15).
+Authentication and connection-closure error codes must tell the SDK whether a rejection is retryable (for example, an expired token that a new token from the application backend can replace), terminal (the application is suspended or revoked, or the device is revoked), or superseded (the duplicate-connection policy replaced this connection with a newer one of the same device, §13). The SDK stops reconnecting on a terminal rejection and closes its sessions (§6.4, §15). On a superseded closure it does not reconnect automatically, so two connections of the same device cannot replace each other in a loop.
 
 ### 8.4 Resource controls
 
@@ -642,7 +644,7 @@ Connection type:
 
 The server must handle unexpected disconnects, duplicate connections, expired sessions, revoked applications, revoked devices, stale presence, invalid messages, and reconnection.
 
-The duplicate-connection policy must be decided before implementation: what happens when a device that already has an active connection connects again (for example, the newer connection replaces the older one, or the newer one is rejected). It is decided together with the per-device concurrent connection limit (§8.1, §8.2), since a replace policy implies a limit of one connection per device.
+The duplicate-connection policy must be decided before implementation: what happens when a device that already has an active connection connects again (for example, the newer connection replaces the older one, or the newer one is rejected). It is decided together with the per-device concurrent connection limit (§8.1, §8.2), since a replace policy implies a limit of one connection per device. The policy must account for several browser tabs or windows sharing one device identity, and must not let them replace each other in a reconnect loop (§8.3).
 
 Session cardinality must be decided before implementation: one-to-one sessions only, or multi-party sessions (and, if so, the topology, such as full mesh). The SDK API in §20 currently assumes one-to-one sessions; the "maximum session participants" quota (§8.2) only applies to multi-party sessions.
 
@@ -733,7 +735,7 @@ A PWA may be suspended or terminated by the browser or operating system. BlindSi
 - Protection against replay and impersonation where applicable.
 - Temporary TURN credentials.
 - No logging of tokens, secrets, or application payloads.
-- Strict origin policies as defense in depth, not as authentication.
+- Strict origin policies as defense in depth, not as authentication. The `Origin` header is checked at the WebSocket upgrade, before the application is known, against a configured server-wide allowlist. A per-application allowlist, if added, can only be checked after authentication.
 - Session expiration and cleanup.
 - Regular dependency and security reviews.
 
@@ -845,7 +847,8 @@ The final API must define token refresh, authentication errors, device enrollmen
 ### Unit tests
 - Application registry and status.
 - JWT validation and issuer mapping.
-- Key rotation and JWKS behavior.
+- Key rotation and JWKS behavior, including rate-limited refetch on an unknown `kid`.
+- Maximum token lifetime and clock-skew tolerance.
 - Authentication and authorization.
 - Namespace isolation.
 - Device lifecycle and revocation.
@@ -853,11 +856,15 @@ The final API must define token refresh, authentication errors, device enrollmen
 - Quotas and rate limits.
 - Message validation.
 - Storage and coordination adapters.
+- SDK refusal of `ws://` URLs except for loopback hosts, and no access token in the connection URL (§16).
 
 ### Integration tests
 - Unknown application rejection.
 - Suspended application rejection.
+- Revoked application rejection.
 - Expired and invalid token rejection.
+- Rejection of tokens exceeding the maximum lifetime, or with `iat` in the future beyond the clock-skew tolerance.
+- Rejection of protected messages sent before `auth.authenticate` completes.
 - Wrong issuer and audience rejection.
 - `app_id` claim and issuer mismatch rejection.
 - Replayed `jti` rejection.
@@ -865,10 +872,12 @@ The final API must define token refresh, authentication errors, device enrollmen
 - Credential renewal with `auth.refresh` without reconnecting.
 - `auth.refresh` rejection when the new token's `app_id`, `sub`, or `device_id` differs from the connection's.
 - Token expiry on an open connection without `auth.refresh`, according to the token profile.
-- Duplicate connection handling according to the selected policy.
+- Duplicate connection handling according to the selected policy, including two tabs sharing one device identity without a reconnect loop.
 - Two clients connecting to one local server.
 - Device discovery.
+- The same `sub` in two applications sharing no identity, devices, or namespaces (§6.1).
 - Session creation and acceptance.
+- `session.create` rejection when the target device is not authorized in the session's namespace.
 - SDP and ICE signaling.
 - `rtc.*` message rejection outside an accepted session or between non-participants.
 - `rtc.ice_config` delivery after authentication, with and without TURN configured.
@@ -877,6 +886,8 @@ The final API must define token refresh, authentication errors, device enrollmen
 - Expired presence cleanup.
 - Application suspension and revocation during active connections, with the SDK closing its sessions when reauthentication is rejected.
 - Device revocation closing the revoked device's connections and notifying remaining peers with `session.terminated`.
+- Control-plane operations rejecting application-issued access tokens (§5.6).
+- Reactivation refused for a revoked application.
 
 ### Connectivity tests
 - Same-network direct connection.
@@ -888,6 +899,8 @@ The final API must define token refresh, authentication errors, device enrollmen
 
 ### Abuse tests
 - Excessive connection attempts.
+- WebSocket upgrades with a disallowed `Origin` rejected.
+- Tokens with unknown `kid` values not triggering unbounded JWKS fetches.
 - Client IP derived from forwarding headers only for trusted proxies; forged headers from untrusted peers ignored.
 - Connections that never authenticate are closed at the authentication deadline.
 - Unauthenticated connection cap enforcement.
