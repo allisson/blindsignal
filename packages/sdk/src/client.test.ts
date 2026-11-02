@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { backoffDelay } from './backoff.ts';
-import { BlindSignalClient, type BlindSignalClientOptions } from './client.ts';
+import { BlindSignalClient, type BlindSignalClientOptions, type SessionRequest } from './client.ts';
 import { BlindSignalError } from './errors.ts';
 import { FakeSocket } from './testing/fake-socket.ts';
 
@@ -633,6 +633,156 @@ describe('BlindSignalClient namespaces', () => {
     await flush();
     expect(harness.client.state).toBe('disconnected');
     expect(harness.states.at(-1)).toEqual({ state: 'disconnected' });
+  });
+});
+
+describe('BlindSignalClient sessions', () => {
+  const peer = { namespace: 'notes:a', userId: 'bob', deviceId: 'phone' };
+  const event = (type: string, payload: object) => ({ version: 1, type, payload });
+
+  async function created(harness: Harness) {
+    const creating = harness.client.createSession({ ...peer, extra: 'x' } as typeof peer);
+    expect(harness.last()).toMatchObject({ type: 'session.create', payload: peer });
+    expect((harness.last().payload as Record<string, unknown>).extra).toBeUndefined();
+    const sessionId = crypto.randomUUID();
+    harness.reply('session.created', { sessionId });
+    const session = await creating;
+    const ended: unknown[] = [];
+    session.on('ended', (e) => ended.push(e));
+    return { session, sessionId, ended };
+  }
+
+  function requested(harness: Harness) {
+    const requests: SessionRequest[] = [];
+    harness.client.on('sessionRequest', (r) => requests.push(r));
+    const sessionId = crypto.randomUUID();
+    harness.socket().receive(event('session.request', { sessionId, ...peer }));
+    expect(requests).toHaveLength(1);
+    return { request: requests[0]!, sessionId };
+  }
+
+  it('creates a pending session that the target accepts', async () => {
+    const harness = await connected();
+    const { session, sessionId } = await created(harness);
+    expect(session).toMatchObject({ id: sessionId, peer, role: 'requester', state: 'pending' });
+    let accepted = 0;
+    session.on('accepted', () => accepted++);
+    harness.socket().receive(event('session.accepted', { sessionId }));
+    harness.socket().receive(event('session.accepted', { sessionId }));
+    expect(session.state).toBe('active');
+    expect(accepted).toBe(1);
+  });
+
+  it('ends a session the target rejects', async () => {
+    const harness = await connected();
+    const { session, sessionId, ended } = await created(harness);
+    harness.socket().receive(event('session.rejected', { sessionId }));
+    expect(session.state).toBe('ended');
+    expect(ended).toEqual([{ reason: 'rejected' }]);
+    harness.socket().receive(event('session.accepted', { sessionId }));
+    expect(session.state).toBe('ended');
+  });
+
+  it.each(['closed_by_peer', 'peer_disconnected', 'peer_revoked', 'timeout'])(
+    'ends a session terminated with %s',
+    async (reason) => {
+      const harness = await connected();
+      const { session, sessionId, ended } = await created(harness);
+      harness.socket().receive(event('session.terminated', { sessionId, reason }));
+      harness.socket().receive(event('session.terminated', { sessionId, reason: 'timeout' }));
+      expect(session.state).toBe('ended');
+      expect(ended).toEqual([{ reason }]);
+    },
+  );
+
+  it('rejects createSession with the server error or without a connection', async () => {
+    const harness = await connected();
+    const creating = harness.client.createSession(peer);
+    harness.reply('error', { code: 'peer_unavailable' });
+    await expect(creating).rejects.toEqual(new BlindSignalError('peer_unavailable'));
+    harness.client.close();
+    await expect(harness.client.createSession(peer)).rejects.toEqual(
+      new BlindSignalError('connection_closed'),
+    );
+  });
+
+  it('rejects createSession when the connection drops before the reply is handled', async () => {
+    const harness = await connected();
+    const creating = harness.client.createSession(peer);
+    harness.reply('session.created', { sessionId: crypto.randomUUID() });
+    harness.socket().drop(1006);
+    await expect(creating).rejects.toEqual(new BlindSignalError('connection_closed'));
+  });
+
+  it('closes a session, telling the server, once', async () => {
+    const harness = await connected();
+    const { session, sessionId, ended } = await created(harness);
+    session.close();
+    expect(harness.last()).toMatchObject({ type: 'session.close', payload: { sessionId } });
+    harness.reply('error', { code: 'session_unavailable' });
+    session.close();
+    expect(harness.sent('session.close')).toHaveLength(1);
+    expect(ended).toEqual([{ reason: 'closed' }]);
+    harness.socket().receive(event('session.terminated', { sessionId, reason: 'timeout' }));
+    expect(ended).toHaveLength(1);
+    await flush();
+  });
+
+  it('accepts a session request', async () => {
+    const harness = await connected();
+    const { request, sessionId } = requested(harness);
+    expect(request).toMatchObject({ sessionId, ...peer });
+    const accepting = request.accept();
+    expect(harness.last()).toMatchObject({ type: 'session.accept', payload: { sessionId } });
+    harness.reply('ack', {});
+    const session = await accepting;
+    expect(session).toMatchObject({ id: sessionId, peer, role: 'target', state: 'active' });
+    const ended: unknown[] = [];
+    session.on('ended', (e) => ended.push(e));
+    harness.socket().receive(event('session.terminated', { sessionId, reason: 'closed_by_peer' }));
+    expect(ended).toEqual([{ reason: 'closed_by_peer' }]);
+  });
+
+  it('rejects a session request', async () => {
+    const harness = await connected();
+    const { request, sessionId } = requested(harness);
+    const rejecting = request.reject();
+    expect(harness.last()).toMatchObject({ type: 'session.reject', payload: { sessionId } });
+    harness.reply('ack', {});
+    await expect(rejecting).resolves.toBeUndefined();
+  });
+
+  it('fails to accept a request that timed out or lost its connection', async () => {
+    const harness = await connected();
+    const { request } = requested(harness);
+    const accepting = request.accept();
+    harness.reply('error', { code: 'session_unavailable' });
+    await expect(accepting).rejects.toEqual(new BlindSignalError('session_unavailable'));
+
+    const late = request.accept();
+    harness.reply('ack', {});
+    harness.socket().drop(1006);
+    await expect(late).rejects.toEqual(new BlindSignalError('connection_closed'));
+    await expect(request.accept()).rejects.toEqual(new BlindSignalError('connection_closed'));
+    await expect(request.reject()).rejects.toEqual(new BlindSignalError('connection_closed'));
+  });
+
+  it('ends every session when the connection drops or the client closes', async () => {
+    const harness = await connected();
+    const first = await created(harness);
+    const second = await created(harness);
+    harness.socket().drop(1006);
+    expect(first.ended).toEqual([{ reason: 'disconnected' }]);
+    expect(second.ended).toEqual([{ reason: 'disconnected' }]);
+    await authenticate(harness);
+    harness.socket().receive(event('session.accepted', { sessionId: first.sessionId }));
+    expect(first.session.state).toBe('ended');
+
+    const third = await created(harness);
+    harness.client.close();
+    expect(third.ended).toEqual([{ reason: 'disconnected' }]);
+    third.session.close();
+    expect(harness.sent('session.close')).toHaveLength(0);
   });
 });
 

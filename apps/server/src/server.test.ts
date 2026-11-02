@@ -1,7 +1,12 @@
 import { InMemoryCoordinationAdapter } from '@blindsignal/coordination-memory';
 import { devApplication, mintDevToken } from '@blindsignal/dev-issuer';
 import type { ServerMessage } from '@blindsignal/protocol';
-import { BlindSignalClient, BlindSignalError, type Presence } from '@blindsignal/sdk';
+import {
+  BlindSignalClient,
+  BlindSignalError,
+  type Presence,
+  type SessionRequest,
+} from '@blindsignal/sdk';
 import {
   InMemoryApplicationRepository,
   InMemoryDeviceRepository,
@@ -354,5 +359,73 @@ describe('SignalingServer with the SDK', () => {
     await vi.waitFor(() =>
       expect(states.at(-1)).toEqual({ state: 'disconnected', error: 'superseded' }),
     );
+  });
+
+  describe('sessions', () => {
+    async function pair() {
+      const { url } = await start();
+      const alice = sdk(url, 'alice', 'laptop');
+      const bob = sdk(url, 'bob', 'phone');
+      const requests: SessionRequest[] = [];
+      bob.client.on('sessionRequest', (r) => requests.push(r));
+      for (const { client } of [alice, bob]) {
+        await client.connect();
+        await client.join('notes:a');
+      }
+      const session = await alice.client.createSession({
+        namespace: 'notes:a',
+        userId: 'bob',
+        deviceId: 'phone',
+      });
+      const request = await vi.waitFor(() => {
+        expect(requests).toHaveLength(1);
+        return requests[0]!;
+      });
+      const ended: unknown[] = [];
+      session.on('ended', (e) => ended.push(e));
+      return { alice, bob, session, request, ended };
+    }
+
+    it('connects a requester and a target, and closes', async () => {
+      const { session, request, ended } = await pair();
+      expect(request).toMatchObject({
+        sessionId: session.id,
+        namespace: 'notes:a',
+        userId: 'alice',
+        deviceId: 'laptop',
+      });
+      const accepted = new Promise((resolve) => session.on('accepted', resolve));
+      const target = await request.accept();
+      await accepted;
+      expect(session.state).toBe('active');
+      expect(target.state).toBe('active');
+      const targetEnded = new Promise((resolve) => target.on('ended', resolve));
+      session.close();
+      await expect(targetEnded).resolves.toEqual({ reason: 'closed_by_peer' });
+      expect(ended).toEqual([{ reason: 'closed' }]);
+    });
+
+    it('reports a rejection to the requester', async () => {
+      const { request, ended } = await pair();
+      await request.reject();
+      await vi.waitFor(() => expect(ended).toEqual([{ reason: 'rejected' }]));
+    });
+
+    it('ends the session when the target disconnects', async () => {
+      const { bob, request, ended } = await pair();
+      await request.accept();
+      bob.client.close();
+      await vi.waitFor(() => expect(ended).toEqual([{ reason: 'peer_disconnected' }]));
+    });
+
+    it('refuses a session with an absent device', async () => {
+      const { url } = await start();
+      const alice = sdk(url, 'alice', 'laptop');
+      await alice.client.connect();
+      await alice.client.join('notes:a');
+      await expect(
+        alice.client.createSession({ namespace: 'notes:a', userId: 'bob', deviceId: 'phone' }),
+      ).rejects.toEqual(new BlindSignalError('peer_unavailable'));
+    });
   });
 });

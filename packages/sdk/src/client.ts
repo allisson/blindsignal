@@ -1,7 +1,8 @@
-import { closeCodes, errorClasses, type Payload } from '@blindsignal/protocol';
+import { closeCodes, errorClasses, type Payload, type ServerMessage } from '@blindsignal/protocol';
 import { backoffDelay, defaultBackoff, type BackoffOptions } from './backoff.ts';
 import { Emitter } from './emitter.ts';
 import { BlindSignalError } from './errors.ts';
+import { Session, type Peer } from './session.ts';
 import { Signaling, type SocketFactory } from './signaling.ts';
 import { signalingUrl } from './url.ts';
 
@@ -41,6 +42,13 @@ export type Presence = Payload<'presence.changed'>;
 
 export type Device = Payload<'discovery.result'>['devices'][number];
 
+/** A peer asks for a session; answer with accept() or reject(). Unanswered, it times out. */
+export interface SessionRequest extends Peer {
+  readonly sessionId: string;
+  accept(): Promise<Session>;
+  reject(): Promise<void>;
+}
+
 export interface ClientEvents extends Record<string, unknown> {
   /** `error` says why the client stopped: a terminal or superseded code (docs/protocol.md §9). */
   state: { state: ConnectionState; error?: BlindSignalError['code'] };
@@ -48,6 +56,7 @@ export interface ClientEvents extends Record<string, unknown> {
   presence: Presence;
   /** A namespace could not be joined again after a reconnect, and is no longer joined. */
   rejoinFailed: { namespace: string; error: BlindSignalError['code'] };
+  sessionRequest: SessionRequest;
 }
 
 type IceConfig = Payload<'rtc.ice_config'>;
@@ -75,6 +84,8 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   #iceConfig: IceConfig | undefined;
   /** Namespaces the application joined and has not left, joined again after a reconnect. */
   readonly #namespaces = new Set<string>();
+  /** Sessions not yet ended, by ID. They end when the connection drops (ADR 0004). */
+  readonly #sessions = new Map<string, Session>();
   /** Bumped by close(), so an attempt in flight discards its result. */
   #generation = 0;
   #attempts = 0;
@@ -138,6 +149,15 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
     return result.payload.devices;
   }
 
+  /** Asks a device for a session; the result is `pending` until the target accepts. */
+  async createSession({ namespace, userId, deviceId }: Peer): Promise<Session> {
+    const peer = { namespace, userId, deviceId };
+    const signaling = this.#current();
+    const created = await signaling.request('session.create', peer);
+    if (this.#signaling !== signaling) throw new BlindSignalError('connection_closed');
+    return this.#track(created.payload.sessionId, peer, 'requester', 'pending');
+  }
+
   /** Closes the connection and stops reconnecting. */
   close(): void {
     this.#generation++;
@@ -168,10 +188,7 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
       );
       signaling = opened;
       if (generation !== this.#generation) return;
-      opened.on('message', (message) => {
-        if (message.type === 'rtc.ice_config') this.#iceConfig = message.payload;
-        else if (message.type === 'presence.changed') this.emit('presence', message.payload);
-      });
+      opened.on('message', (message) => this.#receive(message));
       opened.on('close', ({ code, error }) => this.#lost(opened, code, error));
       const result = await opened.request('auth.authenticate', { token });
       if (generation !== this.#generation) return;
@@ -194,6 +211,61 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
       // An attempt that did not become the connection never keeps its socket.
       signaling?.close();
     }
+  }
+
+  #receive(message: ServerMessage): void {
+    switch (message.type) {
+      case 'rtc.ice_config':
+        this.#iceConfig = message.payload;
+        return;
+      case 'presence.changed':
+        this.emit('presence', message.payload);
+        return;
+      case 'session.request':
+        this.emit('sessionRequest', this.#sessionRequest(message.payload));
+        return;
+      case 'session.accepted':
+        this.#sessions.get(message.payload.sessionId)?.activate();
+        return;
+      case 'session.rejected':
+        this.#end(message.payload.sessionId, 'rejected');
+        return;
+      case 'session.terminated':
+        this.#end(message.payload.sessionId, message.payload.reason);
+        return;
+    }
+  }
+
+  #sessionRequest({ sessionId, ...peer }: Payload<'session.request'>): SessionRequest {
+    return {
+      sessionId,
+      ...peer,
+      accept: async () => {
+        const signaling = this.#current();
+        await signaling.request('session.accept', { sessionId });
+        if (this.#signaling !== signaling) throw new BlindSignalError('connection_closed');
+        return this.#track(sessionId, peer, 'target', 'active');
+      },
+      reject: async () => {
+        await this.#current().request('session.reject', { sessionId });
+      },
+    };
+  }
+
+  #track(id: string, peer: Peer, role: Session['role'], state: 'pending' | 'active'): Session {
+    const session = new Session({ id, peer, role, state }, () => {
+      this.#sessions.delete(id);
+      // Best effort: a session the server already ended answers session_unavailable.
+      this.#signaling?.request('session.close', { sessionId: id }).catch(() => undefined);
+    });
+    this.#sessions.set(id, session);
+    return session;
+  }
+
+  #end(id: string, reason: Parameters<Session['end']>[0]): void {
+    const session = this.#sessions.get(id);
+    this.#sessions.delete(id);
+    session?.end(reason);
   }
 
   async #rejoin(signaling: Signaling, namespace: string): Promise<void> {
@@ -232,6 +304,7 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
     clearTimeout(this.#pingTimer);
     this.#signaling?.close();
     this.#signaling = undefined;
+    for (const id of [...this.#sessions.keys()]) this.#end(id, 'disconnected');
   }
 
   #heartbeat(signaling: Signaling): void {
