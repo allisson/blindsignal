@@ -208,13 +208,22 @@ importers:
       '@blindsignal/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      jose:
+        specifier: ^6.2.14
+        version: 6.2.14
       zod:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
+      '@blindsignal/coordination-memory':
+        specifier: workspace:*
+        version: link:../../adapters/coordination/memory
       '@blindsignal/dev-issuer':
         specifier: workspace:*
         version: link:../../packages/dev-issuer
+      '@blindsignal/storage-memory':
+        specifier: workspace:*
+        version: link:../../adapters/storage/memory
 
   packages/core: {}
 

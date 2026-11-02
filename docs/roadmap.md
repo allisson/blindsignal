@@ -127,19 +127,19 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Define application status: active, suspended, revoked.
 - [x] Implement trusted issuer configuration.
 - [x] Implement trusted JWKS or public-key configuration.
-- [ ] Implement JWT signature verification.
-- [ ] Enforce algorithm allowlisting.
-- [ ] Validate `iss`, `aud`, `exp`, `iat`, `sub`, `app_id`, `device_id`, `jti`, and `namespaces`, and `nbf` when present.
-- [ ] Enforce the maximum token lifetime and the clock-skew tolerance (spec §5.3).
-- [ ] Validate `kid` and support signing-key rotation, with HTTPS-only JWKS fetches, timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
-- [ ] Reject unknown, suspended, and revoked applications.
-- [ ] Implement in-memory `jti` replay protection per the token profile (spec §5.3).
-- [ ] Reject expired tokens at authentication; enforcement on open connections lands in Phase 3.
-- [ ] Implement application-scoped authentication context.
+- [x] Implement JWT signature verification.
+- [x] Enforce algorithm allowlisting.
+- [x] Validate `iss`, `aud`, `exp`, `iat`, `sub`, `app_id`, `device_id`, `jti`, and `namespaces`, and `nbf` when present.
+- [x] Enforce the maximum token lifetime and the clock-skew tolerance (spec §5.3).
+- [x] Validate `kid` and support signing-key rotation, with HTTPS-only JWKS fetches, timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
+- [x] Reject unknown, suspended, and revoked applications.
+- [x] Implement in-memory `jti` replay protection per the token profile (spec §5.3).
+- [x] Reject expired tokens at authentication; enforcement on open connections lands in Phase 3.
+- [x] Implement application-scoped authentication context.
 - [ ] Document backend token issuance requirements.
 - [x] Implement a development token issuer for tests and examples, with test keys isolated from production trust configuration.
 - [ ] Ensure no application secret is required or embedded in browser code.
-- [ ] Add tests for invalid, expired, unknown, suspended, and revoked credentials, wrong issuer or audience, `app_id` claim and issuer mismatch, replayed `jti`, excessive token lifetime, future `iat`, and unknown-`kid` refetch limits.
+- [x] Add tests for invalid, expired, unknown, suspended, and revoked credentials, wrong issuer or audience, `app_id` claim and issuer mismatch, replayed `jti`, excessive token lifetime, future `iat`, and unknown-`kid` refetch limits.
 
 ### Deliverables
 
