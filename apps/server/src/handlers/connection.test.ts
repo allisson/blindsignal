@@ -39,6 +39,15 @@ const limits = (devices: number): Limits => ({
   quotas: { ...defaults.config.limits.quotas, devices },
 });
 const d1 = { app_id: 'notes', sub: 'u1', device_id: 'd1' };
+/** The notes application with its own rate limits. */
+const limited = (rateLimits: object) => [{ ...devApplication('notes'), rateLimits }];
+const ONE_PER_SECOND = { ratePerSecond: 1, burst: 1 };
+const rateLimited = (requestId?: string) => ({
+  version: 1,
+  type: 'error',
+  ...(requestId === undefined ? {} : { requestId }),
+  payload: { code: 'rate_limited', retryAfterMs: 1000 },
+});
 
 beforeEach(() => {
   vi.useFakeTimers({ now: START });
@@ -243,6 +252,45 @@ describe('Connection', () => {
       await connect().authenticate();
       await connect().authenticate({ device_id: 'd2' });
       expect(metrics.render()).toContain('blindsignal_errors_total{code="rate_limited"} 1');
+    });
+  });
+
+  describe('signaling rate limit', () => {
+    it("limits every frame, malformed ones too, by the application's policy", async () => {
+      const { connect } = await setup(limited({ signaling: { ratePerSecond: 1, burst: 3 } }));
+      const client = connect();
+      await client.authenticate();
+      await client.request('connection.ping');
+      await client.request('connection.ping');
+      await client.request('no.such_type');
+      expect(client.errors()).toEqual(['invalid_message']);
+      await client.request('connection.ping');
+      expect(client.last()).toEqual(rateLimited('r5'));
+      await client.request('no.such_type');
+      expect(client.last()).toEqual(rateLimited('r6'));
+      await client.connection.receive('garbage');
+      expect(client.last()).toEqual(rateLimited());
+      expect(client.closes).toEqual([]);
+      vi.advanceTimersByTime(1000);
+      await client.request('connection.ping');
+      expect(client.last()?.type).toBe('connection.pong');
+    });
+
+    it('limits frames before authentication by the server default, per connection', async () => {
+      const signaling = { signaling: ONE_PER_SECOND };
+      const { connect, deps } = await setup(undefined, {
+        limits: { ...limits(10), rateLimits: { ...limits(10).rateLimits, ...signaling } },
+      });
+      const verify = vi.spyOn(deps.verifier, 'verify');
+      const client = connect();
+      await client.request('no.such_type');
+      await client.authenticate();
+      expect(client.errors()).toEqual(['invalid_message', 'rate_limited']);
+      expect(client.last()).toEqual(rateLimited('r2'));
+      expect(verify).not.toHaveBeenCalled();
+      const other = connect();
+      await other.authenticate();
+      expect(other.connection.context).toBeDefined();
     });
   });
 
@@ -836,6 +884,21 @@ describe('Connection', () => {
         expect(alice.errors()).toEqual(['not_authorized']);
       });
 
+      it('limits requests per connection, refused ones too, keeping the connection', async () => {
+        const { connect } = await setup(limited({ discovery: ONE_PER_SECOND }));
+        const alice = await joined(connect, d1);
+        const bob = await joined(connect, { sub: 'u2', device_id: 'd2' });
+        await alice.request('discovery.request', { namespace: 'notes:b' });
+        await alice.request('discovery.request', { namespace: 'notes:a' });
+        expect(alice.last()).toEqual(rateLimited('r4'));
+        expect(alice.closes).toEqual([]);
+        await bob.request('discovery.request', { namespace: 'notes:a' });
+        expect(bob.last()?.type).toBe('discovery.result');
+        vi.advanceTimersByTime(1000);
+        await alice.request('discovery.request', { namespace: 'notes:a' });
+        expect(alice.last()?.type).toBe('discovery.result');
+      });
+
       it('refuses an authorized namespace not joined with not_joined', async () => {
         const { connect } = await setup();
         const alice = await joined(connect, d1, []);
@@ -952,8 +1015,8 @@ describe('Connection', () => {
       return created.payload.sessionId;
     }
 
-    async function active() {
-      const context = await pair();
+    async function active(entries?: object[]) {
+      const context = await pair(entries);
       const sessionId = await create(context.alice);
       await context.bob.request('session.accept', { sessionId });
       await settle();
@@ -1040,6 +1103,21 @@ describe('Connection', () => {
         await carol.request('session.create', to('u1', 'd1'));
         expect(carol.last()?.type).toBe('session.created');
       });
+    });
+
+    it('limits session.create per connection, refused ones too', async () => {
+      const { connect, alice, bob } = await pair(limited({ session_create: ONE_PER_SECOND }));
+      await alice.request('session.create', { ...bobDevice, namespace: 'notes:b' });
+      await alice.request('session.create', bobDevice);
+      await settle();
+      expect(alice.last()).toEqual(rateLimited('r4'));
+      expect(alice.closes).toEqual([]);
+      expect(bob.sent.filter((m) => m.type === 'session.request')).toEqual([]);
+      const carol = await member(connect, { sub: 'u3', device_id: 'd3' });
+      await carol.request('session.create', bobDevice);
+      expect(carol.last()?.type).toBe('session.created');
+      vi.advanceTimersByTime(1000);
+      await create(alice);
     });
 
     it('refuses a namespace outside the token with not_authorized', async () => {
@@ -1201,15 +1279,17 @@ describe('Connection', () => {
       const { alice, bob } = await pair();
       const sessionId = await create(alice);
       vi.advanceTimersByTime(NEGOTIATION_MS - 1);
-      // The reject is handled first, then the timeout queued behind it finds the session gone.
+      // The reject waits on its rate limit, so the timeout ends the session and the reject finds
+      // it gone.
       const reject = bob.request('session.reject', { sessionId });
       vi.advanceTimersByTime(1);
       await reject;
       await settle();
       const types = (client: Client) =>
         client.sent.map((message) => message.type).filter((type) => type.startsWith('session.'));
-      expect(types(alice)).toEqual(['session.created', 'session.rejected']);
-      expect(types(bob)).toEqual(['session.request']);
+      expect(types(alice)).toEqual(['session.created', 'session.terminated']);
+      expect(types(bob)).toEqual(['session.request', 'session.terminated']);
+      expect(bob.errors()).toEqual(['session_unavailable']);
     });
 
     it.each(['alice', 'bob'] as const)(
@@ -1288,6 +1368,26 @@ describe('Connection', () => {
           payload: { sessionId: context.sessionId, ...fields },
         });
         expect(context[from].sent).toHaveLength(before);
+      });
+
+      it('limits rtc.* per session, with rtc.ice_candidate in its own bucket', async () => {
+        const policies = { rtc: ONE_PER_SECOND, rtc_ice_candidate: ONE_PER_SECOND };
+        const { alice, bob, sessionId } = await active(limited(policies));
+        await alice.request('rtc.offer', { sessionId, sdp: 'v=0' });
+        await bob.request('rtc.answer', { sessionId, sdp: 'v=0' });
+        expect(bob.last()).toEqual(rateLimited('r4'));
+        await bob.request('rtc.ice_candidate', { sessionId, candidate: 'c' });
+        await alice.request('rtc.ice_candidate', { sessionId, candidate: 'c' });
+        await settle();
+        expect(alice.last()).toEqual(rateLimited('r5'));
+        expect([alice.closes, bob.closes]).toEqual([[], []]);
+        const relayed = (client: Client) => client.sent.filter((m) => m.type.startsWith('rtc.'));
+        expect(relayed(bob).map((m) => m.type)).toEqual(['rtc.ice_config', 'rtc.offer']);
+        expect(relayed(alice).map((m) => m.type)).toEqual(['rtc.ice_config', 'rtc.ice_candidate']);
+        vi.advanceTimersByTime(1000);
+        await bob.request('rtc.answer', { sessionId, sdp: 'v=0' });
+        await settle();
+        expect(alice.last()?.type).toBe('rtc.answer');
       });
 
       it('refuses a pending session with session_unavailable', async () => {

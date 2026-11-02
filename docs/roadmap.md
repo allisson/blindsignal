@@ -313,9 +313,9 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement WebSocket connection attempt rate limits, keyed by source IP (spec §8.1). *(MVP)*
 - [x] Implement the authentication deadline for connections that do not authenticate (spec §8.4). *(MVP)*
 - [x] Implement the unauthenticated connection cap, per source IP and global (spec §8.4). *(MVP)*
-- [ ] Implement session creation limits. *(MVP)*
-- [ ] Implement signaling message rate limits. *(MVP)*
-- [ ] Implement discovery rate limits. *(MVP)*
+- [x] Implement session creation limits. *(MVP)*
+- [x] Implement signaling message rate limits. *(MVP)*
+- [x] Implement discovery rate limits. *(MVP)*
 - [x] Implement authentication attempt limits. *(MVP)*
 - [x] Implement maximum WebSocket message sizes. *(MVP)*
 - [x] Implement session and negotiation timeouts. *(MVP)*

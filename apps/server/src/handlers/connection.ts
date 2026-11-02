@@ -1,4 +1,5 @@
 import type {
+  ApplicationRateLimit,
   ApplicationRecord,
   ConnectionContext,
   CoordinationAdapter,
@@ -123,7 +124,8 @@ export class Connection {
   readonly id: string;
   readonly #port: ConnectionPort;
   readonly #deps: ConnectionDependencies;
-  // shortcut: unbounded per-connection queue; Phase 6 bounds it with the message rate limits.
+  // shortcut: unbounded per-connection queue; a rate-limited frame costs one bucket lookup, and
+  // the post-MVP bounded-queue task (docs/roadmap.md, Phase 6) caps the queue's length.
   #queue: Promise<void> = Promise.resolve();
   #closed = false;
   /** What the other participants of this connection's sessions are told when it ends. */
@@ -217,6 +219,9 @@ export class Connection {
 
   async #handleFrame(text: string): Promise<void> {
     const parsed = parseClientMessage(text, { maxBytes: this.#deps.maxMessageBytes });
+    // Every frame takes a signaling token, malformed ones too (ADR 0011).
+    const requestId = parsed.ok ? parsed.message.requestId : parsed.requestId;
+    if (!(await this.#limit('signaling', this.id, requestId))) return;
     if (!parsed.ok) return this.#error(parsed.code, parsed.requestId);
     const message = parsed.message;
     this.#deps.metrics.count('blindsignal_messages_total', { type: message.type });
@@ -304,18 +309,30 @@ export class Connection {
     this.#closed = true;
   }
 
+  /** Takes a token from the client IP's authentication bucket, before the token is verified. */
+  #allowAuthentication(requestId: string): Promise<boolean> {
+    const key = `authentication:${this.#port.clientIp}`;
+    return this.#allow(key, this.#deps.authenticationAttempts, requestId);
+  }
+
+  /** Takes a token from the application's bucket for the category, keyed by `id`. */
+  #limit(category: ApplicationRateLimit, id: string, requestId?: string): Promise<boolean> {
+    return this.#allow(`${category}:${id}`, this.#limits.rateLimits[category], requestId);
+  }
+
   /**
-   * Takes a token from the client IP's authentication bucket before the token is verified; when
-   * none is left, answers `rate_limited` and keeps the connection (ADR 0011).
+   * Takes a token from the bucket; when none is left, answers `rate_limited`, drops the message,
+   * and keeps the connection (ADR 0011).
    */
-  async #allowAuthentication(requestId: string): Promise<boolean> {
-    const decision = await this.#deps.coordination.consumeRateLimit(
-      `authentication:${this.#port.clientIp}`,
-      this.#deps.authenticationAttempts,
-    );
+  async #allow(key: string, policy: RateLimitPolicy, requestId?: string): Promise<boolean> {
+    const decision = await this.#deps.coordination.consumeRateLimit(key, policy);
     if (decision.allowed) return true;
     const { retryAfterMs } = decision;
-    this.#send({ type: 'error', requestId, payload: { code: 'rate_limited', retryAfterMs } });
+    this.#send({
+      type: 'error',
+      ...(requestId === undefined ? {} : { requestId }),
+      payload: { code: 'rate_limited', retryAfterMs },
+    });
     this.#deps.metrics.count('blindsignal_errors_total', { code: 'rate_limited' });
     return false;
   }
@@ -394,6 +411,7 @@ export class Connection {
   async #discover(message: ClientMessage & { type: 'discovery.request' }): Promise<void> {
     const { requestId, payload } = message;
     const { namespace } = payload;
+    if (!(await this.#limit('discovery', this.id, requestId))) return;
     if (!this.#authorized(namespace)) return this.#error('not_authorized', requestId);
     if (!this.#joined.has(namespace)) return this.#error('not_joined', requestId);
     const present = await this.#deps.coordination.listPresence(namespace);
@@ -406,6 +424,7 @@ export class Connection {
   async #createSession(message: ClientMessage & { type: 'session.create' }): Promise<void> {
     const { requestId, payload } = message;
     const { namespace, userId, deviceId } = payload;
+    if (!(await this.#limit('session_create', this.id, requestId))) return;
     if (!this.#authorized(namespace)) return this.#error('not_authorized', requestId);
     const self = this.#context as ConnectionContext;
     const target = { appId: self.appId, userId, deviceId };
@@ -487,6 +506,9 @@ export class Connection {
     if (session?.state !== 'active' || !this.#participates(session)) {
       return this.#error('session_unavailable', requestId);
     }
+    // Keyed by session, after the check, so only an active session's participants make buckets.
+    const category = type === 'rtc.ice_candidate' ? 'rtc_ice_candidate' : 'rtc';
+    if (!(await this.#limit(category, session.id, requestId))) return;
     // The parsed payload holds only the schema's fields: no requestId, no sender, no extra keys.
     await this.#publish(this.#peerOf(session), { type, payload });
   }
