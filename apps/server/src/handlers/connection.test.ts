@@ -492,24 +492,30 @@ describe('Connection', () => {
   });
 
   describe('before authentication', () => {
-    it.each(['connection.ping', 'auth.refresh', 'namespace.join'])(
-      'closes on %s with not_authenticated',
-      async (type) => {
-        const { connect } = await setup();
-        const client = connect();
-        const payload =
-          type === 'auth.refresh'
-            ? { token: 'x' }
-            : type === 'namespace.join'
-              ? { namespace: 'notes:a' }
-              : {};
-        await client.request(type, payload);
-        expect(client.sent).toEqual([
-          { version: 1, type: 'error', requestId: 'r1', payload: { code: 'not_authenticated' } },
-        ]);
-        expect(client.closes).toEqual([4002]);
-      },
-    );
+    const sessionId = '00000000-0000-4000-8000-000000000000';
+    const target = { namespace: 'notes:a', userId: 'u2', deviceId: 'd2' };
+    it.each([
+      ['connection.ping', {}],
+      ['auth.refresh', { token: 'x' }],
+      ['namespace.join', { namespace: 'notes:a' }],
+      ['namespace.leave', { namespace: 'notes:a' }],
+      ['discovery.request', { namespace: 'notes:a' }],
+      ['session.create', target],
+      ['session.accept', { sessionId }],
+      ['session.reject', { sessionId }],
+      ['session.close', { sessionId }],
+      ['rtc.offer', { sessionId, sdp: 'v=0' }],
+      ['rtc.answer', { sessionId, sdp: 'v=0' }],
+      ['rtc.ice_candidate', { sessionId, candidate: 'c' }],
+    ])('closes on %s with not_authenticated', async (type, payload) => {
+      const { connect } = await setup();
+      const client = connect();
+      await client.request(type, payload);
+      expect(client.sent).toEqual([
+        { version: 1, type: 'error', requestId: 'r1', payload: { code: 'not_authenticated' } },
+      ]);
+      expect(client.closes).toEqual([4002]);
+    });
 
     it('answers an invalid message without closing', async () => {
       const { connect } = await setup();
@@ -1415,6 +1421,91 @@ describe('Connection', () => {
         expect(carol.errors()).toEqual(['session_unavailable']);
         expect(alice.errors()).toEqual(['session_unavailable', 'session_unavailable']);
         expect(bob.sent.filter((message) => message.type.startsWith('rtc.'))).toHaveLength(1);
+      });
+    });
+
+    describe('namespace authorization (ADR 0007)', () => {
+      it('answers an unauthorized namespace like a nonexistent one, so none can be enumerated', async () => {
+        const { connect } = await setup();
+        const bob = await member(connect, bobClaims, ['notes:b']);
+        const alice = await member(connect, d1);
+        for (const namespace of ['notes:b', 'notes:none']) {
+          await alice.request('namespace.join', { namespace });
+          await alice.request('discovery.request', { namespace });
+          await alice.request('session.create', { ...bobDevice, namespace });
+        }
+        await settle();
+        expect(alice.sent.slice(-6).map(({ type, payload }) => ({ type, payload }))).toEqual(
+          Array(6).fill({ type: 'error', payload: { code: 'not_authorized' } }),
+        );
+        expect(alice.closes).toEqual([]);
+        expect(bob.sent.filter((m) => m.type === 'session.request')).toEqual([]);
+        await bob.request('namespace.leave', { namespace: 'notes:b' });
+        await member(connect, { sub: 'u3', device_id: 'd3' }, ['notes:b']);
+        await settle();
+        expect(alice.presence()).toEqual([]);
+      });
+
+      it('matches namespace IDs exactly, with no prefix or pattern', async () => {
+        const { connect } = await setup();
+        const client = connect();
+        await client.authenticate({ namespaces: ['notes:a', 'notes:*'] });
+        for (const namespace of ['notes:ab', 'notes:A', 'notes:a/b', 'notes:b']) {
+          await client.request('namespace.join', { namespace });
+        }
+        expect(client.errors()).toEqual(Array(4).fill('not_authorized'));
+        await client.request('namespace.join', { namespace: 'notes:*' });
+        expect(client.last()?.type).toBe('ack');
+      });
+
+      it('refuses a session with a device no longer authorized in the namespace', async () => {
+        const { alice, bob } = await pair();
+        await bob.refresh({ ...bobClaims, namespaces: ['notes:b'] });
+        await alice.request('session.create', bobDevice);
+        await settle();
+        expect(alice.errors()).toEqual(['peer_unavailable']);
+        expect(bob.sent.filter((m) => m.type === 'session.request')).toEqual([]);
+      });
+
+      it('refuses every namespace request the refresh no longer authorizes', async () => {
+        const { alice, bob } = await pair();
+        await alice.refresh({ namespaces: ['notes:b'] });
+        await alice.request('namespace.join', { namespace: 'notes:a' });
+        await alice.request('discovery.request', { namespace: 'notes:a' });
+        await alice.request('session.create', bobDevice);
+        await settle();
+        expect(alice.errors()).toEqual(Array(3).fill('not_authorized'));
+        expect(bob.sent.filter((m) => m.type === 'session.request')).toEqual([]);
+      });
+
+      it('shares no device, namespace, or session across applications for the same sub', async () => {
+        const { connect, coordination } = await setup([
+          devApplication('notes'),
+          devApplication('chat'),
+        ]);
+        const alice = await member(connect, d1);
+        const bob = await member(connect, bobClaims);
+        // The same sub and device_id in another application is another device (spec §6.1).
+        const twin = await member(connect, { ...d1, app_id: 'chat' }, ['chat:a']);
+        await twin.request('namespace.join', { namespace: 'notes:a' });
+        await twin.request('discovery.request', { namespace: 'notes:a' });
+        await twin.request('session.create', bobDevice);
+        await twin.request('session.create', { ...bobDevice, namespace: 'chat:a' });
+        await settle();
+        expect(twin.errors()).toEqual([
+          'not_authorized',
+          'not_authorized',
+          'not_authorized',
+          'peer_unavailable',
+        ]);
+        expect([alice.closes, bob.closes, twin.closes]).toEqual([[], [], []]);
+        expect(alice.presence()).toEqual([
+          { namespace: 'notes:a', userId: 'u2', deviceId: 'd2', present: true },
+        ]);
+        expect(bob.sent.filter((m) => m.type === 'session.request')).toEqual([]);
+        expect(await coordination.listPresence('chat:a')).toEqual([
+          { appId: 'chat', userId: 'u1', deviceId: 'd1' },
+        ]);
       });
     });
 
