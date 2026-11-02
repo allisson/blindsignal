@@ -16,6 +16,7 @@ server. Initial target: browser / PWA.
 - `docs/adr/`: architecture decision records.
 - `GLOSSARY.md`: canonical domain terms; use them in code, docs, and messages.
 - `docs/protocol.md`, `docs/threat-model.md`: Phase 0 deliverables.
+- `docs/token-issuance.md`: what an application backend must do to issue accepted tokens.
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
 raise it; do not silently diverge. A change that alters a documented contract updates the spec,

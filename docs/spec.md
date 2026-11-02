@@ -197,7 +197,7 @@ Example JWT payload:
 }
 ```
 
-The token profile (header, required claims, default lifetime and clock-skew tolerance, `jti` replay policy, and expiry on an open connection) is in `docs/adr/0006-token-profile-and-device-identity.md`.
+The token profile (header, required claims, default lifetime and clock-skew tolerance, `jti` replay policy, and expiry on an open connection) is in `docs/adr/0006-token-profile-and-device-identity.md`; what an issuing backend must do is in `docs/token-issuance.md`.
 
 Requirements:
 - Short-lived tokens, initially targeting approximately 5–10 minutes.
@@ -810,7 +810,8 @@ blindsignal/
 │   ├── roadmap.md
 │   ├── adr/
 │   ├── protocol.md
-│   └── threat-model.md
+│   ├── threat-model.md
+│   └── token-issuance.md
 ├── examples/
 ├── tests/
 ├── Dockerfile
