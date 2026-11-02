@@ -277,6 +277,10 @@ configurable default.
   the provider or with a retryable `error`, is retried with backoff until the token's expiry; if
   none succeeds, the server closes the connection with `token_expired` and the SDK reconnects with
   a new token.
+- **Heartbeat.** The SDK sends `connection.ping` every 25 s and treats the connection as dead when
+  no reply arrives within 10 s: it closes the socket and reconnects with backoff. Any reply,
+  `error` included, shows the server is alive. Requests pending on a connection that drops are
+  rejected.
 - **Rate limits.** After `rate_limited`, the SDK waits at least `retryAfterMs` before sending that
   kind of request again.
 - **Terminal and superseded.** A terminal close (`4002`) stops reconnecting and closes every
