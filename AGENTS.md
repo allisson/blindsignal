@@ -13,7 +13,8 @@ server. Initial target: browser / PWA.
 
 - `docs/spec.md`: technical specification. §22 is the canonical MVP definition.
 - `docs/roadmap.md`: phased plan; maps every MVP item to the phase that delivers it.
-- `docs/adr/`: architecture decision records (to be created in Phase 0).
+- `docs/adr/`: architecture decision records.
+- `GLOSSARY.md`: canonical domain terms; use them in code, docs, and messages.
 - `docs/protocol.md`, `docs/threat-model.md`: Phase 0 deliverables.
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
@@ -82,8 +83,10 @@ Treat a violation of any of these as a bug, regardless of the task:
   production trust configuration.
 - Resource limits (message size, rates, quotas, timeouts) are configurable, never hardcoded
   constants.
-- Repository layout follows spec §19 (`apps/server`, `packages/{sdk,protocol,shared}`,
+- Repository layout follows spec §19 (`apps/server`, `packages/{sdk,protocol,core}`,
   `adapters/{storage,coordination}/*`) unless an ADR changes it.
+- Package dependencies follow `docs/adr/0002-package-boundaries.md`: the SDK imports only
+  `protocol`; adapters import only `core`; nothing imports `apps/server`.
 
 ## Protocol naming
 
@@ -119,7 +122,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 
 - Types: `feat`, `fix`, `docs`, `refactor`, `test`, `perf`, `build`, `ci`, `chore`, `style`,
   `revert`.
-- Scopes, once the packages exist: `server`, `sdk`, `protocol`, `shared`, `storage`,
+- Scopes, once the packages exist: `server`, `sdk`, `protocol`, `core`, `storage`,
   `coordination`, `adr`, `spec`, `roadmap`.
 - Summary in the imperative mood, lowercase, no trailing period, at most 72 characters.
 - Breaking protocol or SDK changes use `!` after the type/scope and a `BREAKING CHANGE:` footer.

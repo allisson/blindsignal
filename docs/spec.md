@@ -779,7 +779,7 @@ blindsignal/
 ├── packages/
 │   ├── sdk/
 │   ├── protocol/
-│   └── shared/
+│   └── core/
 ├── adapters/
 │   ├── storage/
 │   │   ├── in-memory/
@@ -798,6 +798,8 @@ blindsignal/
 ├── Dockerfile
 └── docker-compose.yml
 ```
+
+`packages/protocol` is the wire contract shared by server and SDK. `packages/core` holds server-side domain types and the adapter interfaces (§10); the SDK never imports it. Dependency rules are in `docs/adr/0002-package-boundaries.md`.
 
 Adapt to existing repository conventions rather than imposing this structure blindly.
 
