@@ -47,7 +47,8 @@ on them is written. Never assume an answer:
 - `jti` replay policy and the full token profile (§5.3), including the maximum token lifetime,
   clock-skew tolerance, and what happens when a connection's token expires without `auth.refresh`.
   Decided: `docs/adr/0006-token-profile-and-device-identity.md`.
-- When `rtc.ice_config` is sent beyond post-authentication (§11).
+- When `rtc.ice_config` is sent beyond post-authentication (§11). Decided:
+  `docs/adr/0009-ice-configuration.md`.
 - Pairing protocol (§7.4, post-MVP). Never invent custom cryptography.
 
 ## Non-negotiable invariants
