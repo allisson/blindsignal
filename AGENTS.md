@@ -133,3 +133,8 @@ feat(protocol): add versioned auth message schemas
 fix(server): reject auth.refresh with a different device_id
 feat(protocol)!: rename rtc.ice to rtc.ice_candidate
 ```
+
+## Pull requests
+
+- Every change, code or docs, reaches `main` through a pull request. Never push directly to `main`.
+- Work on a branch cut from the latest `main`; one logical change per pull request.
