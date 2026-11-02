@@ -38,8 +38,9 @@ on them is written. Never assume an answer:
 - Device enrollment, and whether the MVP requires device-key proof-of-possession (§6.2).
 - Namespace authorization source: token claims, stored policy, or both (§7.3).
 - Session cardinality: one-to-one or multi-party (§13).
-- Duplicate-connection policy (§13).
-- `jti` replay policy and the full token profile (§5.3).
+- Duplicate-connection policy, together with the per-device connection limit (§13, §8.1).
+- `jti` replay policy and the full token profile (§5.3), including what happens when a connection's
+  token expires without `auth.refresh`.
 - When `rtc.ice_config` is sent beyond post-authentication, and whether `rtc.ice_restart` stays a
   separate message type (§11).
 - Pairing protocol (§7.4, post-MVP). Never invent custom cryptography.

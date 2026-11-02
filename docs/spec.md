@@ -212,6 +212,7 @@ Requirements:
 - Each trusted issuer maps to exactly one registered application. The `app_id` claim must match the application registered for the validated issuer; a mismatch is rejected.
 - A defined `jti` replay policy (for example, single-use tokens within their validity window), specified in the token profile.
 - A token presented through `auth.refresh` must carry the same `app_id`, `sub`, and `device_id` as the connection's current context; a mismatch is rejected. Changing identity requires a new connection.
+- A defined behavior when a connection's token reaches `exp` without a successful `auth.refresh` (for example, closing the connection, possibly after a grace period), specified in the token profile. A connection must not remain authenticated indefinitely on an expired token.
 
 The token is a credential for a specific application and service, not a general-purpose authorization grant.
 
@@ -337,9 +338,11 @@ Authorization must consider:
 | Session | `session.accept` |
 | Session | `session.signal` |
 | Session | `session.close` |
-| Device | `device.revoke` |
+| Device | `device.revoke` (control plane only, §5.6) |
 
 The permission model must remain explicit and deny by default.
+
+Device revocation is an operator action through the control plane; it is not available to devices through the signaling protocol.
 
 ### 7.3 Namespace isolation
 
@@ -558,6 +561,8 @@ Initial message categories:
 
 `auth.refresh` renews the connection's credentials with a new application-issued token without reconnecting; the new token must keep the connection's identity (§5.3). `session.create` is sent by the requesting device to the server; `session.request` is sent by the server to the target device, which answers with `session.accept` or `session.reject`. `session.terminated` is sent by the server to the remaining peers when a session ends for a reason outside their control, such as counterpart device revocation, and carries that reason (§6.4). Application suspension needs no such notice: all peers of a session belong to the same application, and their connections are closed (§5.5); each SDK closes its sessions when reauthentication is rejected (§6.4). `rtc.ice_config` is sent by the server and is the only channel for TURN credentials (§12.3). The server sends it after successful authentication, even when no TURN server is configured; whether it is also sent per session or when TURN credentials are renewed is decided together with the ICE configuration. `rtc.ice_restart` is relayed between session participants like `rtc.offer`; whether it remains a separate message type or ICE restart is expressed as a new `rtc.offer` is decided with the protocol draft. Pairing messages are finalized together with the pairing protocol (§7.4).
 
+The protocol defines the direction of every message type: client to server, server to client, or relayed between session participants. The server rejects a message sent in a direction its type does not allow, for example a client-sent `rtc.ice_config`, `session.request`, or `session.terminated`. Server-originated `rtc.ice_config` is not a relayed message and is not subject to the session-membership rule (§13).
+
 Administrative operations (§5.6) are not part of this protocol.
 
 The server must authenticate the connection and authorize each protected message type.
@@ -634,7 +639,7 @@ Connection type:
 
 The server must handle unexpected disconnects, duplicate connections, expired sessions, revoked applications, revoked devices, stale presence, invalid messages, and reconnection.
 
-The duplicate-connection policy must be decided before implementation: what happens when a device that already has an active connection connects again (for example, the newer connection replaces the older one, or the newer one is rejected).
+The duplicate-connection policy must be decided before implementation: what happens when a device that already has an active connection connects again (for example, the newer connection replaces the older one, or the newer one is rejected). It is decided together with the per-device concurrent connection limit (§8.1, §8.2), since a replace policy implies a limit of one connection per device.
 
 Session cardinality must be decided before implementation: one-to-one sessions only, or multi-party sessions (and, if so, the topology, such as full mesh). The SDK API in §20 currently assumes one-to-one sessions; the "maximum session participants" quota (§8.2) only applies to multi-party sessions.
 
@@ -856,6 +861,7 @@ The final API must define token refresh, authentication errors, device enrollmen
 - Valid application-issued token acceptance.
 - Credential renewal with `auth.refresh` without reconnecting.
 - `auth.refresh` rejection when the new token's `app_id`, `sub`, or `device_id` differs from the connection's.
+- Token expiry on an open connection without `auth.refresh`, according to the token profile.
 - Duplicate connection handling according to the selected policy.
 - Two clients connecting to one local server.
 - Device discovery.
@@ -885,6 +891,7 @@ The final API must define token refresh, authentication errors, device enrollmen
 - Rate-limit enforcement.
 - Quota enforcement.
 - Oversized signaling messages.
+- Messages sent in a direction their type does not allow, such as a client-sent `rtc.ice_config` or `session.request`.
 - Excessive session creation.
 - Unauthorized namespace enumeration attempts.
 

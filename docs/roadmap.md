@@ -43,7 +43,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [ ] Define namespace and authorization semantics.
 - [ ] Decide the namespace authorization source for the MVP: token claims, stored policy, or both (spec §7.3).
 - [ ] Decide session cardinality: one-to-one only or multi-party (spec §13).
-- [ ] Decide the duplicate-connection policy for a device that connects again while already connected (spec §13).
+- [ ] Decide the duplicate-connection policy for a device that connects again while already connected, together with the per-device concurrent connection limit (spec §13, §8.1).
 - [ ] Define pairing policy. *(Post-MVP: required before Phase 5 implements pairing; does not block the MVP.)*
 - [ ] Define `StorageAdapter`.
 - [ ] Define `CoordinationAdapter`.
@@ -52,6 +52,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [ ] Define ICE configuration and direct/relay reporting: STUN from client configuration, TURN only through `rtc.ice_config`, and when the server sends `rtc.ice_config` beyond the post-authentication message (spec §11, §12.3).
 - [ ] Decide whether `rtc.ice_restart` remains a separate message type or ICE restart is a new `rtc.offer` (spec §11).
 - [ ] Define WebSocket reconnect and token renewal behavior.
+- [ ] Decide what happens when a connection's token reaches `exp` without a successful `auth.refresh` (spec §5.3).
 - [ ] Define security and threat-model assumptions.
 
 ### Deliverables
@@ -89,6 +90,7 @@ The design and decision records specify that:
 - [ ] Define message validation.
 - [ ] Define standard error codes.
 - [ ] Define request correlation.
+- [ ] Define the allowed direction of every message type and reject messages sent in the wrong direction (spec §11).
 - [ ] Define message size limits.
 - [ ] Define protocol compatibility rules.
 - [ ] Define authentication handshake.
@@ -117,7 +119,8 @@ The design and decision records specify that:
 
 ### Tasks
 
-- [ ] Implement application registry.
+- [ ] Implement application registry, backed by the in-memory application repository.
+- [ ] Implement the in-memory coordination adapter with the state this phase needs (`jti` replay tracking); Phase 3 extends it.
 - [ ] Define application status: active, suspended, revoked.
 - [ ] Implement trusted issuer configuration.
 - [ ] Implement trusted JWKS or public-key configuration.
@@ -127,12 +130,12 @@ The design and decision records specify that:
 - [ ] Validate `kid` and support signing-key rotation.
 - [ ] Reject unknown and suspended applications.
 - [ ] Implement in-memory `jti` replay protection per the token profile (spec §5.3).
-- [ ] Implement token expiration handling per the renewal behavior defined in Phase 0.
+- [ ] Implement token expiration handling per the renewal and expiry behavior defined in Phase 0.
 - [ ] Implement application-scoped authentication context.
 - [ ] Document backend token issuance requirements.
 - [ ] Implement a development token issuer for tests and examples, with test keys isolated from production trust configuration.
 - [ ] Ensure no application secret is required or embedded in browser code.
-- [ ] Add tests for invalid, expired, unknown, suspended, and revoked credentials.
+- [ ] Add tests for invalid, expired, unknown, suspended, and revoked credentials, wrong issuer or audience, `app_id` claim and issuer mismatch, and replayed `jti`.
 
 ### Deliverables
 
@@ -148,6 +151,8 @@ The design and decision records specify that:
 - Unknown applications cannot authenticate.
 - Suspended and revoked applications cannot establish new connections.
 - Tokens with invalid signatures, issuers, audiences, or expiration are rejected.
+- Tokens whose `app_id` claim does not match the application registered for the issuer are rejected.
+- Replayed `jti` values are rejected according to the token profile.
 - The server trusts only explicitly configured issuers and keys.
 - A public `app_id` alone never grants access.
 
@@ -162,11 +167,10 @@ The design and decision records specify that:
 - [ ] Implement WebSocket server.
 - [ ] Integrate application authentication.
 - [ ] Implement device registration.
-- [ ] Implement in-memory application repository.
 - [ ] Implement in-memory device repository.
 - [ ] Implement in-memory namespace and authorization repository.
 - [ ] Implement in-memory presence management.
-- [ ] Implement in-memory coordination.
+- [ ] Extend the Phase 2 in-memory coordination adapter with presence leases, signaling event delivery, and TTL-based cleanup.
 - [ ] Implement device discovery.
 - [ ] Implement session creation and lifecycle, with each session scoped to one namespace in which both devices are authorized (spec §13).
 - [ ] Implement SDP offer/answer signaling, including ICE restart per the Phase 0 decision.
@@ -561,7 +565,7 @@ The canonical MVP criteria are in `docs/spec.md` §22. The capabilities below de
 | 1 | Local signaling server | 3 |
 | 2 | Application registry with trusted issuer configuration | 2 |
 | 3 | Short-lived application-issued JWT authentication and development issuer | 2 |
-| 4 | In-memory storage and coordination | 3 |
+| 4 | In-memory storage and coordination | 2–3 |
 | 5 | Browser SDK with an access-token provider | 4 |
 | 6 | Authenticated device registration | 3–4 |
 | 7 | Namespace-scoped discovery and authorization | 3, 5 |
