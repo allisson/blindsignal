@@ -6,3 +6,5 @@ export {
   type ErrorCode,
 } from '@blindsignal/protocol';
 export { BlindSignalError } from './errors.ts';
+export { BlindSignalClient, type BlindSignalClientOptions, type Identity } from './client.ts';
+export type { BackoffOptions } from './backoff.ts';
