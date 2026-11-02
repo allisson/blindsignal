@@ -137,7 +137,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Reject expired tokens at authentication; enforcement on open connections lands in Phase 3.
 - [ ] Implement application-scoped authentication context.
 - [ ] Document backend token issuance requirements.
-- [ ] Implement a development token issuer for tests and examples, with test keys isolated from production trust configuration.
+- [x] Implement a development token issuer for tests and examples, with test keys isolated from production trust configuration.
 - [ ] Ensure no application secret is required or embedded in browser code.
 - [ ] Add tests for invalid, expired, unknown, suspended, and revoked credentials, wrong issuer or audience, `app_id` claim and issuer mismatch, replayed `jti`, excessive token lifetime, future `iat`, and unknown-`kid` refetch limits.
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { parseRegistry, type Registry } from './registry.ts';
+import {
+  DEV_PUBLIC_JWK,
+  devApplication,
+  DEV_ISSUER_ORIGIN as ISSUER_ORIGIN,
+} from '@blindsignal/dev-issuer';
+import { DEV_ISSUER_ORIGIN, DEV_PUBLIC_KEY_X, parseRegistry, type Registry } from './registry.ts';
 
 const t0 = new Date('2026-11-01T00:00:00Z');
 const t1 = new Date('2026-11-02T00:00:00Z');
@@ -21,13 +26,13 @@ const app = (overrides: object = {}) => ({
 const file = (...applications: object[]) => JSON.stringify({ applications });
 
 function load(text: string, now = t0, previous?: Registry): Registry {
-  const result = parseRegistry(text, now, previous);
+  const result = parseRegistry(text, { now, previous });
   if (!result.ok) throw new Error(result.error);
   return result.registry;
 }
 
 function error(text: string, previous?: Registry): string {
-  const result = parseRegistry(text, t1, previous);
+  const result = parseRegistry(text, { now: t1, previous });
   if (result.ok) throw new Error('expected the registry to be rejected');
   return result.error;
 }
@@ -189,5 +194,28 @@ describe('parseRegistry on reload', () => {
     expect(load(file(app({ status: 'revoked' })), t1, first).applications[0]?.status).toBe(
       'revoked',
     );
+  });
+});
+
+describe('parseRegistry and the dev issuer', () => {
+  it('keeps its copy of the dev issuer equal to packages/dev-issuer', () => {
+    expect(DEV_ISSUER_ORIGIN).toBe(ISSUER_ORIGIN);
+    expect(DEV_PUBLIC_KEY_X).toBe(DEV_PUBLIC_JWK.x);
+  });
+
+  it('trusts the dev issuer in development mode', () => {
+    const result = parseRegistry(file(devApplication('notes')), { now: t0, development: true });
+    expect(result.ok).toBe(true);
+  });
+
+  it.each([
+    ['the dev application', devApplication('notes')],
+    [
+      'the dev key under another issuer',
+      { ...devApplication('notes'), issuer: 'https://x.example' },
+    ],
+    ['a dev issuer with another key', app({ issuer: `${DEV_ISSUER_ORIGIN}/notes` })],
+  ])('refuses %s outside development mode', (_, entry) => {
+    expect(error(file(entry))).toBe('notes: the dev issuer is trusted only in development mode');
   });
 });

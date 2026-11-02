@@ -61,6 +61,19 @@ export default tseslint.config(
     },
   },
   {
+    files: ['packages/dev-issuer/src/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            { group: ['@blindsignal/*'], message: 'dev-issuer depends only on jose (ADR 0002).' },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['packages/core/src/**', 'adapters/**/src/**'],
     rules: {
       'no-restricted-imports': [
