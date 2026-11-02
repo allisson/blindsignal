@@ -212,7 +212,7 @@ Requirements:
 - Rejection of unknown, suspended, or revoked applications.
 - No acceptance of tokens issued for unrelated services.
 - Each trusted issuer maps to exactly one registered application. The `app_id` claim must match the application registered for the validated issuer; a mismatch is rejected.
-- Single-use tokens: each `auth.authenticate` and `auth.refresh` needs a token whose `(iss, jti)` has not been accepted before, tracked until `exp` plus the clock-skew tolerance.
+- Single-use tokens: each `auth.authenticate` and `auth.refresh` needs a token whose `(iss, jti)` has not been accepted before, tracked until `exp` plus the clock-skew tolerance. While that tracking is in memory, a token whose `iat` is earlier than the server's start time is rejected, since a restart forgets every accepted `jti`.
 - A token presented through `auth.refresh` must carry the same `app_id`, `sub`, and `device_id` as the connection's current context; a mismatch is rejected. Changing identity requires a new connection.
 - A connection whose token reaches `exp` plus the clock-skew tolerance without a successful `auth.refresh` is closed with a retryable error, with no grace period. A connection must not remain authenticated indefinitely on an expired token.
 
@@ -887,7 +887,7 @@ The final API must define token refresh, authentication errors, device enrollmen
 - Rejection of protected messages sent before `auth.authenticate` completes.
 - Wrong issuer and audience rejection.
 - `app_id` claim and issuer mismatch rejection.
-- Replayed `jti` rejection.
+- Replayed `jti` rejection, including a token issued before a server restart.
 - Valid application-issued token acceptance.
 - Credential renewal with `auth.refresh` without reconnecting.
 - `auth.refresh` rejection when the new token's `app_id`, `sub`, or `device_id` differs from the connection's.

@@ -208,7 +208,7 @@ Initial catalog:
 | `session_unavailable` | retryable | no | Unknown session, wrong state, or sender not a participant. |
 | `rate_limited` | retryable | no | Rate limit exceeded; carries `retryAfterMs`. |
 | `quota_exceeded` | retryable | on `auth.authenticate` | Application connection or device-count quota on authentication; application or device session quota on `session.create`; joined-namespace quota on `namespace.join` (ADR 0011). |
-| `invalid_token` | retryable | on `auth.authenticate` | Bad signature, header, or claims (including a namespace without the application's prefix); lifetime above the maximum; future `iat`; replayed `jti`; unknown issuer or application. |
+| `invalid_token` | retryable | on `auth.authenticate` | Bad signature, header, or claims (including a namespace without the application's prefix); lifetime above the maximum; future `iat`; `iat` before the server started (ADR 0006); replayed `jti`; unknown issuer or application. |
 | `token_expired` | retryable | except on `auth.refresh` | Token past `exp` plus the clock-skew tolerance, at authentication or on an open connection. |
 | `identity_mismatch` | retryable | no | `auth.refresh` token with a different `app_id`, `sub`, or `device_id`. |
 | `application_unavailable` | terminal | yes | Application suspended or revoked. |

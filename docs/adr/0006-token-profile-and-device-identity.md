@@ -24,6 +24,12 @@ and take over its presence and connection.
   token whose `(iss, jti)` the server has not accepted before; the pair is tracked until
   `exp` + skew. The SDK therefore asks the access-token provider for a new token on every
   connection and every refresh, and two tabs never share one.
+- **Replay across restarts:** while `jti` tracking lives in memory, a restart forgets every
+  accepted pair, so the server rejects tokens whose `iat` is earlier than its own start time,
+  without skew tolerance. A token issued before the restart may already have been used, and no
+  record says otherwise. After a restart every client needs a new token, which it asks for on
+  reconnect anyway; an issuer whose clock lags is rejected for at most its lag after boot. A
+  coordination adapter that persists `jti` tracking (roadmap Phase 9) lifts this rule.
 - **Expiry on an open connection:** at `exp` + skew without a successful `auth.refresh`, the
   server closes the connection with `token_expired` (retryable). There is no grace period; the SDK
   refreshes before expiry, using the `expiresInMs` that `auth.result` reports, since it treats the
