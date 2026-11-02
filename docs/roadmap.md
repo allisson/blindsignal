@@ -1,0 +1,625 @@
+# BlindSignal — Development Roadmap
+
+**Status:** Draft  
+**Reference:** `docs/spec.md`
+
+This roadmap prioritizes a secure, working local P2P system before introducing managed infrastructure or distributed deployment complexity.
+
+## Guiding principles
+
+1. Register and authorize applications before allowing infrastructure access.
+2. Never distribute application secrets to browser or PWA clients.
+3. Separate application access, user authentication, device identity, and operation authorization.
+4. Build a functional local system before deploying cloud infrastructure.
+5. Keep storage and coordination behind adapters.
+6. Do not require PostgreSQL, Redis, Supabase, or TURN for the first local MVP.
+7. Implement ICE/STUN connectivity first and support TURN configuration.
+8. Validate connectivity across different networks before investing in production relay infrastructure.
+9. Keep the server portable and provider-independent.
+10. Treat security and abuse prevention as core features.
+
+---
+
+## Phase 0 — Architecture and technical planning
+
+**Goal:** Validate the architecture and define implementation contracts before coding.
+
+### Tasks
+
+- [x] Inspect repository conventions and existing code (repository contains only docs, AGENTS.md, README, LICENSE, and a Node.js `.gitignore` template; the spec's illustrative interfaces use TypeScript).
+- [ ] Choose language, runtime, package and monorepo tooling, schema-validation library, and test frameworks, including browser automation for DataChannel tests.
+- [ ] Define server, SDK, and shared protocol boundaries.
+- [ ] Define signaling protocol and versioning.
+- [ ] Define application registration and trust model.
+- [ ] Define application issuer and JWKS configuration, including HTTPS-only JWKS URIs, fetch timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
+- [ ] Define JWT claims and validation requirements.
+- [ ] Define the issuer-to-application mapping, the `app_id` claim rule, the `jti` replay policy, the maximum token lifetime, and the clock-skew tolerance.
+- [ ] Define application suspension and revocation behavior.
+- [ ] Define revocation enforcement limits for established P2P sessions (spec §6.4).
+- [ ] Define the control-plane mechanism for application registration, suspension, revocation, and device revocation (spec §5.6).
+- [ ] Define user and device identity.
+- [ ] Decide whether MVP enrollment includes device-key proof-of-possession or relies only on the backend-asserted `device_id` claim (spec §6.2), and whether device records are created on first sight, which places the per-application device-count quota in the MVP (Phase 6).
+- [ ] Design and review the device enrollment protocol (required before Phase 4 implements enrollment), including proof-of-possession if the MVP requires it. *(Proof-of-possession design is post-MVP otherwise and must be done before Phase 5 implements it.)*
+- [ ] Define namespace and authorization semantics.
+- [ ] Decide the namespace authorization source for the MVP: token claims, stored policy, or both (spec §7.3).
+- [ ] Decide session cardinality: one-to-one only or multi-party (spec §13).
+- [ ] Decide the duplicate-connection policy for a device that connects again while already connected, together with the per-device concurrent connection limit, accounting for several browser tabs sharing one device identity (spec §13, §8.1, §8.3).
+- [ ] Define pairing policy. *(Post-MVP: required before Phase 5 implements pairing; does not block the MVP.)*
+- [ ] Define `StorageAdapter`.
+- [ ] Define `CoordinationAdapter`.
+- [ ] Define application and device quotas.
+- [ ] Define rate-limit categories and error responses, including pre-authentication limits keyed by source IP and client IP derivation from trusted proxies (spec §8.1).
+- [ ] Define ICE configuration and direct/relay reporting: STUN from client configuration, TURN only through `rtc.ice_config`, and when the server sends `rtc.ice_config` beyond the post-authentication message (spec §11, §12.3).
+- [ ] Decide whether `rtc.ice_restart` remains a separate message type or ICE restart is a new `rtc.offer` (spec §11).
+- [ ] Define WebSocket reconnect and token renewal behavior.
+- [ ] Decide what happens when a connection's token reaches `exp` without a successful `auth.refresh` (spec §5.3).
+- [ ] Define security and threat-model assumptions.
+
+### Deliverables
+
+- Architecture decision records in `docs/adr/`.
+- Protocol draft (`docs/protocol.md`).
+- Application registration model.
+- Token profile.
+- Initial data model.
+- Adapter interfaces.
+- Threat model (`docs/threat-model.md`).
+- Abuse-prevention strategy.
+- Test strategy.
+
+### Acceptance criteria
+
+The design and decision records specify that:
+
+- Application access and user authentication are separate.
+- Browser clients require no permanent application secret.
+- Unknown, suspended, and revoked applications are rejected.
+- Authorization is server-side and deny-by-default.
+- No cloud provider or infrastructure service is mandatory for local development.
+
+Every decision the spec requires before implementation (listed in `AGENTS.md`, "Decisions that block implementation") is recorded in an ADR, except the tasks marked post-MVP.
+
+---
+
+## Phase 1 — Shared foundation and protocol
+
+**Goal:** Establish the contracts shared by server and SDK.
+
+### Tasks
+
+- [ ] Create shared types and protocol package.
+- [ ] Implement versioned signaling message schemas.
+- [ ] Define message validation.
+- [ ] Define standard error codes, marking each authentication and connection-closure error as retryable, terminal, or superseded (spec §8.3).
+- [ ] Define request correlation.
+- [ ] Define the allowed direction of every message type and reject messages sent in the wrong direction (spec §11).
+- [ ] Define message size limits.
+- [ ] Define protocol compatibility rules.
+- [ ] Define authentication handshake.
+- [ ] Define application and device context representation.
+- [ ] Add unit tests for schemas and validation.
+
+### Deliverables
+
+- Shared protocol package.
+- Message schemas.
+- Protocol documentation.
+- Validation tests.
+
+### Acceptance criteria
+
+- Server and SDK consume the same protocol definitions.
+- Invalid messages are rejected.
+- Protocol version incompatibility is handled explicitly.
+- Authentication errors do not reveal sensitive internal details.
+
+---
+
+## Phase 2 — Application access control and authentication foundation
+
+**Goal:** Ensure only registered applications with valid credentials can consume BlindSignal.
+
+### Tasks
+
+- [ ] Implement application registry, backed by the in-memory application repository.
+- [ ] Implement the in-memory coordination adapter with the state this phase needs (`jti` replay tracking); Phase 3 extends it.
+- [ ] Define application status: active, suspended, revoked.
+- [ ] Implement trusted issuer configuration.
+- [ ] Implement trusted JWKS or public-key configuration.
+- [ ] Implement JWT signature verification.
+- [ ] Enforce algorithm allowlisting.
+- [ ] Validate `iss`, `aud`, `exp`, `iat`, `sub`, `app_id`, and `device_id`, and `nbf` when present.
+- [ ] Enforce the maximum token lifetime and the clock-skew tolerance (spec §5.3).
+- [ ] Validate `kid` and support signing-key rotation, with HTTPS-only JWKS fetches, timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
+- [ ] Reject unknown, suspended, and revoked applications.
+- [ ] Implement in-memory `jti` replay protection per the token profile (spec §5.3).
+- [ ] Reject expired tokens at authentication; enforcement on open connections lands in Phase 3.
+- [ ] Implement application-scoped authentication context.
+- [ ] Document backend token issuance requirements.
+- [ ] Implement a development token issuer for tests and examples, with test keys isolated from production trust configuration.
+- [ ] Ensure no application secret is required or embedded in browser code.
+- [ ] Add tests for invalid, expired, unknown, suspended, and revoked credentials, wrong issuer or audience, `app_id` claim and issuer mismatch, replayed `jti`, excessive token lifetime, future `iat`, and unknown-`kid` refetch limits.
+
+### Deliverables
+
+- Application registry.
+- Token verification module.
+- Development token issuer.
+- Trust configuration.
+- Authentication documentation.
+- Security-focused test suite.
+
+### Acceptance criteria
+
+- Unknown applications cannot authenticate.
+- Suspended and revoked applications cannot establish new connections.
+- Tokens with invalid signatures, issuers, audiences, or expiration are rejected.
+- Tokens whose `app_id` claim does not match the application registered for the issuer are rejected.
+- Replayed `jti` values are rejected according to the token profile.
+- The server trusts only explicitly configured issuers and keys.
+- A public `app_id` alone never grants access.
+
+---
+
+## Phase 3 — Local signaling server MVP
+
+**Goal:** Implement signaling and lifecycle management with no external infrastructure dependency.
+
+### Tasks
+
+- [ ] Implement WebSocket server.
+- [ ] Check `Origin` at the WebSocket upgrade against a configured allowlist, as defense in depth (spec §16).
+- [ ] Integrate application authentication, rejecting protected messages sent before authentication completes.
+- [ ] Implement device registration.
+- [ ] Implement in-memory device repository.
+- [ ] Implement in-memory namespace and authorization repository.
+- [ ] Implement `namespace.join` and `namespace.leave`, admitting a device only to namespaces it is authorized in (spec §7.3, §13).
+- [ ] Implement in-memory presence management.
+- [ ] Extend the Phase 2 in-memory coordination adapter with presence leases, signaling event delivery, and TTL-based cleanup.
+- [ ] Implement device discovery.
+- [ ] Implement session creation and lifecycle, with each session scoped to one namespace in which both devices are authorized (spec §13).
+- [ ] Implement SDP offer/answer signaling, including ICE restart per the Phase 0 decision.
+- [ ] Implement ICE candidate exchange.
+- [ ] Relay `rtc.*` messages only between participants of an accepted session (spec §13).
+- [ ] Send `rtc.ice_config` after successful authentication, even when no TURN server is configured (spec §11).
+- [ ] Implement heartbeat and disconnect detection.
+- [ ] Implement stale presence cleanup.
+- [ ] Implement application suspension and revocation handling: reject new authentication and close the application's active WebSocket connections (spec §5.5).
+- [ ] Implement the duplicate-connection policy chosen in Phase 0.
+- [ ] Implement the control plane for application registration, update, suspension, reactivation, and revocation, using the mechanism chosen in Phase 0 (spec §5.6).
+- [ ] Add health and readiness endpoints.
+- [ ] Add structured logs and basic metrics.
+- [ ] Implement `auth.refresh` handling for credential renewal without reconnecting, rejecting tokens whose `app_id`, `sub`, or `device_id` differs from the connection's (spec §5.3).
+- [ ] Enforce token expiry on open connections: a connection whose token reaches `exp` without a successful `auth.refresh` is handled per the Phase 0 decision (spec §5.3).
+- [ ] Implement environment-driven configuration.
+- [ ] Implement client IP derivation from configured trusted proxies, ignoring forwarding headers from untrusted peers (spec §8.1).
+- [ ] Add Dockerfile and Docker Compose development workflow.
+
+### Deliverables
+
+- Runnable local signaling server.
+- Docker Compose development setup.
+- In-memory storage and coordination adapters.
+- WebSocket protocol implementation.
+- Integration tests with multiple clients.
+
+### Acceptance criteria
+
+- Valid application tokens are required.
+- Two or more authorized clients can connect.
+- Authorized devices can discover each other.
+- Session signaling works, and `rtc.*` messages outside an accepted session are rejected.
+- Disconnects update presence.
+- Suspended and revoked applications lose their active WebSocket connections.
+- No application payload is accepted or persisted by the server.
+- The server runs without PostgreSQL or Redis.
+
+---
+
+## Phase 4 — Browser SDK and local WebRTC
+
+**Goal:** Establish a working P2P DataChannel between browser clients.
+
+### Tasks
+
+- [ ] Implement SDK WebSocket client, refusing `ws://` URLs except for loopback hosts and never placing the access token in the connection URL (spec §16).
+- [ ] Implement access-token provider interface.
+- [ ] Implement token refresh through the access-token provider and `auth.refresh`.
+- [ ] Implement authentication flow.
+- [ ] Implement device registration and presence.
+- [ ] Implement device enrollment per the Phase 0 protocol design, including proof-of-possession if Phase 0 places it in the MVP.
+- [ ] Implement discovery API.
+- [ ] Implement session API.
+- [ ] Implement RTCPeerConnection lifecycle.
+- [ ] Implement SDP negotiation.
+- [ ] Implement ICE candidate exchange.
+- [ ] Add a configurable STUN server list, and merge TURN servers and temporary credentials received through `rtc.ice_config`, without requiring a deployed TURN service (spec §12.3).
+- [ ] Implement ICE restart on connection failure (spec §12.1).
+- [ ] Implement DataChannel creation and lifecycle.
+- [ ] Expose connection state.
+- [ ] Expose direct/relay/unknown connection type.
+- [ ] Implement heartbeats and dead-connection detection with `connection.ping` and `connection.pong` (spec §15).
+- [ ] Implement reconnect with exponential backoff and jitter, stopping on terminal authentication errors and not reconnecting automatically when superseded (spec §8.3).
+- [ ] After reconnecting, re-register presence and reconcile session state (spec §15).
+- [ ] Implement session cleanup and error handling, closing all sessions when reauthentication is rejected because the application is suspended or revoked or the device is revoked (spec §6.4).
+- [ ] Add browser integration tests.
+
+### Deliverables
+
+- Browser SDK.
+- Local browser-to-browser P2P demonstration.
+- DataChannel integration tests.
+
+### Acceptance criteria
+
+- Browser clients obtain tokens from their own application backend.
+- The SDK contains no permanent application secret.
+- Two browser clients can establish a DataChannel.
+- Applications can exchange arbitrary application-defined payloads.
+- The signaling server does not receive DataChannel payloads.
+- Connection state and diagnostics are exposed.
+
+---
+
+## Phase 5 — Authorization, pairing, and security hardening
+
+**Goal:** Establish trustworthy device identity and resource authorization.
+
+**MVP subset:** the tasks marked *(MVP)*: namespace authorization, device revocation (including the control-plane operation), propagating device revocation to the revoked device's active connections and sessions, and notifying remaining peers on revocation (spec §6.4). Pairing, session authorization, and the remaining tasks are post-MVP. Application suspension and revocation are handled in Phase 3 and propagated across instances in Phase 9. Until session authorization lands, any device authorized in a namespace may request a session with any other device in that namespace; the target device still accepts or rejects (spec §13).
+
+### Tasks
+
+- [ ] Implement device proof-of-possession, unless Phase 0 placed it in Phase 4.
+- [ ] Finalize namespace authorization. *(MVP)*
+- [ ] Implement session authorization.
+- [ ] Design and review pairing protocol.
+- [ ] Implement pairing approval policy.
+- [ ] Implement device revocation, including the control-plane operation (spec §5.6). *(MVP)*
+- [ ] Propagate device revocation to the revoked device's active connections and sessions. *(MVP)*
+- [ ] Notify remaining peers on revocation with `session.terminated` so the SDK closes established sessions (spec §6.4). *(MVP)*
+- [ ] Implement pairing attempt rate limits (spec §8.1).
+- [ ] Add signaling message validation and abuse protection.
+- [ ] Review token and credential handling.
+- [ ] Define metadata retention.
+- [ ] Perform threat-model review.
+- [ ] Add security-focused tests.
+
+### Deliverables
+
+- Documented identity and pairing model.
+- Authorization implementation.
+- Revocation implementation.
+- Security test suite.
+
+### Acceptance criteria
+
+- Unauthorized devices cannot discover or join protected sessions.
+- Revoked devices lose signaling access (and TURN credentials, once Phase 8 issues them), and remaining peers are notified to close established sessions (spec §6.4).
+- Namespace boundaries are enforced server-side.
+- Pairing does not rely on custom, unreviewed cryptography.
+
+---
+
+## Phase 6 — Abuse prevention and resource protection
+
+**Goal:** Prevent individual applications or devices from exhausting shared infrastructure resources.
+
+**MVP subset:** the tasks marked *(MVP)*: basic per-application and per-device connection and concurrent-session limits, pre-authentication limits (authentication deadline and unauthenticated connection cap), connection-attempt, authentication, discovery, session-creation and signaling rate limits, maximum message size, and negotiation timeouts. Usage metrics, bounded queues, abuse-triggered suspension, and the session-duration quota are post-MVP. The device-count quota is part of the MVP only if the Phase 0 enrollment decision creates device records on first sight.
+
+### Tasks
+
+- [ ] Define configurable application quotas. *(MVP)*
+- [ ] Implement concurrent connection limits per application. *(MVP)*
+- [ ] Implement concurrent connection limits per device. *(MVP)*
+- [ ] Implement WebSocket connection attempt rate limits, keyed by source IP (spec §8.1). *(MVP)*
+- [ ] Implement the authentication deadline for connections that do not authenticate (spec §8.4). *(MVP)*
+- [ ] Implement the unauthenticated connection cap, per source IP and global (spec §8.4). *(MVP)*
+- [ ] Implement session creation limits. *(MVP)*
+- [ ] Implement signaling message rate limits. *(MVP)*
+- [ ] Implement discovery rate limits. *(MVP)*
+- [ ] Implement authentication attempt limits. *(MVP)*
+- [ ] Implement maximum WebSocket message sizes. *(MVP)*
+- [ ] Implement session and negotiation timeouts. *(MVP)*
+- [ ] Implement maximum concurrent sessions per application and per device (spec §8.2). *(MVP)*
+- [ ] Implement maximum registered or active devices per application, where applicable (spec §8.2). *(MVP if the Phase 0 enrollment decision creates device records on first sight)*
+- [ ] Implement maximum session duration, where configured (spec §8.2).
+- [ ] Implement bounded queues and backpressure.
+- [ ] Implement abuse-triggered application suspension and operational alerts (spec §8.3), reusing the Phase 3 suspension handling.
+- [ ] Implement per-application usage metrics.
+- [ ] Add abuse and quota enforcement tests. *(MVP, for the MVP limits)*
+
+### Deliverables
+
+- Configurable quota system.
+- Rate-limiting middleware.
+- Usage metrics.
+- Abuse-prevention documentation.
+
+### Acceptance criteria
+
+- One application cannot exceed its configured resource allocation.
+- One device cannot exhaust its application's quota.
+- Excessive signaling and session creation are rejected.
+- Limits are configurable without code changes.
+- Rate-limit responses are consistent and documented.
+
+---
+
+## Phase 7 — External network testing
+
+**Goal:** Validate the architecture across separate networks before adding production infrastructure.
+
+### Tasks
+
+- [ ] Document local Docker Compose workflow.
+- [ ] Expose the local signaling server using Cloudflare Quick Tunnel.
+- [ ] Test WebSocket connections through the tunnel.
+- [ ] Verify that pre-authentication limits see each client's IP through the tunnel, with the tunnel configured as a trusted proxy (spec §8.1).
+- [ ] Connect authorized browser clients from separate networks.
+- [ ] Validate STUN-based ICE negotiation.
+- [ ] Test same-network and different-network scenarios.
+- [ ] Test reconnect after WebSocket interruption.
+- [ ] Test reconnect after network changes.
+- [ ] Capture ICE diagnostics.
+- [ ] Verify direct and unknown connection-type reporting (relay reporting is verified in Phase 8).
+- [ ] Document known connectivity limitations.
+
+### Deliverables
+
+- External testing guide.
+- Reproducible cross-network test scenario.
+- Connectivity test report.
+
+### Acceptance criteria
+
+- Clients on separate networks can connect to the local signaling server through the tunnel.
+- Only clients with valid application-issued tokens can authenticate.
+- WebRTC DataChannel can establish a direct connection in supported network conditions.
+- The team can identify whether a connection is direct.
+
+Cloudflare Quick Tunnel is a development ingress mechanism, not a WebRTC transport or TURN relay.
+
+---
+
+## Phase 8 — TURN support and connectivity reliability
+
+**Goal:** Support restrictive networks without making TURN mandatory for every deployment.
+
+### Tasks
+
+- [ ] Finalize ICE configuration API.
+- [ ] Validate the Phase 4 `rtc.ice_config` TURN handling against a real TURN service.
+- [ ] Implement authenticated temporary TURN credential issuance.
+- [ ] Ensure credentials are short-lived and scoped appropriately.
+- [ ] Never embed permanent TURN credentials in client code.
+- [ ] Deploy a test Coturn instance or use a managed TURN provider.
+- [ ] Test TURN relay connectivity.
+- [ ] Test configured UDP and TCP/TLS transports.
+- [ ] Test direct-to-relay fallback behavior.
+- [ ] Test TURN unavailable and credential expiration.
+- [ ] Add relay usage metrics.
+- [ ] Document TURN operational requirements.
+
+### Deliverables
+
+- TURN-compatible SDK and signaling configuration.
+- Temporary credential mechanism.
+- Relay connectivity test suite.
+- TURN deployment guide.
+
+### Acceptance criteria
+
+- SDK establishes a relay connection when direct connectivity fails and TURN is configured.
+- SDK reports relay connectivity.
+- TURN credentials are not permanent or embedded in client code.
+- Deployments without TURN continue to work where direct connectivity is possible.
+
+Operating TURN is not required to complete the initial local MVP.
+
+---
+
+## Phase 9 — Persistence and distributed coordination
+
+**Goal:** Support multi-instance deployments and durable application/device metadata.
+
+### Tasks
+
+- [ ] Finalize `StorageAdapter`.
+- [ ] Implement PostgreSQL adapter.
+- [ ] Validate migrations and schema.
+- [ ] Evaluate Supabase as an optional managed PostgreSQL provider.
+- [ ] Finalize `CoordinationAdapter`.
+- [ ] Implement Redis-compatible coordination.
+- [ ] Implement TTL-based presence leases.
+- [ ] Implement ownership and lease renewal.
+- [ ] Implement cross-instance signaling event propagation.
+- [ ] Implement cross-instance application suspension and revocation propagation, building on the Phase 3 single-instance handling.
+- [ ] Implement shared rate-limit, quota, and `jti` replay state across instances.
+- [ ] Handle instance failure and stale leases.
+- [ ] Test multiple server instances.
+- [ ] Test reconnect and session recovery across instances.
+
+### Deliverables
+
+- PostgreSQL adapter.
+- Redis-compatible coordination adapter.
+- Multi-instance integration tests.
+- Database migration strategy.
+
+### Acceptance criteria
+
+- Business logic does not depend on Supabase-specific APIs.
+- Application registry and revocation state are durable.
+- Multiple server instances coordinate presence and signaling.
+- Rate limits, quotas, and `jti` replay protection hold across instances.
+- Presence expires correctly after instance failure.
+- In-memory adapters remain available for development and tests.
+
+---
+
+## Phase 10 — Production readiness and deployment
+
+**Goal:** Make BlindSignal deployable in managed and self-hosted environments.
+
+### Tasks
+
+- [ ] Finalize production Docker image.
+- [ ] Extend the Phase 3 Docker Compose setup for self-hosted deployment.
+- [ ] Implement production health and readiness checks.
+- [ ] Configure graceful shutdown.
+- [ ] Define WebSocket connection limits.
+- [ ] Define reconnect behavior for hosting request timeouts.
+- [ ] Add OpenTelemetry instrumentation.
+- [ ] Extend the Phase 3 structured logs and metrics for production use.
+- [ ] Define secret and signing-key management.
+- [ ] Document application registration and onboarding.
+- [ ] Document key rotation and application revocation.
+- [ ] Document Cloud Run deployment.
+- [ ] Document VPS deployment.
+- [ ] Document self-hosted deployment.
+- [ ] Document optional TURN deployment.
+- [ ] Define backup and recovery for durable metadata.
+
+### Deliverables
+
+- Production Docker image.
+- Deployment documentation.
+- Application onboarding documentation.
+- Observability baseline.
+- Operational runbook.
+
+### Acceptance criteria
+
+- Same application image runs in managed and self-hosted environments.
+- Application trust configuration is externalized and protected.
+- WebSocket reconnect handles hosting limits.
+- Health and readiness checks are meaningful.
+- Provider-specific code is isolated from core business logic.
+
+---
+
+## Phase 11 — Reference integrations
+
+**Goal:** Validate BlindSignal through real consuming applications.
+
+### Tasks
+
+- [ ] Build a minimal SDK example.
+- [ ] Integrate with BlindNotes.
+- [ ] Integrate with BlindVault.
+- [ ] Evaluate integration with BlindChat.
+- [ ] Implement backend token issuance examples, building on the Phase 2 development issuer.
+- [ ] Document trusted issuer and JWKS setup.
+- [ ] Document application-level E2EE responsibilities.
+- [ ] Validate namespace isolation between applications.
+- [ ] Validate independent application protocols.
+- [ ] Gather integration feedback.
+
+### Deliverables
+
+- Reference application.
+- Backend token issuance examples.
+- Integration guides.
+- SDK documentation.
+- Compatibility tests.
+
+### Acceptance criteria
+
+- Multiple registered applications can use the same BlindSignal infrastructure.
+- Applications are isolated by identity and namespace authorization.
+- Browser applications do not require embedded secrets.
+- BlindSignal does not need application-specific payload logic.
+
+---
+
+## Phase 12 — Stable release
+
+**Goal:** Prepare a stable, documented release.
+
+### Tasks
+
+- [ ] Review public API stability.
+- [ ] Review protocol compatibility.
+- [ ] Complete security review.
+- [ ] Complete abuse-resistance review.
+- [ ] Complete performance and load tests.
+- [ ] Complete browser compatibility tests.
+- [ ] Publish SDK documentation.
+- [ ] Publish application onboarding documentation.
+- [ ] Publish deployment documentation.
+- [ ] Define semantic versioning.
+- [ ] Define support and upgrade policy.
+
+### Deliverables
+
+- Stable server release.
+- Stable browser SDK.
+- Protocol documentation.
+- Application onboarding guide.
+- Deployment and operations guides.
+
+### Acceptance criteria
+
+- Security and abuse-resistance reviews have no open blocking findings.
+- Load tests validate the configured quota and rate-limit defaults.
+- Protocol and SDK versions follow the defined semantic versioning and compatibility rules.
+- Supported browsers are documented and covered by compatibility tests.
+
+---
+
+## MVP definition
+
+The canonical MVP criteria are in `docs/spec.md` §22. The capabilities below deliver them:
+
+| # | Capability | Phase |
+|---|---|---|
+| 1 | Local signaling server | 3 |
+| 2 | Application registry with trusted issuer configuration | 2 |
+| 3 | Short-lived application-issued JWT authentication and development issuer | 2 |
+| 4 | In-memory storage and coordination | 2–3 |
+| 5 | Browser SDK with an access-token provider | 4 |
+| 6 | Authenticated device registration | 3–4 |
+| 7 | Namespace-scoped discovery and authorization | 3, 5 |
+| 8 | Session creation and signaling | 3 |
+| 9 | WebRTC DataChannel | 4 |
+| 10 | Configurable STUN and TURN servers (no TURN deployment required) | 4 |
+| 11 | Automatic WebSocket reconnection | 4 |
+| 12 | Basic direct/relay/unknown connection diagnostics | 4 |
+| 13 | Basic per-application and per-device quotas and rate limits | 6 (MVP subset) |
+| 14 | Device revocation and peer notification, within spec §6.4 limits | 5 (MVP subset) |
+| 15 | Docker Compose development workflow | 3 |
+| 16 | External network testing through Cloudflare Quick Tunnel | 7 |
+| 17 | Application suspension and revocation closing active connections (single instance) | 3 |
+
+Phases 1–4 and 7 are fully part of the MVP. Phase 0 is part of the MVP except the tasks marked post-MVP (pairing policy and, unless the MVP requires it, proof-of-possession design). Phases 5 and 6 contribute only their MVP subset.
+
+The MVP does not require:
+- Supabase.
+- PostgreSQL.
+- Redis.
+- A production TURN deployment.
+- Cloud Run.
+- Multi-instance operation.
+- A public user account system managed by BlindSignal.
+
+These are later capabilities, not prerequisites for validating the core architecture.
+
+## Priority summary
+
+| Priority | Capability |
+|---|---|
+| P0 | Application registration, trusted JWT validation, development issuer |
+| P0 | Protocol, local server, in-memory adapters |
+| P0 | Browser SDK and WebRTC DataChannel |
+| P0 | ICE/STUN and local connectivity |
+| P0 | Basic application/device authorization and device revocation |
+| P0 | Basic quotas, rate limits, and resource bounds |
+| P0 | Reconnection and external network testing |
+| P1 | Pairing and revocation propagation hardening |
+| P1 | TURN support and temporary credentials |
+| P1 | Full application quotas and usage metrics |
+| P2 | PostgreSQL and Redis-compatible adapters |
+| P2 | Multi-instance deployment |
+| P2 | Production observability and operations |
+| P3 | Reference application integrations |
+| P3 | Stable release |
