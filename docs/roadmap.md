@@ -51,7 +51,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [x] Define rate-limit categories and error responses, including pre-authentication limits keyed by source IP and client IP derivation from trusted proxies (spec §8.1) (`docs/adr/0011-quotas-and-rate-limits.md`).
 - [x] Define ICE configuration and direct/relay reporting: STUN from client configuration, TURN only through `rtc.ice_config`, and when the server sends `rtc.ice_config` beyond the post-authentication message (spec §11, §12.3) (`docs/adr/0009-ice-configuration.md`).
 - [x] Decide whether `rtc.ice_restart` remains a separate message type or ICE restart is a new `rtc.offer` (spec §11) (a new `rtc.offer`, `docs/protocol.md`).
-- [ ] Define WebSocket reconnect and token renewal behavior.
+- [x] Define WebSocket reconnect and token renewal behavior (`docs/protocol.md`, "SDK connection behavior").
 - [x] Decide what happens when a connection's token reaches `exp` without a successful `auth.refresh` (spec §5.3) (closed with `token_expired`, `docs/adr/0006-token-profile-and-device-identity.md`).
 - [ ] Define security and threat-model assumptions.
 

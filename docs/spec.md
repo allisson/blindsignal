@@ -729,6 +729,8 @@ Requirements:
 - Graceful handling of duplicate connections, according to the policy decided in §13.
 - Token expiration handling and renewal through the consuming application backend.
 
+The backoff parameters, the refresh schedule, and the state the SDK restores after reconnecting are defined in `docs/protocol.md` ("SDK connection behavior").
+
 The implementation must account for hosting platforms that impose connection/request time limits.
 
 A PWA may be suspended or terminated by the browser or operating system. BlindSignal must not promise background connectivity when the application is inactive or closed.
@@ -903,7 +905,7 @@ The final API must define token refresh, authentication errors, device enrollmen
 - `rtc.*` message rejection outside an accepted session or between non-participants.
 - `rtc.ice_config` delivery after authentication and after each `auth.refresh`, with and without TURN configured.
 - DataChannel communication.
-- Disconnect and reconnect.
+- Disconnect and reconnect: backoff with jitter, refresh before expiry, namespaces joined again, and sessions treated as ended.
 - Expired presence cleanup.
 - Application suspension and revocation during active connections, with the SDK closing its sessions when reauthentication is rejected.
 - Device revocation closing the revoked device's connections and notifying remaining peers with `session.terminated`.
