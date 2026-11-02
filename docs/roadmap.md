@@ -278,11 +278,11 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Propagate device revocation to the revoked device's active connections and sessions. *(MVP)*
 - [x] Notify remaining peers on revocation with `session.terminated` so the SDK closes established sessions (spec §6.4). *(MVP)*
 - [ ] Implement pairing attempt rate limits (spec §8.1).
-- [ ] Add signaling message validation and abuse protection.
-- [ ] Review token and credential handling.
+- [x] Add signaling message validation and abuse protection.
+- [x] Review token and credential handling.
 - [ ] Define metadata retention.
 - [ ] Perform threat-model review.
-- [ ] Add security-focused tests.
+- [x] Add security-focused tests.
 
 ### Deliverables
 
