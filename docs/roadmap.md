@@ -32,14 +32,14 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [x] Define signaling protocol and versioning (`docs/protocol.md`).
 - [ ] Define application registration and trust model.
 - [ ] Define application issuer and JWKS configuration, including HTTPS-only JWKS URIs, fetch timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
-- [ ] Define JWT claims and validation requirements.
-- [ ] Define the issuer-to-application mapping, the `app_id` claim rule, the `jti` replay policy, the maximum token lifetime, and the clock-skew tolerance.
+- [x] Define JWT claims and validation requirements (`docs/adr/0006-token-profile-and-device-identity.md`).
+- [x] Define the issuer-to-application mapping, the `app_id` claim rule, the `jti` replay policy, the maximum token lifetime, and the clock-skew tolerance (`docs/adr/0006-token-profile-and-device-identity.md`).
 - [ ] Define application suspension and revocation behavior.
 - [ ] Define revocation enforcement limits for established P2P sessions (spec §6.4).
 - [x] Define the control-plane mechanism for application registration, suspension, revocation, and device revocation (spec §5.6) (`docs/adr/0005-control-plane.md`).
-- [ ] Define user and device identity.
-- [ ] Decide whether MVP enrollment includes device-key proof-of-possession or relies only on the backend-asserted `device_id` claim (spec §6.2), and whether device records are created on first sight, which places the per-application device-count quota in the MVP (Phase 6).
-- [ ] Design and review the device enrollment protocol (required before Phase 4 implements enrollment), including proof-of-possession if the MVP requires it. *(Proof-of-possession design is post-MVP otherwise and must be done before Phase 5 implements it.)*
+- [x] Define user and device identity (`docs/adr/0006-token-profile-and-device-identity.md`).
+- [x] Decide whether MVP enrollment includes device-key proof-of-possession or relies only on the backend-asserted `device_id` claim (spec §6.2), and whether device records are created on first sight, which places the per-application device-count quota in the MVP (Phase 6) (backend-asserted, created on first authentication: `docs/adr/0006-token-profile-and-device-identity.md`).
+- [x] Design and review the device enrollment protocol (enrollment is the first successful authentication, `docs/adr/0006-token-profile-and-device-identity.md`). *(Proof-of-possession design is post-MVP and must be done before Phase 5 implements it.)*
 - [ ] Define namespace and authorization semantics.
 - [ ] Decide the namespace authorization source for the MVP: token claims, stored policy, or both (spec §7.3).
 - [x] Decide session cardinality: one-to-one only or multi-party (spec §13) (`docs/adr/0003-one-to-one-sessions.md`).
@@ -52,7 +52,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [ ] Define ICE configuration and direct/relay reporting: STUN from client configuration, TURN only through `rtc.ice_config`, and when the server sends `rtc.ice_config` beyond the post-authentication message (spec §11, §12.3).
 - [x] Decide whether `rtc.ice_restart` remains a separate message type or ICE restart is a new `rtc.offer` (spec §11) (a new `rtc.offer`, `docs/protocol.md`).
 - [ ] Define WebSocket reconnect and token renewal behavior.
-- [ ] Decide what happens when a connection's token reaches `exp` without a successful `auth.refresh` (spec §5.3).
+- [x] Decide what happens when a connection's token reaches `exp` without a successful `auth.refresh` (spec §5.3) (closed with `token_expired`, `docs/adr/0006-token-profile-and-device-identity.md`).
 - [ ] Define security and threat-model assumptions.
 
 ### Deliverables
@@ -128,7 +128,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement trusted JWKS or public-key configuration.
 - [ ] Implement JWT signature verification.
 - [ ] Enforce algorithm allowlisting.
-- [ ] Validate `iss`, `aud`, `exp`, `iat`, `sub`, `app_id`, and `device_id`, and `nbf` when present.
+- [ ] Validate `iss`, `aud`, `exp`, `iat`, `sub`, `app_id`, `device_id`, `jti`, and `namespaces`, and `nbf` when present.
 - [ ] Enforce the maximum token lifetime and the clock-skew tolerance (spec §5.3).
 - [ ] Validate `kid` and support signing-key rotation, with HTTPS-only JWKS fetches, timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
 - [ ] Reject unknown, suspended, and revoked applications.
@@ -170,7 +170,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement WebSocket server.
 - [ ] Check `Origin` at the WebSocket upgrade against a configured allowlist, as defense in depth (spec §16).
 - [ ] Integrate application authentication, rejecting protected messages sent before authentication completes.
-- [ ] Implement device registration.
+- [ ] Create device records on first successful authentication, keyed by `(app_id, sub, device_id)` (`docs/adr/0006-token-profile-and-device-identity.md`).
 - [ ] Implement in-memory device repository.
 - [ ] Implement in-memory namespace and authorization repository.
 - [ ] Implement `namespace.join` and `namespace.leave`, admitting a device only to namespaces it is authorized in (spec §7.3, §13).
@@ -226,8 +226,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement access-token provider interface.
 - [ ] Implement token refresh through the access-token provider and `auth.refresh`.
 - [ ] Implement authentication flow.
-- [ ] Implement device registration and presence.
-- [ ] Implement device enrollment per the Phase 0 protocol design, including proof-of-possession if Phase 0 places it in the MVP.
+- [ ] Implement namespace join and presence.
 - [ ] Implement discovery API.
 - [ ] Implement session API.
 - [ ] Implement RTCPeerConnection lifecycle.
@@ -269,7 +268,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 ### Tasks
 
-- [ ] Implement device proof-of-possession, unless Phase 0 placed it in Phase 4.
+- [ ] Design, review, and implement device proof-of-possession (`docs/adr/0006-token-profile-and-device-identity.md`).
 - [ ] Finalize namespace authorization. *(MVP)*
 - [ ] Implement session authorization.
 - [ ] Design and review pairing protocol.
@@ -304,7 +303,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 **Goal:** Prevent individual applications or devices from exhausting shared infrastructure resources.
 
-**MVP subset:** the tasks marked *(MVP)*: basic per-application and per-device connection and concurrent-session limits, pre-authentication limits (authentication deadline and unauthenticated connection cap), connection-attempt, authentication, discovery, session-creation and signaling rate limits, maximum message size, and negotiation timeouts. Usage metrics, bounded queues, abuse-triggered suspension, and the session-duration quota are post-MVP. The device-count quota is part of the MVP only if the Phase 0 enrollment decision creates device records on first sight.
+**MVP subset:** the tasks marked *(MVP)*: basic per-application and per-device connection and concurrent-session limits, pre-authentication limits (authentication deadline and unauthenticated connection cap), connection-attempt, authentication, discovery, session-creation and signaling rate limits, maximum message size, and negotiation timeouts. Usage metrics, bounded queues, abuse-triggered suspension, and the session-duration quota are post-MVP. The device-count quota is part of the MVP, since device records are created on first authentication.
 
 ### Tasks
 
@@ -321,7 +320,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement maximum WebSocket message sizes. *(MVP)*
 - [ ] Implement session and negotiation timeouts. *(MVP)*
 - [ ] Implement maximum concurrent sessions per application and per device (spec §8.2). *(MVP)*
-- [ ] Implement maximum registered or active devices per application, where applicable (spec §8.2). *(MVP if the Phase 0 enrollment decision creates device records on first sight)*
+- [ ] Implement maximum registered devices per application (spec §8.2). *(MVP)*
 - [ ] Implement maximum session duration, where configured (spec §8.2).
 - [ ] Implement bounded queues and backpressure.
 - [ ] Implement abuse-triggered application suspension and operational alerts (spec §8.3), reusing the Phase 3 suspension handling.
@@ -578,7 +577,7 @@ The canonical MVP criteria are in `docs/spec.md` §22. The capabilities below de
 | 3 | Short-lived application-issued JWT authentication and development issuer | 2 |
 | 4 | In-memory storage and coordination | 2–3 |
 | 5 | Browser SDK with an access-token provider | 4 |
-| 6 | Authenticated device registration | 3–4 |
+| 6 | Device records created on authentication | 3 |
 | 7 | Namespace-scoped discovery and authorization | 3, 5 |
 | 8 | Session creation and signaling | 3 |
 | 9 | WebRTC DataChannel | 4 |
@@ -591,7 +590,7 @@ The canonical MVP criteria are in `docs/spec.md` §22. The capabilities below de
 | 16 | External network testing through Cloudflare Quick Tunnel | 7 |
 | 17 | Application suspension and revocation closing active connections (single instance) | 3 |
 
-Phases 1–4 and 7 are fully part of the MVP. Phase 0 is part of the MVP except the tasks marked post-MVP (pairing policy and, unless the MVP requires it, proof-of-possession design). Phases 5 and 6 contribute only their MVP subset.
+Phases 1–4 and 7 are fully part of the MVP. Phase 0 is part of the MVP except the tasks marked post-MVP (pairing policy and proof-of-possession design). Phases 5 and 6 contribute only their MVP subset.
 
 The MVP does not require:
 - Supabase.

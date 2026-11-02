@@ -193,11 +193,12 @@ Example JWT payload:
   "device_id": "device_456",
   "iat": 1793500000,
   "exp": 1793500600,
-  "jti": "unique-token-id"
+  "jti": "unique-token-id",
+  "namespaces": ["blindnotes:workspace-789"]
 }
 ```
 
-The example is illustrative. Final claims and token profiles must be formally specified.
+The token profile (header, required claims, default lifetime and clock-skew tolerance, `jti` replay policy, and expiry on an open connection) is in `docs/adr/0006-token-profile-and-device-identity.md`.
 
 Requirements:
 - Short-lived tokens, initially targeting approximately 5–10 minutes.
@@ -212,9 +213,9 @@ Requirements:
 - Rejection of unknown, suspended, or revoked applications.
 - No acceptance of tokens issued for unrelated services.
 - Each trusted issuer maps to exactly one registered application. The `app_id` claim must match the application registered for the validated issuer; a mismatch is rejected.
-- A defined `jti` replay policy (for example, single-use tokens within their validity window), specified in the token profile.
+- Single-use tokens: each `auth.authenticate` and `auth.refresh` needs a token whose `(iss, jti)` has not been accepted before, tracked until `exp` plus the clock-skew tolerance.
 - A token presented through `auth.refresh` must carry the same `app_id`, `sub`, and `device_id` as the connection's current context; a mismatch is rejected. Changing identity requires a new connection.
-- A defined behavior when a connection's token reaches `exp` without a successful `auth.refresh` (for example, closing the connection, possibly after a grace period), specified in the token profile. A connection must not remain authenticated indefinitely on an expired token.
+- A connection whose token reaches `exp` plus the clock-skew tolerance without a successful `auth.refresh` is closed with a retryable error, with no grace period. A connection must not remain authenticated indefinitely on an expired token.
 
 The token is a credential for a specific application and service, not a general-purpose authorization grant.
 
@@ -283,7 +284,7 @@ Where supported, private keys should be non-exportable and protected by the plat
 
 Device-key possession verification should complement JWT authentication. A device identifier alone is never proof of device identity.
 
-The exact device enrollment and proof-of-possession protocol must be designed and reviewed before implementation. Whether the MVP requires proof-of-possession, or relies only on the backend-asserted `device_id` claim, must be decided explicitly at the same time.
+In the MVP, a device is identified by `(app_id, sub, device_id)` as asserted in the application-issued token, without proof-of-possession, and its record is created on its first successful authentication (`docs/adr/0006-token-profile-and-device-identity.md`). The proof-of-possession protocol must be designed and reviewed before it is implemented (post-MVP).
 
 ### 6.3 Device revocation
 
@@ -333,7 +334,6 @@ Authorization must consider:
 
 | Resource | Permission |
 |---|---|
-| Device | `device.register` |
 | Namespace | `namespace.discover` |
 | Namespace | `namespace.join` |
 | Session | `session.create` |
@@ -552,7 +552,6 @@ Initial message categories:
 | Category | Example messages |
 |---|---|
 | Authentication | `auth.authenticate`, `auth.refresh`, `auth.result` |
-| Device | `device.register` |
 | Namespace | `namespace.join`, `namespace.leave` |
 | Presence | `presence.changed` |
 | Discovery | `discovery.request`, `discovery.result` |
@@ -875,6 +874,7 @@ The final API must define token refresh, authentication errors, device enrollmen
 - Valid application-issued token acceptance.
 - Credential renewal with `auth.refresh` without reconnecting.
 - `auth.refresh` rejection when the new token's `app_id`, `sub`, or `device_id` differs from the connection's.
+- A token naming another user's `device_id` identifying a different device, without affecting that user's connection or presence.
 - Token expiry on an open connection without `auth.refresh`, according to the token profile.
 - Duplicate connection handling according to the selected policy, including two tabs sharing one device identity without a reconnect loop.
 - Two clients connecting to one local server.

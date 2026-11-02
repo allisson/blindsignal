@@ -2,7 +2,7 @@
 
 **Status:** Draft, protocol version 1  
 **Reference:** `docs/spec.md` §11, §13; `docs/adr/0003-one-to-one-sessions.md`;
-`docs/adr/0004-sessions-bound-to-connections.md`
+`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`
 
 JSON text messages over one WebSocket per connection. The protocol carries no application
 payload: application data travels only through WebRTC DataChannels. Administrative operations
@@ -60,18 +60,17 @@ rebuilt by the server for the other session participant.
 
 | Type | Direction | Payload | Permission (server-side) |
 |---|---|---|---|
-| `auth.authenticate` | C→S | `{ token }`; device fields **TBD** (roadmap: device enrollment) | — |
+| `auth.authenticate` | C→S | `{ token }` | — |
 | `auth.refresh` | C→S | `{ token }` | — |
-| `auth.result` | S→C | **TBD** (roadmap: token profile, user and device identity) | — |
-| `device.register` | C→S | **TBD** (roadmap: device enrollment) | `device.register` |
+| `auth.result` | S→C | `{ userId, deviceId, expiresInMs }` | — |
 | `namespace.join` | C→S | `{ namespace }` | `namespace.join` |
 | `namespace.leave` | C→S | `{ namespace }` | — |
-| `presence.changed` | S→C | `{ namespace, deviceId, present }` | — |
+| `presence.changed` | S→C | `{ namespace, userId, deviceId, present }` | — |
 | `discovery.request` | C→S | `{ namespace }` | `namespace.discover` |
 | `discovery.result` | S→C | `{ namespace, devices: [{ deviceId, userId }] }` | — |
-| `session.create` | C→S | `{ namespace, deviceId }` | `session.create` |
+| `session.create` | C→S | `{ namespace, userId, deviceId }` | `session.create` |
 | `session.created` | S→C | `{ sessionId }` | — |
-| `session.request` | S→C | `{ sessionId, namespace, deviceId }` | — |
+| `session.request` | S→C | `{ sessionId, namespace, userId, deviceId }` | — |
 | `session.accept` | C→S | `{ sessionId }` | `session.accept` |
 | `session.reject` | C→S | `{ sessionId }` | `session.accept` |
 | `session.accepted` | S→C | `{ sessionId }` | — |
@@ -87,7 +86,10 @@ rebuilt by the server for the other session participant.
 | `ack` | S→C | `{}` | — |
 | `error` | S→C | `{ code, retryAfterMs? }` | — |
 
-`userId` is the issuer's `sub`, meaningful only within the application (spec §6.1). Pairing
+`userId` is the issuer's `sub`, meaningful only within the application (spec §6.1). A device is
+identified by `userId` and `deviceId` together, never by `deviceId` alone (ADR 0006).
+`expiresInMs` is the time left until the token's `exp`, so the SDK can refresh before the server
+closes the connection without reading the token. Pairing
 messages are defined with the pairing protocol (spec §7.4, post-MVP).
 
 The server rejects a message whose type it does not know or whose direction does not allow the
@@ -118,9 +120,9 @@ sender, such as a client-sent `session.request` or `rtc.ice_config`.
 Sessions are one-to-one (ADR 0003) and bound to the two connections that created and accepted
 them (ADR 0004).
 
-1. A sends `session.create { namespace, deviceId: B }`. The server checks authorization, generates
+1. A sends `session.create { namespace, userId, deviceId }` naming B. The server checks authorization, generates
    the `sessionId` (`crypto.randomUUID()`), and replies `session.created { sessionId }`.
-2. The server sends B `session.request { sessionId, namespace, deviceId: A }`.
+2. The server sends B `session.request { sessionId, namespace, userId, deviceId }` naming A.
 3. B replies `session.accept` or `session.reject`. The server sends A `session.accepted` or
    `session.rejected`.
 
@@ -197,7 +199,15 @@ Initial catalog:
 | `peer_unavailable` | retryable | no | `session.create` target not reachable (§7). |
 | `session_unavailable` | retryable | no | Unknown session, wrong state, or sender not a participant. |
 | `rate_limited` | retryable | no | Rate limit exceeded; carries `retryAfterMs`. |
+| `invalid_token` | retryable | on `auth.authenticate` | Bad signature, header, or claims; lifetime above the maximum; future `iat`; replayed `jti`; unknown issuer or application. |
+| `token_expired` | retryable | except on `auth.refresh` | Token past `exp` plus the clock-skew tolerance, at authentication or on an open connection. |
+| `identity_mismatch` | retryable | no | `auth.refresh` token with a different `app_id`, `sub`, or `device_id`. |
+| `application_unavailable` | terminal | yes | Application suspended or revoked. |
+| `device_revoked` | terminal | yes | Device revoked. |
 
-Authentication codes (expired token as retryable; application suspended or revoked and device
-revoked as terminal; `auth.refresh` identity mismatch; superseded connection) are **TBD**, defined
-with the token profile and the duplicate-connection policy.
+A failed `auth.refresh` with a retryable code leaves the connection on its current token until
+that token expires. An unknown application gets the same `invalid_token` as a bad signature, so
+the registry cannot be probed; only a validly signed token learns that its application is
+unavailable.
+
+The superseded-connection code is **TBD**, defined with the duplicate-connection policy.
