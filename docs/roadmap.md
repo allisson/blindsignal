@@ -36,7 +36,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [ ] Define the issuer-to-application mapping, the `app_id` claim rule, the `jti` replay policy, the maximum token lifetime, and the clock-skew tolerance.
 - [ ] Define application suspension and revocation behavior.
 - [ ] Define revocation enforcement limits for established P2P sessions (spec §6.4).
-- [ ] Define the control-plane mechanism for application registration, suspension, revocation, and device revocation (spec §5.6).
+- [x] Define the control-plane mechanism for application registration, suspension, revocation, and device revocation (spec §5.6) (`docs/adr/0005-control-plane.md`).
 - [ ] Define user and device identity.
 - [ ] Decide whether MVP enrollment includes device-key proof-of-possession or relies only on the backend-asserted `device_id` claim (spec §6.2), and whether device records are created on first sight, which places the per-application device-count quota in the MVP (Phase 6).
 - [ ] Design and review the device enrollment protocol (required before Phase 4 implements enrollment), including proof-of-possession if the MVP requires it. *(Proof-of-possession design is post-MVP otherwise and must be done before Phase 5 implements it.)*

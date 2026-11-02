@@ -248,7 +248,7 @@ The system must define how quickly application status changes propagate across i
 
 Operators must be able to register, update, suspend, reactivate, and revoke applications, and revoke devices, without code changes. Only a suspended application can be reactivated.
 
-The control-plane mechanism (configuration file, CLI, or authenticated administrative API) must be decided before implementation.
+The control plane is a declarative registry file that the server loads at startup and reloads on `SIGHUP`; a reload applies status changes and device revocations immediately, is rejected whole when invalid, and never reactivates a revoked application (`docs/adr/0005-control-plane.md`).
 
 The control plane is separate from the browser signaling protocol. It must never be reachable with application-issued access tokens.
 
@@ -890,7 +890,8 @@ The final API must define token refresh, authentication errors, device enrollmen
 - Expired presence cleanup.
 - Application suspension and revocation during active connections, with the SDK closing its sessions when reauthentication is rejected.
 - Device revocation closing the revoked device's connections and notifying remaining peers with `session.terminated`.
-- Control-plane operations rejecting application-issued access tokens (§5.6).
+- Registry reload suspending, revoking, or removing an application, or revoking a device, closing the affected connections (§5.6).
+- Invalid registry reload rejected whole, keeping the previous registry.
 - Reactivation refused for a revoked application.
 
 ### Connectivity tests

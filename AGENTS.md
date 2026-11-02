@@ -35,7 +35,8 @@ Once tooling exists, document the install, build, lint, and test commands here.
 The spec requires these to be decided, and recorded in `docs/adr/`, before the code that depends
 on them is written. Never assume an answer:
 
-- Control-plane mechanism: config file, CLI, or admin API (§5.6).
+- Control-plane mechanism: config file, CLI, or admin API (§5.6). Decided:
+  `docs/adr/0005-control-plane.md`.
 - Device enrollment, and whether the MVP requires device-key proof-of-possession (§6.2).
 - Namespace authorization source: token claims, stored policy, or both (§7.3).
 - Duplicate-connection policy, together with the per-device connection limit (§13, §8.1),
