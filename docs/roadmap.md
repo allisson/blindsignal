@@ -229,7 +229,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement authentication flow.
 - [x] Implement namespace join and presence.
 - [x] Implement discovery API.
-- [ ] Implement session API.
+- [x] Implement session API.
 - [ ] Implement RTCPeerConnection lifecycle.
 - [ ] Implement SDP negotiation.
 - [ ] Implement ICE candidate exchange.
@@ -240,7 +240,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Expose direct/relay/unknown connection type.
 - [x] Implement heartbeats and dead-connection detection with `connection.ping` and `connection.pong` (spec §15).
 - [x] Implement reconnect with exponential backoff and jitter, stopping on terminal authentication errors and not reconnecting automatically when superseded (spec §8.3).
-- [ ] After reconnecting, rejoin namespaces and treat every server-side session as ended (spec §15, `docs/adr/0004-sessions-bound-to-connections.md`).
+- [x] After reconnecting, rejoin namespaces and treat every server-side session as ended (spec §15, `docs/adr/0004-sessions-bound-to-connections.md`).
 - [ ] Implement session cleanup and error handling, closing all sessions when reauthentication is rejected because the application is suspended or revoked or the device is revoked (spec §6.4).
 - [ ] Add browser integration tests.
 

@@ -15,5 +15,14 @@ export {
   type HeartbeatOptions,
   type Identity,
   type Presence,
+  type SessionRequest,
 } from './client.ts';
 export type { BackoffOptions } from './backoff.ts';
+export {
+  Session,
+  type Peer,
+  type SessionEndReason,
+  type SessionEvents,
+  type SessionState,
+  type TerminationReason,
+} from './session.ts';
