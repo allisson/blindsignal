@@ -222,3 +222,34 @@ A failed `auth.refresh` with a retryable code leaves the connection on its curre
 that token expires. An unknown application gets the same `invalid_token` as a bad signature, so
 the registry cannot be probed; only a validly signed token learns that its application is
 unavailable.
+
+## 10. SDK connection behavior
+
+How the SDK keeps a connection alive and authenticated (spec §15). Every duration below is a
+configurable default.
+
+- **New token every time.** The SDK calls `accessTokenProvider` for each `auth.authenticate` and
+  each `auth.refresh`, since tokens are single-use (ADR 0006). A provider failure is handled like a
+  failed connection attempt.
+- **Backoff.** Reconnect attempts wait an exponential delay with full jitter: a random time between
+  0 and `min(30 s, 1 s × 2^attempt)`. The attempt count resets once a connection has stayed
+  authenticated for 30 s. A failed WebSocket open, an HTTP `429` at the upgrade (which a browser
+  reports only as a failed open), an abnormal closure, a missed `connection.pong`, and a
+  retryable close (`4001`) all reconnect with backoff.
+- **Refresh.** The SDK sends `auth.refresh` when `expiresInMs` minus 60 s has elapsed since
+  `auth.result`, or at once when `expiresInMs` is shorter than that. A refresh that fails, through
+  the provider or with a retryable `error`, is retried with backoff until the token's expiry; if
+  none succeeds, the server closes the connection with `token_expired` and the SDK reconnects with
+  a new token.
+- **Rate limits.** After `rate_limited`, the SDK waits at least `retryAfterMs` before sending that
+  kind of request again.
+- **Terminal and superseded.** A terminal close (`4002`) stops reconnecting and closes every
+  session, established DataChannels included (spec §6.4). A superseded close (`4003`) stops
+  reconnecting until the application asks for a new connection (ADR 0008).
+- **After reconnecting.** The SDK joins again every namespace the application had joined and has
+  not left, reporting to the application each join that fails (for example, `not_authorized`
+  after the backend removed it from the token). Every server-side session is treated as ended
+  (ADR 0004); established DataChannels are not touched, and the application creates new sessions
+  as it needs them.
+- **Hosting time limits.** A connection the platform or the server closes for exceeding a hosting
+  time limit reconnects like any other abnormal or retryable closure.
