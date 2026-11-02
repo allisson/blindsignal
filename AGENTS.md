@@ -129,9 +129,10 @@ Treat a violation of any of these as a bug, regardless of the task:
   expiry, replayed `jti`, unknown/suspended app, unauthorized namespace, `rtc.*` outside a session).
 - Tests run against in-memory adapters and need no network services.
 - Coverage floors, enforced in CI by `vitest.config.ts`: 90% of lines and 85% of branches in
-  `packages/protocol`, `packages/core`, and the server's `domain` and `handlers` layers, where
-  authorization lives. Transport code and the SDK's WebRTC layer have no floor: integration and
-  Playwright tests cover them. Never lower a floor to make a change pass; add the missing tests.
+  `packages/protocol`, `packages/core`, the server's `domain` and `handlers` layers, where
+  authorization lives, and the SDK's signaling layer (`packages/sdk/src/*.ts`). Transport code and
+  the SDK's WebRTC layer (`packages/sdk/src/webrtc/`) have no floor: integration and Playwright
+  tests cover them. Never lower a floor to make a change pass; add the missing tests.
 
 ## Language
 
