@@ -74,6 +74,19 @@ const applicationEntry = z
 
 const registryFile = z.strictObject({ applications: z.array(applicationEntry) });
 
+// The dev issuer's origin and public key, copied from packages/dev-issuer, which server source
+// may not import (ADR 0002); a test keeps the copies equal.
+export const DEV_ISSUER_ORIGIN = 'https://dev-issuer.blindsignal.invalid';
+export const DEV_PUBLIC_KEY_X = 'wAzWXTlkeTKt5gt4V5mhStDncwJrxy3TTMKI-uoSCSg';
+
+export interface ParseRegistryOptions {
+  readonly now: Date;
+  /** The current registry, on a reload. */
+  readonly previous?: Registry;
+  /** Trust the dev issuer; only when the server runs in development mode. */
+  readonly development?: boolean;
+}
+
 /** A loaded registry and what later reloads are checked against. */
 export interface Registry {
   readonly applications: readonly ApplicationRecord[];
@@ -89,7 +102,10 @@ export type RegistryResult =
  * Parses and validates the registry file. A reload passes the current registry; the result is
  * all or nothing, and an error never repeats file content beyond key paths.
  */
-export function parseRegistry(text: string, now: Date, previous?: Registry): RegistryResult {
+export function parseRegistry(
+  text: string,
+  { now, previous, development = false }: ParseRegistryOptions,
+): RegistryResult {
   let data: unknown;
   try {
     data = JSON.parse(text);
@@ -110,6 +126,10 @@ export function parseRegistry(text: string, now: Date, previous?: Registry): Reg
     if (seenIssuers.has(entry.issuer)) errors.push(`${entry.appId}: issuer used by another app`);
     if (previous?.revoked.has(entry.appId) && entry.status !== 'revoked') {
       errors.push(`${entry.appId}: a revoked application cannot be reactivated`);
+    }
+    const devKey = entry.publicKeys?.some((key) => key.x === DEV_PUBLIC_KEY_X) ?? false;
+    if (!development && (entry.issuer.startsWith(DEV_ISSUER_ORIGIN) || devKey)) {
+      errors.push(`${entry.appId}: the dev issuer is trusted only in development mode`);
     }
     seenApps.add(entry.appId);
     seenIssuers.add(entry.issuer);

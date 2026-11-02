@@ -15,7 +15,8 @@ application-issued access token can never reach it.
   (`app_id`, name, status, issuer, audience, JWKS URI or static public keys, allowed algorithms,
   quotas) and, per application, the revoked devices by `sub` and `device_id`. JSON validated with
   Zod, so no new parser enters the toolchain (ADR 0001). The development issuer is an ordinary
-  entry with its static public key (ADR 0002).
+  entry with its static public key (ADR 0002); outside development mode, an entry with the dev
+  issuer's origin or public key is rejected, since its private key is public in this repository.
 - **File format.** Keys are camelCase, matching `ApplicationRecord` in `packages/core`; the
   §5.1 names (`app_id`, `jwks_uri`) are concepts, not keys. Unknown keys are rejected, so a
   misspelled key fails the load instead of being ignored. Static keys are public JWKs (`OKP`
