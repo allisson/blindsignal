@@ -88,16 +88,16 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 ### Tasks
 
 - [ ] Create the `protocol` package and the server-side `core` package (domain types and adapter interfaces).
-- [ ] Implement versioned signaling message schemas.
-- [ ] Define message validation.
-- [ ] Define standard error codes, marking each authentication and connection-closure error as retryable, terminal, or superseded (spec §8.3).
-- [ ] Define request correlation.
-- [ ] Define the allowed direction of every message type and reject messages sent in the wrong direction (spec §11).
-- [ ] Define message size limits.
-- [ ] Define protocol compatibility rules.
-- [ ] Define authentication handshake.
+- [x] Implement versioned signaling message schemas (`packages/protocol`).
+- [x] Define message validation (`docs/protocol.md` §1).
+- [x] Define standard error codes, marking each authentication and connection-closure error as retryable, terminal, or superseded (spec §8.3, `docs/protocol.md` §9).
+- [x] Define request correlation (`docs/protocol.md` §3).
+- [x] Define the allowed direction of every message type and reject messages sent in the wrong direction (spec §11, `docs/protocol.md` §4).
+- [x] Define message size limits (`docs/protocol.md` §1).
+- [x] Define protocol compatibility rules (`docs/protocol.md` §2).
+- [x] Define authentication handshake (`docs/protocol.md` §5, §9).
 - [ ] Define application and device context representation.
-- [ ] Add unit tests for schemas and validation.
+- [x] Add unit tests for schemas and validation.
 - [x] Define test coverage floors and enforce them in CI (`AGENTS.md`, "Testing").
 
 ### Deliverables
