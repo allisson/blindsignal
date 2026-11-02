@@ -136,7 +136,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement in-memory `jti` replay protection per the token profile (spec §5.3).
 - [x] Reject expired tokens at authentication; enforcement on open connections lands in Phase 3.
 - [x] Implement application-scoped authentication context.
-- [ ] Document backend token issuance requirements.
+- [x] Document backend token issuance requirements (`docs/token-issuance.md`).
 - [x] Implement a development token issuer for tests and examples, with test keys isolated from production trust configuration.
 - [ ] Ensure no application secret is required or embedded in browser code.
 - [x] Add tests for invalid, expired, unknown, suspended, and revoked credentials, wrong issuer or audience, `app_id` claim and issuer mismatch, replayed `jti`, excessive token lifetime, future `iat`, and unknown-`kid` refetch limits.
