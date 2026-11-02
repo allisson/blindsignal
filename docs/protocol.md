@@ -118,6 +118,8 @@ sender, such as a client-sent `session.request` or `rtc.ice_config`.
 - Before `auth.authenticate` succeeds, the only accepted message is `auth.authenticate`. Any other
   message gets `error` `not_authenticated` and the connection closes (terminal). This includes
   `connection.ping`.
+- A connection authenticates once. A later `auth.authenticate` gets `error` `invalid_message`
+  and the connection stays open; `auth.refresh` renews the credential.
 - The server checks the permission in §4 on every protected message, deny by default. Permissions
   are server-side checkpoints and never appear on the wire.
 - In the MVP, a device authorized in a namespace holds every namespace and session permission in

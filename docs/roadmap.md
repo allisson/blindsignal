@@ -170,8 +170,8 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 - [ ] Implement WebSocket server.
 - [ ] Check `Origin` at the WebSocket upgrade against a configured allowlist, as defense in depth (spec §16).
-- [ ] Integrate application authentication, rejecting protected messages sent before authentication completes.
-- [ ] Create device records on first successful authentication, keyed by `(app_id, sub, device_id)`, and expire them after a configurable inactivity period (`docs/adr/0006-token-profile-and-device-identity.md`, `docs/adr/0010-adapter-interfaces.md`).
+- [x] Integrate application authentication, rejecting protected messages sent before authentication completes.
+- [x] Create device records on first successful authentication, keyed by `(app_id, sub, device_id)`, and expire them after a configurable inactivity period (`docs/adr/0006-token-profile-and-device-identity.md`, `docs/adr/0010-adapter-interfaces.md`).
 - [x] Implement in-memory device repository.
 - [ ] Authorize namespaces from the token's `namespaces` claim, and apply namespace removals on `auth.refresh` (`docs/adr/0007-namespace-authorization.md`).
 - [ ] Implement `namespace.join` and `namespace.leave`, admitting a device only to namespaces it is authorized in (spec §7.3, §13).
@@ -182,16 +182,16 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement SDP offer/answer signaling, including ICE restart as a new `rtc.offer`.
 - [ ] Implement ICE candidate exchange.
 - [ ] Relay `rtc.*` messages only between participants of an accepted session (spec §13).
-- [ ] Send `rtc.ice_config` after every successful authentication and `auth.refresh`, even when no TURN server is configured (spec §11, `docs/adr/0009-ice-configuration.md`).
+- [x] Send `rtc.ice_config` after every successful authentication and `auth.refresh`, even when no TURN server is configured (spec §11, `docs/adr/0009-ice-configuration.md`).
 - [ ] Implement heartbeat and disconnect detection.
 - [ ] Implement stale presence cleanup.
 - [ ] Implement application suspension and revocation handling: reject new authentication and close the application's active WebSocket connections (spec §5.5).
-- [ ] Implement the duplicate-connection policy: an authenticated newer connection replaces the device's older one, closed with `superseded` (`docs/adr/0008-duplicate-connections.md`).
+- [x] Implement the duplicate-connection policy: an authenticated newer connection replaces the device's older one, closed with `superseded` (`docs/adr/0008-duplicate-connections.md`).
 - [ ] Implement the control plane for application registration, update, suspension, reactivation, and revocation, using the mechanism chosen in Phase 0 (spec §5.6).
 - [ ] Add health and readiness endpoints.
 - [ ] Add structured logs and basic metrics.
-- [ ] Implement `auth.refresh` handling for credential renewal without reconnecting, rejecting tokens whose `app_id`, `sub`, or `device_id` differs from the connection's (spec §5.3).
-- [ ] Enforce token expiry on open connections: a connection whose token reaches `exp` without a successful `auth.refresh` is handled per the Phase 0 decision (spec §5.3).
+- [x] Implement `auth.refresh` handling for credential renewal without reconnecting, rejecting tokens whose `app_id`, `sub`, or `device_id` differs from the connection's (spec §5.3).
+- [x] Enforce token expiry on open connections: a connection whose token reaches `exp` without a successful `auth.refresh` is handled per the Phase 0 decision (spec §5.3).
 - [ ] Implement environment-driven configuration.
 - [x] Implement client IP derivation from configured trusted proxies, ignoring forwarding headers from untrusted peers (spec §8.1).
 - [ ] Add Dockerfile and Docker Compose development workflow.
@@ -320,7 +320,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement maximum WebSocket message sizes. *(MVP)*
 - [ ] Implement session and negotiation timeouts. *(MVP)*
 - [ ] Implement maximum concurrent sessions per application and per device (spec §8.2). *(MVP)*
-- [ ] Implement maximum registered devices per application (spec §8.2). *(MVP)*
+- [x] Implement maximum registered devices per application (spec §8.2). *(MVP)*
 - [ ] Implement maximum joined namespaces per device (`docs/adr/0011-quotas-and-rate-limits.md`). *(MVP)*
 - [ ] Implement maximum session duration, where configured (spec §8.2).
 - [ ] Implement bounded queues and backpressure.
