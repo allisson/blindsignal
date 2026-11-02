@@ -1,6 +1,7 @@
 import { InMemoryCoordinationAdapter } from '@blindsignal/coordination-memory';
 import { devApplication, mintDevToken } from '@blindsignal/dev-issuer';
 import type { ServerMessage } from '@blindsignal/protocol';
+import { BlindSignalClient, BlindSignalError, type Presence } from '@blindsignal/sdk';
 import {
   InMemoryApplicationRepository,
   InMemoryDeviceRepository,
@@ -121,7 +122,7 @@ async function start(options: Options = {}) {
 
   const http = (path: string) => fetch(`http://${base}${path}`).then((r) => r.status);
 
-  return { server, coordination, client, refusedUpgrade, http, logs };
+  return { server, coordination, client, refusedUpgrade, http, logs, url: `ws://${base}/` };
 }
 
 describe('SignalingServer', () => {
@@ -287,5 +288,71 @@ describe('SignalingServer', () => {
     expect(await http('/readyz')).toBe(503);
     expect(await http('/healthz')).toBe(200);
     expect(await refusedUpgrade()).toBe(503);
+  });
+});
+
+describe('SignalingServer with the SDK', () => {
+  const sdks: BlindSignalClient[] = [];
+
+  afterEach(() => {
+    for (const sdk of sdks.splice(0)) sdk.close();
+  });
+
+  function sdk(url: string, sub: string, device_id: string, namespaces = ['notes:a']) {
+    const client = new BlindSignalClient({
+      serverUrl: url,
+      accessTokenProvider: () => mintDevToken({ app_id: 'notes', sub, device_id, namespaces }),
+    });
+    sdks.push(client);
+    const presence: Presence[] = [];
+    client.on('presence', (p) => presence.push(p));
+    return { client, presence };
+  }
+
+  it('authenticates, joins, sees presence, discovers, and leaves', async () => {
+    const { url } = await start();
+    const alice = sdk(url, 'alice', 'laptop');
+    const bob = sdk(url, 'bob', 'phone');
+    await expect(alice.client.connect()).resolves.toEqual({ userId: 'alice', deviceId: 'laptop' });
+    expect(alice.client.iceConfig).toEqual({ iceServers: [] });
+    await alice.client.join('notes:a');
+    await bob.client.connect();
+    await bob.client.join('notes:a');
+
+    const bobPresent = { namespace: 'notes:a', userId: 'bob', deviceId: 'phone', present: true };
+    await vi.waitFor(() => expect(alice.presence).toEqual([bobPresent]));
+    expect(await alice.client.discover('notes:a')).toEqual([{ userId: 'bob', deviceId: 'phone' }]);
+    expect(await bob.client.discover('notes:a')).toEqual([{ userId: 'alice', deviceId: 'laptop' }]);
+    expect(bob.presence).toEqual([]);
+
+    await bob.client.leave('notes:a');
+    await vi.waitFor(() =>
+      expect(alice.presence).toEqual([bobPresent, { ...bobPresent, present: false }]),
+    );
+    expect(await alice.client.discover('notes:a')).toEqual([]);
+  });
+
+  it('rejects an unauthorized join and a discovery outside a joined namespace', async () => {
+    const { url } = await start();
+    const alice = sdk(url, 'alice', 'laptop');
+    await alice.client.connect();
+    await expect(alice.client.join('notes:b')).rejects.toEqual(
+      new BlindSignalError('not_authorized'),
+    );
+    await expect(alice.client.discover('notes:a')).rejects.toEqual(
+      new BlindSignalError('not_joined'),
+    );
+  });
+
+  it('stops when a newer connection of the same device supersedes it', async () => {
+    const { url } = await start();
+    const first = sdk(url, 'alice', 'laptop');
+    const states: unknown[] = [];
+    first.client.on('state', (s) => states.push(s));
+    await first.client.connect();
+    await sdk(url, 'alice', 'laptop').client.connect();
+    await vi.waitFor(() =>
+      expect(states.at(-1)).toEqual({ state: 'disconnected', error: 'superseded' }),
+    );
   });
 });

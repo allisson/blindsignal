@@ -503,6 +503,139 @@ describe('BlindSignalClient after a reconnect', () => {
   });
 });
 
+describe('BlindSignalClient namespaces', () => {
+  /** Replies to the request on the latest socket that asked for `namespace`. */
+  function answer(harness: Harness, namespace: string, type: string, payload: object = {}) {
+    const request = harness
+      .socket()
+      .sent.findLast(
+        (m) => ((m as Sent).payload as { namespace?: string }).namespace === namespace,
+      );
+    harness.socket().receive({ version: 1, type, requestId: (request as Sent).requestId, payload });
+  }
+
+  it('joins, discovers, and leaves', async () => {
+    const harness = await connected();
+    const joining = harness.client.join('notes:a');
+    expect(harness.last()).toMatchObject({
+      type: 'namespace.join',
+      payload: { namespace: 'notes:a' },
+    });
+    harness.reply('ack', {});
+    await joining;
+    const discovering = harness.client.discover('notes:a');
+    expect(harness.last()).toMatchObject({
+      type: 'discovery.request',
+      payload: { namespace: 'notes:a' },
+    });
+    const devices = [{ userId: 'bob', deviceId: 'phone' }];
+    harness.reply('discovery.result', { namespace: 'notes:a', devices });
+    await expect(discovering).resolves.toEqual(devices);
+    const leaving = harness.client.leave('notes:a');
+    expect(harness.last()).toMatchObject({
+      type: 'namespace.leave',
+      payload: { namespace: 'notes:a' },
+    });
+    harness.reply('ack', {});
+    await leaving;
+  });
+
+  it('rejects with the server error', async () => {
+    const harness = await connected();
+    const joining = harness.client.join('notes:x');
+    harness.reply('error', { code: 'not_authorized' });
+    await expect(joining).rejects.toEqual(new BlindSignalError('not_authorized'));
+    const discovering = harness.client.discover('notes:x');
+    harness.reply('error', { code: 'not_joined' });
+    await expect(discovering).rejects.toEqual(new BlindSignalError('not_joined'));
+    const leaving = harness.client.leave('notes:x');
+    harness.reply('error', { code: 'rate_limited', retryAfterMs: 1_000 });
+    await expect(leaving).rejects.toEqual(new BlindSignalError('rate_limited', 1_000));
+  });
+
+  it('rejects join and discover without a connection, and leaves locally', async () => {
+    const { client } = setup();
+    await expect(client.join('notes:a')).rejects.toEqual(new BlindSignalError('connection_closed'));
+    await expect(client.discover('notes:a')).rejects.toEqual(
+      new BlindSignalError('connection_closed'),
+    );
+    await expect(client.leave('notes:a')).resolves.toBeUndefined();
+  });
+
+  it('emits presence changes', async () => {
+    const harness = await connected();
+    const presence: unknown[] = [];
+    harness.client.on('presence', (p) => presence.push(p));
+    const payload = { namespace: 'notes:a', userId: 'bob', deviceId: 'phone', present: true };
+    harness.socket().receive({ version: 1, type: 'presence.changed', payload });
+    expect(presence).toEqual([payload]);
+  });
+
+  it('joins again after a reconnect before reporting connected', async () => {
+    const harness = await connected();
+    const failures: unknown[] = [];
+    harness.client.on('rejoinFailed', (f) => failures.push(f));
+    for (const namespace of ['notes:a', 'notes:b', 'notes:c', 'notes:x']) {
+      const joining = harness.client.join(namespace);
+      if (namespace === 'notes:x') harness.reply('error', { code: 'not_authorized' });
+      else harness.reply('ack', {});
+      await joining.catch(() => undefined);
+    }
+    const leaving = harness.client.leave('notes:c');
+    harness.reply('ack', {});
+    await leaving;
+
+    harness.socket().drop(1006);
+    await authenticate(harness);
+    expect(harness.sent('namespace.join').map((m) => (m as Sent).payload)).toEqual([
+      { namespace: 'notes:a' },
+      { namespace: 'notes:b' },
+    ]);
+    expect(harness.client.state).toBe('connecting');
+    answer(harness, 'notes:a', 'ack');
+    answer(harness, 'notes:b', 'error', { code: 'not_authorized' });
+    await flush();
+    expect(harness.client.state).toBe('connected');
+    expect(failures).toEqual([{ namespace: 'notes:b', error: 'not_authorized' }]);
+
+    harness.socket().drop(1006);
+    await authenticate(harness);
+    expect(harness.sent('namespace.join').map((m) => (m as Sent).payload)).toEqual([
+      { namespace: 'notes:a' },
+    ]);
+  });
+
+  it('keeps a namespace whose rejoin a dropped connection cut', async () => {
+    const harness = await connected();
+    const failures: unknown[] = [];
+    harness.client.on('rejoinFailed', (f) => failures.push(f));
+    const joining = harness.client.join('notes:a');
+    harness.reply('ack', {});
+    await joining;
+    harness.socket().drop(1006);
+    await authenticate(harness);
+    harness.socket().drop(1006);
+    await authenticate(harness);
+    expect(harness.sent('namespace.join')).toHaveLength(1);
+    expect(failures).toEqual([]);
+    expect(harness.sockets).toHaveLength(3);
+  });
+
+  it('does not report connected when closed while rejoining', async () => {
+    const harness = await connected();
+    const joining = harness.client.join('notes:a');
+    harness.reply('ack', {});
+    await joining;
+    harness.socket().drop(1006);
+    await authenticate(harness);
+    harness.client.close();
+    answer(harness, 'notes:a', 'ack');
+    await flush();
+    expect(harness.client.state).toBe('disconnected');
+    expect(harness.states.at(-1)).toEqual({ state: 'disconnected' });
+  });
+});
+
 describe('backoffDelay', () => {
   it('draws a full-jitter delay below the doubling, capped bound', () => {
     random.mockReturnValue(0.25);
