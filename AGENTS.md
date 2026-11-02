@@ -22,10 +22,10 @@ the roadmap, or an ADR in the same change.
 
 ## Current status
 
-Phase 0 (architecture and planning). The repository contains only docs. Language, runtime,
-monorepo tooling, schema-validation library, and test frameworks are **not chosen yet** (the
-`.gitignore` and the spec's illustrative interfaces point to TypeScript/Node.js). Do not pick them
-implicitly by scaffolding code: record the choice in an ADR first.
+Phase 0 (architecture and planning). The repository contains only docs. The toolchain is decided
+in `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
+`jose`, `ws`, Vitest, Playwright) but not scaffolded yet. Do not add a tool outside that ADR without
+a new ADR.
 
 Once tooling exists, document the install, build, lint, and test commands here.
 
