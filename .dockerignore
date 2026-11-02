@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/coverage
+**/*.test.ts
+.git
+.github
+docs
+examples
+*.log
