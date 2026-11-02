@@ -1,4 +1,9 @@
-import type { CoordinationAdapter, DeviceIdentity } from '@blindsignal/core';
+import type {
+  CoordinationAdapter,
+  DeviceIdentity,
+  RateLimitDecision,
+  RateLimitPolicy,
+} from '@blindsignal/core';
 
 const SWEEP_INTERVAL_MS = 60_000;
 
@@ -6,6 +11,13 @@ interface Lease {
   readonly device: DeviceIdentity;
   readonly connectionId: string;
   readonly expiresAt: number;
+}
+
+interface Bucket {
+  readonly tokens: number;
+  readonly updatedAt: number;
+  /** When the bucket is full again, and as good as absent. */
+  readonly fullAt: number;
 }
 
 interface Subscription {
@@ -17,17 +29,18 @@ const deviceKey = ({ appId, userId, deviceId }: DeviceIdentity) =>
 
 /**
  * Single-instance only: state lives in this process and is lost on restart (spec §10.3).
- * Rate limits and concurrency slots arrive with Phase 6.
+ * Concurrency slots arrive with Phase 6.
  */
 export class InMemoryCoordinationAdapter implements Omit<
   CoordinationAdapter,
-  'consumeRateLimit' | 'acquireSlots' | 'releaseSlots'
+  'acquireSlots' | 'releaseSlots'
 > {
   readonly #now: () => number;
   readonly #jtis = new Map<string, number>();
   readonly #connections = new Map<string, string>();
   readonly #presence = new Map<string, Map<string, Lease>>();
   readonly #topics = new Map<string, Set<Subscription>>();
+  readonly #buckets = new Map<string, Bucket>();
   #lastSweep: number;
 
   constructor({ now = Date.now }: { now?: () => number } = {}) {
@@ -91,6 +104,34 @@ export class InMemoryCoordinationAdapter implements Omit<
     return Promise.resolve(leases.filter((lease) => lease.expiresAt > now).map((l) => l.device));
   }
 
+  /** A token bucket per key, created full (ADR 0011). */
+  consumeRateLimit(
+    key: string,
+    { ratePerSecond, burst }: RateLimitPolicy,
+  ): Promise<RateLimitDecision> {
+    const now = this.#now();
+    this.#sweep(now);
+    const bucket = this.#buckets.get(key);
+    const refilled =
+      bucket === undefined
+        ? burst
+        : bucket.tokens + ((now - bucket.updatedAt) / 1000) * ratePerSecond;
+    const available = Math.min(burst, refilled);
+    if (available < 1) {
+      return Promise.resolve({
+        allowed: false,
+        retryAfterMs: Math.ceil(((1 - available) / ratePerSecond) * 1000),
+      });
+    }
+    const tokens = available - 1;
+    this.#buckets.set(key, {
+      tokens,
+      updatedAt: now,
+      fullAt: now + ((burst - tokens) / ratePerSecond) * 1000,
+    });
+    return Promise.resolve({ allowed: true });
+  }
+
   publish(topic: string, event: unknown): Promise<void> {
     // A copy, so a handler that unsubscribes does not skip the next one.
     for (const { handler } of [...(this.#topics.get(topic) ?? [])]) handler(event);
@@ -122,6 +163,7 @@ export class InMemoryCoordinationAdapter implements Omit<
       for (const [key, lease] of leases) if (lease.expiresAt <= now) leases.delete(key);
       if (leases.size === 0) this.#presence.delete(namespace);
     }
+    for (const [key, bucket] of this.#buckets) if (bucket.fullAt <= now) this.#buckets.delete(key);
   }
 
   /** Tracked pairs, expired ones not yet swept included; for tests. */
@@ -134,6 +176,11 @@ export class InMemoryCoordinationAdapter implements Omit<
     let count = 0;
     for (const leases of this.#presence.values()) count += leases.size;
     return count;
+  }
+
+  /** Tracked rate-limit buckets, full ones not yet swept included; for tests. */
+  get trackedBuckets(): number {
+    return this.#buckets.size;
   }
 
   /** Topics with at least one subscriber; for tests. */

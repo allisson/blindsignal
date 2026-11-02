@@ -16,6 +16,7 @@ import { Metrics } from '../telemetry.ts';
 import {
   Connection,
   connectionTopic,
+  POLICY_VIOLATION,
   presenceTopic,
   type ConnectionDependencies,
 } from './connection.ts';
@@ -25,6 +26,7 @@ const SKEW_MS = 60_000;
 const LIFETIME_MS = 300_000;
 const LEASE_MS = 90_000;
 const NEGOTIATION_MS = 30_000;
+const AUTH_MS = 10_000;
 const ICE = [{ urls: ['stun:stun.example:3478'] }];
 const defaults = loadConfig({
   BLINDSIGNAL_ENV: 'development',
@@ -78,6 +80,7 @@ async function setup(
     coordination,
     iceServers: ICE,
     clockSkewSeconds: SKEW_MS / 1000,
+    authenticationTimeoutMs: AUTH_MS,
     deviceTtlMs: 86_400_000,
     limits: limits(10),
     presenceLeaseMs: LEASE_MS,
@@ -92,9 +95,11 @@ async function setup(
   const connect = ({ reportsClose = true } = {}) => {
     const sent: ServerMessage[] = [];
     const closes: number[] = [];
+    let authenticated = 0;
     const connection: Connection = new Connection(
       {
         send: (message) => sent.push(message),
+        authenticated: () => authenticated++,
         close: (code) => {
           closes.push(code);
           if (reportsClose) void connection.closed();
@@ -120,7 +125,18 @@ async function setup(
     const presence = () =>
       sent.flatMap((message) => (message.type === 'presence.changed' ? [message.payload] : []));
     const last = () => sent.at(-1);
-    return { connection, sent, closes, request, authenticate, refresh, errors, presence, last };
+    return {
+      connection,
+      sent,
+      closes,
+      request,
+      authenticate,
+      refresh,
+      errors,
+      presence,
+      last,
+      authenticated: () => authenticated,
+    };
   };
 
   return { connect, load, coordination, devices, deps, metrics, logs };
@@ -129,6 +145,65 @@ async function setup(
 type Connect = Awaited<ReturnType<typeof setup>>['connect'];
 
 describe('Connection', () => {
+  describe('authentication deadline', () => {
+    it('closes a connection still unauthenticated at the deadline, with no error', async () => {
+      const { connect, logs } = await setup();
+      const client = connect();
+      await vi.advanceTimersByTimeAsync(AUTH_MS - 1);
+      expect(client.closes).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(client.closes).toEqual([POLICY_VIOLATION]);
+      expect(client.sent).toEqual([]);
+      expect(logs).toEqual([
+        {
+          level: 'info',
+          event: 'connection.authentication_timeout',
+          connectionId: client.connection.id,
+        },
+      ]);
+      await client.authenticate();
+      expect(client.sent).toEqual([]);
+    });
+
+    it('spares an authenticated connection, and reports it authenticated once', async () => {
+      const { connect } = await setup();
+      const client = connect();
+      await client.authenticate();
+      await client.refresh();
+      await vi.advanceTimersByTimeAsync(AUTH_MS);
+      expect(client.closes).toEqual([]);
+      expect(client.authenticated()).toBe(1);
+    });
+
+    it('lets an authentication in flight at the deadline finish', async () => {
+      const { connect } = await setup();
+      const client = connect();
+      const token = await mintDevToken(d1, { now: new Date() });
+      await vi.advanceTimersByTimeAsync(AUTH_MS - 1);
+      const authenticating = client.request('auth.authenticate', { token });
+      vi.advanceTimersByTime(1);
+      await authenticating;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.closes).toEqual([]);
+      expect(client.connection.context).toBeDefined();
+    });
+
+    it('stops the deadline once the transport reports the close', async () => {
+      const { connect, logs } = await setup();
+      const client = connect();
+      await client.connection.closed();
+      await vi.advanceTimersByTimeAsync(AUTH_MS);
+      expect(logs).toEqual([]);
+    });
+
+    it('does not report a failed authentication as authenticated', async () => {
+      const { connect } = await setup();
+      const client = connect();
+      await client.authenticate({ aud: 'other' });
+      expect(client.authenticated()).toBe(0);
+    });
+  });
+
   describe('auth.authenticate', () => {
     it('replies auth.result, then rtc.ice_config, and installs the context', async () => {
       const { connect } = await setup();

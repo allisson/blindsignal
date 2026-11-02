@@ -24,7 +24,12 @@ import type { Logger, Metrics } from '../telemetry.ts';
 export interface ConnectionPort {
   send(message: ServerMessage): void;
   close(code: number): void;
+  /** The connection authenticated: it no longer counts as unauthenticated (spec §8.4). */
+  authenticated?(): void;
 }
+
+/** Close code for a connection that missed the authentication deadline (RFC 6455). */
+export const POLICY_VIOLATION = 1008;
 
 export interface ConnectionDependencies {
   readonly verifier: Pick<TokenVerifier, 'verify'>;
@@ -41,6 +46,8 @@ export interface ConnectionDependencies {
   >;
   readonly iceServers: Payload<'rtc.ice_config'>['iceServers'];
   readonly clockSkewSeconds: number;
+  /** A connection not authenticated this long after it opened is closed (spec §8.4). */
+  readonly authenticationTimeoutMs: number;
   /** A device record not seen for this long stops counting toward the device quota. */
   readonly deviceTtlMs: number;
   /** Server defaults; an application's registry entry overrides each limit it sets (ADR 0011). */
@@ -101,6 +108,7 @@ export class Connection {
   #endReason: TerminationReason = 'peer_disconnected';
   #context: ConnectionContext | undefined;
   #expiryTimer: ReturnType<typeof setTimeout> | undefined;
+  readonly #deadline: ReturnType<typeof setTimeout>;
   #unsubscribe: (() => Promise<void>) | undefined;
   /** Joined namespaces, each with its presence topic's unsubscribe. */
   readonly #joined = new Map<string, () => Promise<void>>();
@@ -109,6 +117,11 @@ export class Connection {
     this.id = id;
     this.#port = port;
     this.#deps = deps;
+    // Queued, so an authentication in flight finishes first.
+    this.#deadline = setTimeout(
+      () => void this.#enqueue(() => Promise.resolve(this.#missedDeadline())),
+      deps.authenticationTimeoutMs,
+    );
   }
 
   /** The authenticated context, or undefined before `auth.authenticate` succeeds. */
@@ -125,6 +138,7 @@ export class Connection {
   closed(): Promise<void> {
     this.#closed = true;
     clearTimeout(this.#expiryTimer);
+    clearTimeout(this.#deadline);
     return (this.#queue = this.#queue.then(() => this.#release()));
   }
 
@@ -237,11 +251,21 @@ export class Connection {
       await this.#deps.coordination.publish(connectionTopic(previous), SUPERSEDED);
     }
     this.#deps.sessions.register(identityOf(context), this.id);
+    clearTimeout(this.#deadline);
+    this.#port.authenticated?.();
     this.#accept({ ...context, protocolVersion: message.version }, requestId);
     this.#deps.logger.log('info', 'connection.authenticated', {
       connectionId: this.id,
       appId: context.appId,
     });
+  }
+
+  /** Closed without `error`, like a shutdown: the client reconnects with backoff (§9). */
+  #missedDeadline(): void {
+    if (this.#context !== undefined) return;
+    this.#deps.logger.log('info', 'connection.authentication_timeout', { connectionId: this.id });
+    this.#port.close(POLICY_VIOLATION);
+    this.#closed = true;
   }
 
   /** Every rejection closes: the connection has nothing to keep. */

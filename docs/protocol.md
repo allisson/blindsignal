@@ -220,7 +220,7 @@ WebSocket with the close code of the code's class:
 | terminal | `4002` | Stop reconnecting and close every session (spec §6.4). |
 | superseded | `4003` | Do not reconnect automatically (spec §8.3). |
 
-Two closures carry no `error`:
+Three closures carry no `error`:
 
 - **Shutdown.** A server shutting down fails its readiness check, refuses new upgrades with HTTP
   `503`, and closes every connection with `1001` (Going Away). The SDK reconnects with backoff,
@@ -228,6 +228,9 @@ Two closures carry no `error`:
 - **Oversized frame.** A frame above twice the maximum message size is cut by the WebSocket layer
   with `1009` (Message Too Big) before it is read; a smaller oversized message gets
   `message_too_large`. The SDK treats `1009` like a terminal close.
+- **Authentication deadline.** A connection that has not completed `auth.authenticate` within the
+  configured time is closed with `1008` (Policy Violation) (spec §8.4). The SDK reconnects with
+  backoff, like after an abnormal closure.
 
 Initial catalog:
 

@@ -310,9 +310,9 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 - [x] Define configurable application quotas. *(MVP)*
 - [ ] Implement concurrent connection limits per application. *(MVP)*
-- [ ] Implement WebSocket connection attempt rate limits, keyed by source IP (spec §8.1). *(MVP)*
-- [ ] Implement the authentication deadline for connections that do not authenticate (spec §8.4). *(MVP)*
-- [ ] Implement the unauthenticated connection cap, per source IP and global (spec §8.4). *(MVP)*
+- [x] Implement WebSocket connection attempt rate limits, keyed by source IP (spec §8.1). *(MVP)*
+- [x] Implement the authentication deadline for connections that do not authenticate (spec §8.4). *(MVP)*
+- [x] Implement the unauthenticated connection cap, per source IP and global (spec §8.4). *(MVP)*
 - [ ] Implement session creation limits. *(MVP)*
 - [ ] Implement signaling message rate limits. *(MVP)*
 - [ ] Implement discovery rate limits. *(MVP)*

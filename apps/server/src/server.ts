@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
-import type { ApplicationRecord } from '@blindsignal/core';
+import type { ApplicationRecord, CoordinationAdapter } from '@blindsignal/core';
 import { MAX_MESSAGE_BYTES } from '@blindsignal/protocol';
 import { WebSocketServer, type WebSocket } from 'ws';
+import type { PreAuthentication } from './config.ts';
 import { clientIp, type ProxyTrust } from './domain/client-ip.ts';
 import { isOriginAllowed, type AllowedOrigins } from './domain/origin.ts';
 import { Connection, type ConnectionDependencies } from './handlers/connection.ts';
@@ -12,6 +13,9 @@ export interface SignalingServerOptions {
   /** Which forwarding headers to trust when deriving the client IP for logs (spec §8.1). */
   readonly proxyTrust: ProxyTrust;
   readonly heartbeatIntervalMs: number;
+  /** Checked at the upgrade; the authentication deadline is the connection's. */
+  readonly preAuthentication: Omit<PreAuthentication, 'authenticationTimeoutMs'>;
+  readonly coordination: Pick<CoordinationAdapter, 'consumeRateLimit'>;
   readonly connection: ConnectionDependencies;
 }
 
@@ -32,6 +36,9 @@ export class SignalingServer {
   /** Connections still releasing their sessions and presence after the socket closed. */
   readonly #releasing = new Set<Promise<void>>();
   #draining = false;
+  /** Unauthenticated connections per client IP, upgrades in progress included. */
+  readonly #unauthenticated = new Map<string, number>();
+  #unauthenticatedTotal = 0;
 
   constructor(options: SignalingServerOptions) {
     this.#options = options;
@@ -103,30 +110,52 @@ export class SignalingServer {
 
   #upgrade(request: IncomingMessage, socket: Socket, head: Buffer): void {
     // Defense in depth only: non-browser clients send no Origin (spec §16).
-    const refused = this.#draining
-      ? 503
-      : !isOriginAllowed(request.headers.origin, this.#options.allowedOrigins)
-        ? 403
-        : undefined;
-    if (refused !== undefined) {
-      socket.end(
-        `HTTP/1.1 ${refused} ${refused === 403 ? 'Forbidden' : 'Service Unavailable'}\r\n\r\n`,
-      );
-      return;
+    if (this.#draining) return refuse(socket, 503);
+    if (!isOriginAllowed(request.headers.origin, this.#options.allowedOrigins)) {
+      return refuse(socket, 403);
     }
     const ip = clientIp(
       request.socket.remoteAddress ?? '',
       request.headers,
       this.#options.proxyTrust,
     );
-    this.#wss.handleUpgrade(request, socket, head, (ws) => this.#accept(ws, ip));
+    const { maxUnauthenticatedPerIp, maxUnauthenticated, connectionAttempts } =
+      this.#options.preAuthentication;
+    const fromIp = this.#unauthenticated.get(ip) ?? 0;
+    if (fromIp >= maxUnauthenticatedPerIp || this.#unauthenticatedTotal >= maxUnauthenticated) {
+      return refuse(socket, 429);
+    }
+    // Counted from now, so concurrent upgrades cannot all pass the cap; released once, when the
+    // connection authenticates or the socket closes, whichever comes first.
+    this.#unauthenticated.set(ip, fromIp + 1);
+    this.#unauthenticatedTotal++;
+    let counted = true;
+    const authenticated = () => {
+      if (!counted) return;
+      counted = false;
+      this.#unauthenticatedTotal--;
+      const left = (this.#unauthenticated.get(ip) ?? 1) - 1;
+      if (left === 0) this.#unauthenticated.delete(ip);
+      else this.#unauthenticated.set(ip, left);
+    };
+    socket.once('close', authenticated);
+    this.#options.coordination
+      .consumeRateLimit(`connection_attempt:${ip}`, connectionAttempts)
+      .then((decision) => {
+        if (!decision.allowed) {
+          return refuse(socket, 429, Math.ceil(decision.retryAfterMs / 1000));
+        }
+        this.#wss.handleUpgrade(request, socket, head, (ws) => this.#accept(ws, ip, authenticated));
+      })
+      .catch(() => socket.destroy());
   }
 
-  #accept(ws: WebSocket, ip: string): void {
+  #accept(ws: WebSocket, ip: string, authenticated: () => void): void {
     const connection = new Connection(
       {
         send: (message) => ws.send(JSON.stringify(message)),
         close: (code) => ws.close(code),
+        authenticated,
       },
       this.#options.connection,
     );
@@ -167,4 +196,12 @@ export class SignalingServer {
       ws.ping();
     }
   }
+}
+
+const reasons = { 403: 'Forbidden', 429: 'Too Many Requests', 503: 'Service Unavailable' };
+
+/** Answers an upgrade with an HTTP status and no WebSocket (ADR 0011). */
+function refuse(socket: Socket, status: keyof typeof reasons, retryAfterSeconds?: number): void {
+  const retryAfter = retryAfterSeconds === undefined ? '' : `Retry-After: ${retryAfterSeconds}\r\n`;
+  socket.end(`HTTP/1.1 ${status} ${reasons[status]}\r\n${retryAfter}\r\n`);
 }

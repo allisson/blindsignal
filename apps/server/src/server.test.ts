@@ -12,10 +12,11 @@ import {
   InMemoryApplicationRepository,
   InMemoryDeviceRepository,
 } from '@blindsignal/storage-memory';
+import type { IncomingMessage } from 'node:http';
 import { BlockList } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
-import { loadConfig } from './config.ts';
+import { loadConfig, type PreAuthentication } from './config.ts';
 import { TokenVerifier } from './domain/auth.ts';
 import { parseRegistry } from './domain/registry.ts';
 import { SessionRegistry } from './domain/sessions.ts';
@@ -29,6 +30,7 @@ interface Options {
   readonly presenceLeaseMs?: number;
   readonly maxMessageBytes?: number;
   readonly trustedProxies?: BlockList;
+  readonly preAuthentication?: Partial<PreAuthentication>;
 }
 
 const servers: SignalingServer[] = [];
@@ -58,6 +60,8 @@ async function start(options: Options = {}) {
       header: 'x-forwarded-for',
     },
     heartbeatIntervalMs: options.heartbeatIntervalMs ?? 60_000,
+    preAuthentication: { ...defaults.preAuthentication, ...options.preAuthentication },
+    coordination,
     connection: {
       verifier: new TokenVerifier({
         applications,
@@ -73,6 +77,7 @@ async function start(options: Options = {}) {
       sessions: new SessionRegistry(),
       iceServers: [],
       clockSkewSeconds: 60,
+      authenticationTimeoutMs: 10_000,
       deviceTtlMs: 86_400_000,
       limits: defaults.limits,
       presenceLeaseMs: options.presenceLeaseMs ?? 90_000,
@@ -122,18 +127,29 @@ async function start(options: Options = {}) {
     return { ws, received, closed, send, next, authenticate };
   };
 
-  /** Rejects with the HTTP status of a refused upgrade. */
-  const refusedUpgrade = (headers: Record<string, string> = {}) =>
-    new Promise<number>((resolve, reject) => {
+  /** Resolves to the HTTP response of a refused upgrade. */
+  const refusal = (headers: Record<string, string> = {}) =>
+    new Promise<IncomingMessage>((resolve, reject) => {
       const ws = new WebSocket(`ws://${base}/`, { headers });
-      ws.once('unexpected-response', (_, response) => resolve(response.statusCode ?? 0));
+      ws.once('unexpected-response', (_, response) => resolve(response));
       ws.once('open', () => reject(new Error('upgrade accepted')));
       ws.once('error', () => {});
     });
+  const refusedUpgrade = (headers: Record<string, string> = {}) =>
+    refusal(headers).then((response) => response.statusCode);
 
   const http = (path: string) => fetch(`http://${base}${path}`).then((r) => r.status);
 
-  return { server, coordination, client, refusedUpgrade, http, logs, url: `ws://${base}/` };
+  return {
+    server,
+    coordination,
+    client,
+    refusal,
+    refusedUpgrade,
+    http,
+    logs,
+    url: `ws://${base}/`,
+  };
 }
 
 describe('SignalingServer', () => {
@@ -156,6 +172,89 @@ describe('SignalingServer', () => {
       const { client } = await start({ allowedOrigins: allowed });
       await client({ headers: { origin: 'https://app.example' } });
       await client();
+    });
+  });
+
+  describe('before authentication', () => {
+    const proxied = new BlockList();
+    proxied.addAddress('127.0.0.1');
+    const from = (ip: string) => ({ headers: { 'x-forwarded-for': ip } });
+    const ip = (address: string) => from(address).headers;
+    const claims = { sub: 'u1', device_id: 'd1', namespaces: [] };
+
+    it('caps unauthenticated connections per client IP', async () => {
+      const { client, refusal, refusedUpgrade } = await start({
+        trustedProxies: proxied,
+        preAuthentication: { maxUnauthenticatedPerIp: 2 },
+      });
+      const first = await client(from('203.0.113.1'));
+      await client(from('203.0.113.1'));
+      const refused = await refusal(ip('203.0.113.1'));
+      expect(refused.statusCode).toBe(429);
+      expect(refused.headers['retry-after']).toBeUndefined();
+      await client(from('203.0.113.2'));
+      first.ws.close();
+      await first.closed;
+      await vi.waitFor(() => client(from('203.0.113.1')));
+      expect(await refusedUpgrade(ip('203.0.113.1'))).toBe(429);
+    });
+
+    it('stops counting a connection once it authenticates, and counts it once', async () => {
+      const { server, client, refusedUpgrade } = await start({
+        preAuthentication: { maxUnauthenticated: 1 },
+      });
+      const alice = await client();
+      await alice.authenticate(claims);
+      alice.ws.close();
+      await vi.waitFor(() => expect(server.connections).toBe(0));
+      await client();
+      expect(await refusedUpgrade()).toBe(429);
+    });
+
+    it('stops counting a connection that closes unauthenticated', async () => {
+      const { client } = await start({ preAuthentication: { maxUnauthenticatedPerIp: 1 } });
+      const alice = await client();
+      alice.ws.close();
+      await alice.closed;
+      await vi.waitFor(() => client());
+    });
+
+    it('caps unauthenticated connections in all', async () => {
+      const { client, refusedUpgrade } = await start({
+        trustedProxies: proxied,
+        preAuthentication: { maxUnauthenticated: 2 },
+      });
+      await client(from('203.0.113.1'));
+      await client(from('203.0.113.2'));
+      expect(await refusedUpgrade(ip('203.0.113.3'))).toBe(429);
+    });
+
+    it('limits connection attempts per client IP, with Retry-After', async () => {
+      const { client, refusal } = await start({
+        trustedProxies: proxied,
+        preAuthentication: { connectionAttempts: { ratePerSecond: 0.5, burst: 2 } },
+      });
+      (await client(from('203.0.113.1'))).ws.close();
+      (await client(from('203.0.113.1'))).ws.close();
+      const refused = await refusal(ip('203.0.113.1'));
+      expect(refused.statusCode).toBe(429);
+      expect(refused.headers['retry-after']).toBe('2');
+      await client(from('203.0.113.2'));
+    });
+
+    it('releases the count of an attempt refused by the rate limit', async () => {
+      const { client, refusedUpgrade } = await start({
+        trustedProxies: proxied,
+        preAuthentication: {
+          maxUnauthenticated: 1,
+          connectionAttempts: { ratePerSecond: 0.001, burst: 1 },
+        },
+      });
+      const first = await client(from('203.0.113.1'));
+      first.ws.close();
+      await first.closed;
+      await vi.waitFor(async () => expect(await refusedUpgrade(ip('203.0.113.1'))).toBe(429));
+      await vi.waitFor(() => client(from('203.0.113.2')));
     });
   });
 
