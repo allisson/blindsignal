@@ -49,7 +49,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [ ] Define `CoordinationAdapter`.
 - [ ] Define application and device quotas.
 - [ ] Define rate-limit categories and error responses, including pre-authentication limits keyed by source IP and client IP derivation from trusted proxies (spec §8.1).
-- [ ] Define ICE configuration and direct/relay reporting: STUN from client configuration, TURN only through `rtc.ice_config`, and when the server sends `rtc.ice_config` beyond the post-authentication message (spec §11, §12.3).
+- [x] Define ICE configuration and direct/relay reporting: STUN from client configuration, TURN only through `rtc.ice_config`, and when the server sends `rtc.ice_config` beyond the post-authentication message (spec §11, §12.3) (`docs/adr/0009-ice-configuration.md`).
 - [x] Decide whether `rtc.ice_restart` remains a separate message type or ICE restart is a new `rtc.offer` (spec §11) (a new `rtc.offer`, `docs/protocol.md`).
 - [ ] Define WebSocket reconnect and token renewal behavior.
 - [x] Decide what happens when a connection's token reaches `exp` without a successful `auth.refresh` (spec §5.3) (closed with `token_expired`, `docs/adr/0006-token-profile-and-device-identity.md`).
@@ -181,7 +181,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement SDP offer/answer signaling, including ICE restart as a new `rtc.offer`.
 - [ ] Implement ICE candidate exchange.
 - [ ] Relay `rtc.*` messages only between participants of an accepted session (spec §13).
-- [ ] Send `rtc.ice_config` after successful authentication, even when no TURN server is configured (spec §11).
+- [ ] Send `rtc.ice_config` after every successful authentication and `auth.refresh`, even when no TURN server is configured (spec §11, `docs/adr/0009-ice-configuration.md`).
 - [ ] Implement heartbeat and disconnect detection.
 - [ ] Implement stale presence cleanup.
 - [ ] Implement application suspension and revocation handling: reject new authentication and close the application's active WebSocket connections (spec §5.5).

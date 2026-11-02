@@ -2,12 +2,11 @@
 
 **Status:** Draft, protocol version 1  
 **Reference:** `docs/spec.md` §11, §13; `docs/adr/0003-one-to-one-sessions.md`;
-`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`
+`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`; `docs/adr/0009-ice-configuration.md`
 
 JSON text messages over one WebSocket per connection. The protocol carries no application
 payload: application data travels only through WebRTC DataChannels. Administrative operations
-(spec §5.6) are not part of it. Items marked **TBD** depend on a Phase 0 decision not taken yet;
-each names the roadmap task that settles it.
+(spec §5.6) are not part of it.
 
 ## 1. Envelope
 
@@ -80,7 +79,7 @@ rebuilt by the server for the other session participant.
 | `rtc.offer` | Relay | `{ sessionId, sdp }` | `session.signal` |
 | `rtc.answer` | Relay | `{ sessionId, sdp }` | `session.signal` |
 | `rtc.ice_candidate` | Relay | `{ sessionId, candidate }` | `session.signal` |
-| `rtc.ice_config` | S→C | **TBD** (roadmap: ICE configuration) | — |
+| `rtc.ice_config` | S→C | `{ iceServers: [{ urls, username?, credential? }] }` | — |
 | `connection.ping` | C→S | `{}` | — |
 | `connection.pong` | S→C | `{}` | — |
 | `ack` | S→C | `{}` | — |
@@ -88,6 +87,8 @@ rebuilt by the server for the other session participant.
 
 `userId` is the issuer's `sub`, meaningful only within the application (spec §6.1). A device is
 identified by `userId` and `deviceId` together, never by `deviceId` alone (ADR 0006).
+`rtc.ice_config` follows every successful `auth.result`, and only then (ADR 0009); `iceServers` is
+empty when the server configures no ICE server.
 `expiresInMs` is the time left until the token's `exp`, so the SDK can refresh before the server
 closes the connection without reading the token. Pairing
 messages are defined with the pairing protocol (spec §7.4, post-MVP).
