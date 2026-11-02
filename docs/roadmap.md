@@ -178,10 +178,10 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement in-memory presence management.
 - [x] Extend the Phase 2 in-memory coordination adapter with presence leases, signaling event delivery, and TTL-based cleanup.
 - [x] Implement device discovery.
-- [ ] Implement session creation and lifecycle, with each session scoped to one namespace in which both devices are authorized (spec §13).
-- [ ] Implement SDP offer/answer signaling, including ICE restart as a new `rtc.offer`.
-- [ ] Implement ICE candidate exchange.
-- [ ] Relay `rtc.*` messages only between participants of an accepted session (spec §13).
+- [x] Implement session creation and lifecycle, with each session scoped to one namespace in which both devices are authorized (spec §13).
+- [x] Implement SDP offer/answer signaling, including ICE restart as a new `rtc.offer`.
+- [x] Implement ICE candidate exchange.
+- [x] Relay `rtc.*` messages only between participants of an accepted session (spec §13).
 - [x] Send `rtc.ice_config` after every successful authentication and `auth.refresh`, even when no TURN server is configured (spec §11, `docs/adr/0009-ice-configuration.md`).
 - [ ] Implement heartbeat and disconnect detection.
 - [ ] Implement stale presence cleanup.
@@ -318,7 +318,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement discovery rate limits. *(MVP)*
 - [ ] Implement authentication attempt limits. *(MVP)*
 - [ ] Implement maximum WebSocket message sizes. *(MVP)*
-- [ ] Implement session and negotiation timeouts. *(MVP)*
+- [x] Implement session and negotiation timeouts. *(MVP)*
 - [ ] Implement maximum concurrent sessions per application and per device (spec §8.2). *(MVP)*
 - [x] Implement maximum registered devices per application (spec §8.2). *(MVP)*
 - [ ] Implement maximum joined namespaces per device (`docs/adr/0011-quotas-and-rate-limits.md`). *(MVP)*

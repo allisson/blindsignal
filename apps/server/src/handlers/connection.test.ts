@@ -8,6 +8,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TokenVerifier } from '../domain/auth.ts';
 import { parseRegistry } from '../domain/registry.ts';
+import { SessionRegistry } from '../domain/sessions.ts';
 import {
   Connection,
   connectionTopic,
@@ -19,6 +20,7 @@ const START = new Date('2026-11-02T00:00:00Z');
 const SKEW_MS = 60_000;
 const LIFETIME_MS = 300_000;
 const LEASE_MS = 90_000;
+const NEGOTIATION_MS = 30_000;
 const ICE = [{ urls: ['stun:stun.example:3478'] }];
 const d1 = { app_id: 'notes', sub: 'u1', device_id: 'd1' };
 
@@ -61,6 +63,8 @@ async function setup(
     clockSkewSeconds: SKEW_MS / 1000,
     deviceLimits: { ttlMs: 86_400_000, maxDevices: 10 },
     presenceLeaseMs: LEASE_MS,
+    sessions: new SessionRegistry(),
+    negotiationTimeoutMs: NEGOTIATION_MS,
     ...options,
   };
 
@@ -290,15 +294,6 @@ describe('Connection', () => {
         requestId: 'r2',
         payload: {},
       });
-    });
-
-    it('denies a message type without a handler', async () => {
-      const { connect } = await setup();
-      const client = connect();
-      await client.authenticate({ namespaces: ['notes:a'] });
-      await client.request('session.accept', { sessionId: crypto.randomUUID() });
-      expect(client.errors()).toEqual(['not_authorized']);
-      expect(client.closes).toEqual([]);
     });
 
     it('closes on a later message with another version', async () => {
@@ -698,6 +693,352 @@ describe('Connection', () => {
         await alice.refresh({ namespaces: [], aud: 'other' });
         expect(alice.errors()).toEqual(['invalid_token']);
         expect(await coordination.listPresence('notes:a')).toEqual([device('u1', 'd1')]);
+      });
+    });
+  });
+
+  describe('sessions', () => {
+    const bobClaims = { sub: 'u2', device_id: 'd2' };
+    const bobDevice = { namespace: 'notes:a', userId: 'u2', deviceId: 'd2' };
+    // Events cross to another connection's queue; let it drain.
+    const settle = () => vi.advanceTimersByTimeAsync(0);
+
+    async function member(connect: Connect, claims: object, namespaces = ['notes:a']) {
+      const client = connect();
+      await client.authenticate({ ...claims, namespaces });
+      for (const namespace of namespaces) await client.request('namespace.join', { namespace });
+      return client;
+    }
+
+    async function pair() {
+      const context = await setup();
+      const alice = await member(context.connect, d1);
+      const bob = await member(context.connect, bobClaims);
+      return { ...context, alice, bob };
+    }
+
+    type Client = ReturnType<Connect>;
+
+    async function create(alice: Client) {
+      await alice.request('session.create', bobDevice);
+      await settle();
+      const created = alice.last();
+      if (created?.type !== 'session.created') throw new Error(`no session: ${created?.type}`);
+      return created.payload.sessionId;
+    }
+
+    async function active() {
+      const context = await pair();
+      const sessionId = await create(context.alice);
+      await context.bob.request('session.accept', { sessionId });
+      await settle();
+      return { ...context, sessionId };
+    }
+
+    const terminated = (sessionId: string, reason: string) => ({
+      version: 1,
+      type: 'session.terminated',
+      payload: { sessionId, reason },
+    });
+    // A disconnect also announces presence; keep only the session events.
+    const sessionEvents = (client: Client) =>
+      client.sent.filter((message) => message.type === 'session.terminated');
+
+    it('creates a pending session and asks the target', async () => {
+      const { alice, bob } = await pair();
+      const sessionId = await create(alice);
+      expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(alice.last()).toEqual({
+        version: 1,
+        type: 'session.created',
+        requestId: 'r3',
+        payload: { sessionId },
+      });
+      expect(bob.last()).toEqual({
+        version: 1,
+        type: 'session.request',
+        payload: { sessionId, namespace: 'notes:a', userId: 'u1', deviceId: 'd1' },
+      });
+    });
+
+    it('allows concurrent sessions between the same devices', async () => {
+      const { alice } = await pair();
+      expect(await create(alice)).not.toBe(await create(alice));
+    });
+
+    it('refuses a namespace outside the token with not_authorized', async () => {
+      const { alice, bob } = await pair();
+      await alice.request('session.create', { ...bobDevice, namespace: 'notes:b' });
+      await settle();
+      expect(alice.errors()).toEqual(['not_authorized']);
+      expect(bob.sent.at(-1)?.type).toBe('ack');
+    });
+
+    describe('answers peer_unavailable for any unreachable target', () => {
+      it.each([
+        ['an unknown device', { userId: 'u9', deviceId: 'd9' }],
+        ['the requester itself', { userId: 'u1', deviceId: 'd1' }],
+        ['a device of another user with the same deviceId', { userId: 'u3', deviceId: 'd2' }],
+      ])('%s', async (_, target) => {
+        const { alice } = await pair();
+        await alice.request('session.create', { ...bobDevice, ...target });
+        expect(alice.errors()).toEqual(['peer_unavailable']);
+        expect(alice.closes).toEqual([]);
+        // Only the two token expiries: no session was armed.
+        expect(vi.getTimerCount()).toBe(2);
+      });
+
+      it('a connected device that has not joined the namespace', async () => {
+        const { connect } = await setup();
+        const alice = await member(connect, d1);
+        const bob = connect();
+        await bob.authenticate({ ...bobClaims, namespaces: ['notes:a'] });
+        await alice.request('session.create', bobDevice);
+        await settle();
+        expect(alice.errors()).toEqual(['peer_unavailable']);
+        expect(bob.sent.map((message) => message.type)).toEqual(['auth.result', 'rtc.ice_config']);
+      });
+
+      it('a device present in the namespace with no connection here', async () => {
+        const { connect, coordination } = await setup();
+        const alice = await member(connect, d1);
+        const ghost = { appId: 'notes', userId: 'u2', deviceId: 'd2' };
+        await coordination.acquirePresence('notes:a', ghost, 'elsewhere', LEASE_MS);
+        await alice.request('session.create', bobDevice);
+        expect(alice.errors()).toEqual(['peer_unavailable']);
+      });
+
+      it('a device whose connection closed while its lease lives on', async () => {
+        const { alice, bob, coordination } = await pair();
+        // Another connection took the lease, so Bob's close leaves it in place.
+        const device = { appId: 'notes', userId: 'u2', deviceId: 'd2' };
+        await coordination.acquirePresence('notes:a', device, 'elsewhere', LEASE_MS);
+        await bob.connection.closed();
+        await alice.request('session.create', bobDevice);
+        expect(alice.errors()).toEqual(['peer_unavailable']);
+      });
+
+      it('a device that disconnected', async () => {
+        const { alice, bob } = await pair();
+        await bob.connection.closed();
+        await alice.request('session.create', bobDevice);
+        expect(alice.errors()).toEqual(['peer_unavailable']);
+      });
+    });
+
+    it('accepts: acks the target, tells the requester, and disarms the timeout', async () => {
+      const { alice, bob, sessionId } = await active();
+      expect(bob.last()).toEqual({ version: 1, type: 'ack', requestId: 'r3', payload: {} });
+      expect(alice.last()).toEqual({
+        version: 1,
+        type: 'session.accepted',
+        payload: { sessionId },
+      });
+      await vi.advanceTimersByTimeAsync(NEGOTIATION_MS);
+      expect(alice.last()?.type).toBe('session.accepted');
+      expect(bob.last()?.type).toBe('ack');
+    });
+
+    it('rejects: acks the target, tells the requester, and ends the session', async () => {
+      const { alice, bob } = await pair();
+      const sessionId = await create(alice);
+      await bob.request('session.reject', { sessionId });
+      await settle();
+      expect(bob.last()).toEqual({ version: 1, type: 'ack', requestId: 'r3', payload: {} });
+      expect(alice.last()).toEqual({
+        version: 1,
+        type: 'session.rejected',
+        payload: { sessionId },
+      });
+      await bob.request('session.accept', { sessionId });
+      expect(bob.errors()).toEqual(['session_unavailable']);
+      expect(vi.getTimerCount()).toBe(2);
+    });
+
+    it.each([
+      ['the requester accepts', 'alice', 'session.accept'],
+      ['the requester rejects', 'alice', 'session.reject'],
+    ] as const)('refuses with session_unavailable when %s', async (_, who, type) => {
+      const context = await pair();
+      const sessionId = await create(context.alice);
+      await context[who].request(type, { sessionId });
+      expect(context[who].errors()).toEqual(['session_unavailable']);
+      expect(context[who].closes).toEqual([]);
+    });
+
+    it.each(['session.accept', 'session.reject'])(
+      'refuses %s of an active session with session_unavailable',
+      async (type) => {
+        const { bob, sessionId } = await active();
+        await bob.request(type, { sessionId });
+        expect(bob.errors()).toEqual(['session_unavailable']);
+      },
+    );
+
+    it.each(['session.accept', 'session.reject', 'session.close'])(
+      'refuses %s from a device outside the session, or of an unknown one',
+      async (type) => {
+        const { connect, sessionId } = await active();
+        const carol = await member(connect, { sub: 'u3', device_id: 'd3' });
+        await carol.request(type, { sessionId });
+        await carol.request(type, { sessionId: crypto.randomUUID() });
+        expect(carol.errors()).toEqual(['session_unavailable', 'session_unavailable']);
+      },
+    );
+
+    it.each(['alice', 'bob'] as const)(
+      'closes on session.close from %s: acks and tells the other side',
+      async (who) => {
+        const context = await active();
+        const other = who === 'alice' ? context.bob : context.alice;
+        await context[who].request('session.close', { sessionId: context.sessionId });
+        await settle();
+        expect(context[who].last()).toMatchObject({ type: 'ack' });
+        expect(other.last()).toEqual(terminated(context.sessionId, 'closed_by_peer'));
+        await other.request('session.close', { sessionId: context.sessionId });
+        expect(other.errors()).toEqual(['session_unavailable']);
+      },
+    );
+
+    it('lets the requester close a pending session', async () => {
+      const { alice, bob } = await pair();
+      const sessionId = await create(alice);
+      await alice.request('session.close', { sessionId });
+      await settle();
+      expect(bob.last()).toEqual(terminated(sessionId, 'closed_by_peer'));
+      expect(vi.getTimerCount()).toBe(2);
+    });
+
+    it('ends a pending session at the negotiation timeout, for both sides', async () => {
+      const { alice, bob } = await pair();
+      const sessionId = await create(alice);
+      await vi.advanceTimersByTimeAsync(NEGOTIATION_MS - 1);
+      expect(alice.last()?.type).toBe('session.created');
+      await vi.advanceTimersByTimeAsync(1);
+      expect(alice.last()).toEqual(terminated(sessionId, 'timeout'));
+      expect(bob.last()).toEqual(terminated(sessionId, 'timeout'));
+      await bob.request('session.accept', { sessionId });
+      expect(bob.errors()).toEqual(['session_unavailable']);
+    });
+
+    it('ends a session once when its timeout races an answer', async () => {
+      const { alice, bob } = await pair();
+      const sessionId = await create(alice);
+      vi.advanceTimersByTime(NEGOTIATION_MS - 1);
+      // The reject is handled first, then the timeout queued behind it finds the session gone.
+      const reject = bob.request('session.reject', { sessionId });
+      vi.advanceTimersByTime(1);
+      await reject;
+      await settle();
+      const types = (client: Client) =>
+        client.sent.map((message) => message.type).filter((type) => type.startsWith('session.'));
+      expect(types(alice)).toEqual(['session.created', 'session.rejected']);
+      expect(types(bob)).toEqual(['session.request']);
+    });
+
+    it.each(['alice', 'bob'] as const)(
+      'ends the session with peer_disconnected when %s disconnects',
+      async (who) => {
+        const context = await active();
+        const other = who === 'alice' ? context.bob : context.alice;
+        await context[who].connection.closed();
+        await settle();
+        expect(sessionEvents(other)).toEqual([terminated(context.sessionId, 'peer_disconnected')]);
+        expect(other.closes).toEqual([]);
+      },
+    );
+
+    it('ends a pending session when the requester disconnects, without a timeout', async () => {
+      const { alice, bob } = await pair();
+      const sessionId = await create(alice);
+      await alice.connection.closed();
+      await settle();
+      await vi.advanceTimersByTimeAsync(NEGOTIATION_MS);
+      expect(sessionEvents(bob)).toEqual([terminated(sessionId, 'peer_disconnected')]);
+    });
+
+    it('ends the sessions of a superseded connection with peer_disconnected', async () => {
+      const { connect, bob, sessionId } = await active();
+      await connect().authenticate({ namespaces: ['notes:a'] });
+      await settle();
+      expect(sessionEvents(bob)).toEqual([terminated(sessionId, 'peer_disconnected')]);
+    });
+
+    it.each(['alice', 'bob'] as const)(
+      "ends the sessions in a namespace %s's refresh removes, for both sides",
+      async (who) => {
+        const context = await active();
+        const other = who === 'alice' ? context.bob : context.alice;
+        const claims = who === 'alice' ? d1 : bobClaims;
+        await context[who].refresh({ ...claims, namespaces: ['notes:b'] });
+        await settle();
+        const reason = terminated(context.sessionId, 'namespace_unauthorized');
+        expect(context[who].sent.slice(-3)).toEqual([
+          expect.objectContaining({ type: 'auth.result' }),
+          expect.objectContaining({ type: 'rtc.ice_config' }),
+          reason,
+        ]);
+        expect(other.sent).toContainEqual(reason);
+      },
+    );
+
+    it('keeps the sessions in a namespace the refresh keeps', async () => {
+      const { alice, bob, sessionId } = await active();
+      await alice.refresh({ namespaces: ['notes:a'] });
+      await alice.request('rtc.offer', { sessionId, sdp: 'v=0' });
+      await settle();
+      expect(bob.last()).toMatchObject({ type: 'rtc.offer' });
+    });
+
+    describe('rtc relay', () => {
+      it.each([
+        ['rtc.offer', 'alice', 'bob', { sdp: 'v=0 offer' }],
+        ['rtc.answer', 'bob', 'alice', { sdp: 'v=0 answer' }],
+        [
+          'rtc.ice_candidate',
+          'alice',
+          'bob',
+          { candidate: 'candidate:1 1 udp 1 10.0.0.1 9 typ host' },
+        ],
+        ['rtc.ice_candidate', 'bob', 'alice', { candidate: 'candidate:2' }],
+      ] as const)('rebuilds %s from %s for %s, with no reply', async (type, from, to, fields) => {
+        const context = await active();
+        const before = context[from].sent.length;
+        await context[from].request(type, { sessionId: context.sessionId, ...fields, from: 'x' });
+        await settle();
+        expect(context[to].last()).toEqual({
+          version: 1,
+          type,
+          payload: { sessionId: context.sessionId, ...fields },
+        });
+        expect(context[from].sent).toHaveLength(before);
+      });
+
+      it('refuses a pending session with session_unavailable', async () => {
+        const { alice, bob } = await pair();
+        const sessionId = await create(alice);
+        await alice.request('rtc.offer', { sessionId, sdp: 'v=0' });
+        await settle();
+        expect(alice.last()).toEqual({
+          version: 1,
+          type: 'error',
+          requestId: 'r4',
+          payload: { code: 'session_unavailable' },
+        });
+        expect(bob.last()?.type).toBe('session.request');
+      });
+
+      it('refuses a device outside the session, an unknown session, and an ended one', async () => {
+        const { connect, alice, bob, sessionId } = await active();
+        const carol = await member(connect, { sub: 'u3', device_id: 'd3' });
+        await carol.request('rtc.offer', { sessionId, sdp: 'v=0' });
+        await alice.request('rtc.offer', { sessionId: crypto.randomUUID(), sdp: 'v=0' });
+        await alice.request('session.close', { sessionId });
+        await alice.request('rtc.ice_candidate', { sessionId, candidate: 'c' });
+        await settle();
+        expect(carol.errors()).toEqual(['session_unavailable']);
+        expect(alice.errors()).toEqual(['session_unavailable', 'session_unavailable']);
+        expect(bob.sent.filter((message) => message.type.startsWith('rtc.'))).toHaveLength(1);
       });
     });
   });
