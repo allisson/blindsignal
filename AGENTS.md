@@ -43,12 +43,13 @@ pnpm lint             # ESLint, type-aware, with the ADR 0002 import rules
 pnpm typecheck        # tsc --noEmit in every package
 pnpm test             # Vitest across all packages
 pnpm test:coverage    # Vitest with V8 coverage and the floors below
+pnpm test:browser     # Playwright, Chromium and Firefox, against examples/browser-demo
 pnpm format:check     # Prettier (pnpm format to fix)
 pnpm build            # tsc in every package
 ```
 
 CI (`.github/workflows/ci.yml`) runs format check, lint, typecheck, and tests with coverage on
-every pull request.
+every pull request, and the browser tests in a job of their own.
 
 ## Decisions that block implementation
 

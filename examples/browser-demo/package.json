@@ -1,0 +1,20 @@
+{
+  "name": "@blindsignal/browser-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@blindsignal/dev-issuer": "workspace:*",
+    "@blindsignal/protocol": "workspace:*",
+    "@blindsignal/sdk": "workspace:*",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
+  }
+}

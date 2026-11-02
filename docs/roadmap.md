@@ -242,7 +242,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement reconnect with exponential backoff and jitter, stopping on terminal authentication errors and not reconnecting automatically when superseded (spec §8.3).
 - [x] After reconnecting, rejoin namespaces and treat every server-side session as ended (spec §15, `docs/adr/0004-sessions-bound-to-connections.md`).
 - [x] Implement session cleanup and error handling, closing all sessions when reauthentication is rejected because the application is suspended or revoked or the device is revoked (spec §6.4).
-- [ ] Add browser integration tests.
+- [x] Add browser integration tests.
 
 ### Deliverables
 

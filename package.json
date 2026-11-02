@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:browser": "pnpm --filter @blindsignal/browser-demo test"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

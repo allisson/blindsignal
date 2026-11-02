@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>BlindSignal demo</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "@blindsignal/sdk": "/sdk/index.ts",
+          "@blindsignal/protocol": "/protocol/index.ts",
+          "zod": "/zod/index.js"
+        }
+      }
+    </script>
+    <script type="module" src="/app.ts"></script>
+  </head>
+  <body>
+    <h1>BlindSignal demo</h1>
+    <p>Signed in as <strong id="me"></strong>. Signaling: <span id="state">disconnected</span></p>
+    <h2>Devices in notes:demo</h2>
+    <ul id="peers"></ul>
+    <h2>Session</h2>
+    <p>
+      DataChannel: <span id="channel">none</span>, connection:
+      <span id="connection-type">unknown</span>
+      <button id="close" type="button">Close</button>
+    </p>
+    <form id="send">
+      <label>Message <input id="message" autocomplete="off" /></label>
+      <button type="submit">Send</button>
+    </form>
+    <ul id="log"></ul>
+  </body>
+</html>
