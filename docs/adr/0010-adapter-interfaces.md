@@ -67,5 +67,8 @@ adapter:
 
 - Phase 9 finalizes both contracts against PostgreSQL and Redis; a missing operation is added
   there, not emulated with existing ones.
+- Sessions have no coordination operation yet: until Phase 9 the server keeps them, with each
+  connection's joined namespaces, in process, which holds only for a single instance. Phase 9
+  adds the operation that shares them across instances.
 - On restart, in-memory device records are lost and devices re-enroll on their next
   authentication; the device-count quota starts empty.
