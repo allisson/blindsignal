@@ -5,6 +5,7 @@ import { BlindSignalError } from './errors.ts';
 import { Session, type Peer } from './session.ts';
 import { Signaling, type SocketFactory } from './signaling.ts';
 import { signalingUrl } from './url.ts';
+import { PeerLink, type PeerConnectionFactory } from './webrtc/peer.ts';
 
 export interface HeartbeatOptions {
   /** Time between `connection.ping`s. */
@@ -26,8 +27,12 @@ export interface BlindSignalClientOptions {
   backoffResetMs?: number;
   /** Defaults to a ping every 25 s and a 10 s pong timeout. */
   heartbeat?: HeartbeatOptions;
+  /** STUN servers only; TURN servers and credentials come from the server (spec §12.3). */
+  iceServers?: RTCIceServer[];
   /** Creates the WebSocket; tests replace it. */
   createSocket?: SocketFactory;
+  /** Creates each session's RTCPeerConnection; tests replace it. */
+  createPeerConnection?: PeerConnectionFactory;
 }
 
 export interface Identity {
@@ -86,6 +91,8 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   readonly #namespaces = new Set<string>();
   /** Sessions not yet ended, by ID. They end when the connection drops (ADR 0004). */
   readonly #sessions = new Map<string, Session>();
+  /** Every RTCPeerConnection not yet closed, its session ended or not. */
+  readonly #links = new Set<PeerLink>();
   /** Bumped by close(), so an attempt in flight discards its result. */
   #generation = 0;
   #attempts = 0;
@@ -97,6 +104,11 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   constructor(options: BlindSignalClientOptions) {
     super();
     signalingUrl(options.serverUrl);
+    for (const { urls } of options.iceServers ?? []) {
+      if (![urls].flat().every((url) => /^stuns?:/i.test(url))) {
+        throw new TypeError('iceServers accepts STUN URLs only; TURN comes from rtc.ice_config');
+      }
+    }
     this.#options = options;
   }
 
@@ -158,7 +170,7 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
     return this.#track(created.payload.sessionId, peer, 'requester', 'pending');
   }
 
-  /** Closes the connection and stops reconnecting. */
+  /** Closes the connection and stops reconnecting. Open DataChannels stay open until their sessions close. */
   close(): void {
     this.#generation++;
     clearTimeout(this.#reconnectTimer);
@@ -205,7 +217,10 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
     } catch (error) {
       if (generation !== this.#generation) return;
       if (error instanceof BlindSignalError && stops(error.code)) {
-        this.#setState('disconnected', error.code);
+        this.#stop(
+          error.code,
+          errorClasses[error.code as keyof typeof errorClasses] === 'terminal',
+        );
       } else this.#reconnect(retryAfter(error));
     } finally {
       // An attempt that did not become the connection never keeps its socket.
@@ -233,6 +248,11 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
       case 'session.terminated':
         this.#end(message.payload.sessionId, message.payload.reason);
         return;
+      case 'rtc.offer':
+      case 'rtc.answer':
+      case 'rtc.ice_candidate':
+        this.#sessions.get(message.payload.sessionId)?.receive(message);
+        return;
     }
   }
 
@@ -253,7 +273,24 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   }
 
   #track(id: string, peer: Peer, role: Session['role'], state: 'pending' | 'active'): Session {
-    const session = new Session({ id, peer, role, state }, () => {
+    const link = new PeerLink({
+      sessionId: id,
+      role,
+      configuration: {
+        iceServers: [...(this.#options.iceServers ?? []), ...(this.#iceConfig?.iceServers ?? [])],
+      },
+      // Only while the session lasts: after it ends, the server has no session to relay through.
+      // A relay the server refuses gets an `error` that nothing waits for; session.terminated follows.
+      relay: (type, payload) => {
+        if (this.#sessions.get(id) === session) this.#signaling?.relay(type, payload);
+      },
+      createPeerConnection:
+        this.#options.createPeerConnection ??
+        ((configuration) => new RTCPeerConnection(configuration)),
+    });
+    this.#links.add(link);
+    link.on('close', () => this.#links.delete(link));
+    const session = new Session({ id, peer, role, state }, link, () => {
       this.#sessions.delete(id);
       // Best effort: a session the server already ended answers session_unavailable.
       this.#signaling?.request('session.close', { sessionId: id }).catch(() => undefined);
@@ -283,13 +320,19 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   #lost(signaling: Signaling, code: number, error: BlindSignalError['code'] | undefined): void {
     if (signaling !== this.#signaling) return;
     this.#teardown();
-    if (code === 1009) return this.#setState('disconnected', 'message_too_large');
+    if (code === 1009) return this.#stop('message_too_large', true);
     if (code === closeCodes.terminal || code === closeCodes.superseded) {
-      return this.#setState('disconnected', error ?? 'connection_closed');
+      return this.#stop(error ?? 'connection_closed', code === closeCodes.terminal);
     }
     const resetMs = this.#options.backoffResetMs ?? 30_000;
     if (Date.now() - this.#connectedAt >= resetMs) this.#attempts = 0;
     this.#reconnect(0);
+  }
+
+  /** Stops reconnecting; a terminal stop also closes every DataChannel (spec §6.4). */
+  #stop(error: BlindSignalError['code'], terminal: boolean): void {
+    if (terminal) for (const link of [...this.#links]) link.close();
+    this.#setState('disconnected', error);
   }
 
   #reconnect(retryAfterMs: number): void {
