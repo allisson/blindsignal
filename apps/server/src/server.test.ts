@@ -1,0 +1,234 @@
+import { InMemoryCoordinationAdapter } from '@blindsignal/coordination-memory';
+import { devApplication, mintDevToken } from '@blindsignal/dev-issuer';
+import type { ServerMessage } from '@blindsignal/protocol';
+import {
+  InMemoryApplicationRepository,
+  InMemoryDeviceRepository,
+} from '@blindsignal/storage-memory';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import WebSocket from 'ws';
+import { TokenVerifier } from './domain/auth.ts';
+import { parseRegistry } from './domain/registry.ts';
+import { SessionRegistry } from './domain/sessions.ts';
+import type { AllowedOrigins } from './domain/origin.ts';
+import { GOING_AWAY, SignalingServer } from './server.ts';
+
+interface Options {
+  readonly allowedOrigins?: AllowedOrigins;
+  readonly heartbeatIntervalMs?: number;
+  readonly presenceLeaseMs?: number;
+  readonly maxMessageBytes?: number;
+}
+
+const servers: SignalingServer[] = [];
+
+afterEach(async () => {
+  for (const server of servers.splice(0)) await server.close();
+});
+
+async function start(options: Options = {}) {
+  const now = new Date();
+  const registry = parseRegistry(JSON.stringify({ applications: [devApplication('notes')] }), {
+    now,
+    development: true,
+  });
+  if (!registry.ok) throw new Error(registry.error);
+  const applications = new InMemoryApplicationRepository();
+  await applications.replaceAll(registry.registry.applications);
+  const coordination = new InMemoryCoordinationAdapter();
+  const server = new SignalingServer({
+    allowedOrigins: options.allowedOrigins ?? '*',
+    heartbeatIntervalMs: options.heartbeatIntervalMs ?? 60_000,
+    connection: {
+      verifier: new TokenVerifier({
+        applications,
+        coordination,
+        maxLifetimeSeconds: 600,
+        clockSkewSeconds: 60,
+        maxNamespaces: 100,
+        // The dev tokens' iat is truncated to the second.
+        startedAt: new Date(now.getTime() - 1_000),
+      }),
+      devices: new InMemoryDeviceRepository(),
+      coordination,
+      sessions: new SessionRegistry(),
+      iceServers: [],
+      clockSkewSeconds: 60,
+      deviceLimits: { ttlMs: 86_400_000, maxDevices: 100 },
+      presenceLeaseMs: options.presenceLeaseMs ?? 90_000,
+      negotiationTimeoutMs: 30_000,
+      maxMessageBytes: options.maxMessageBytes,
+    },
+  });
+  servers.push(server);
+  const port = await server.listen(0, '127.0.0.1');
+  const base = `127.0.0.1:${port}`;
+
+  /** An open client that records what it receives and how it closed. */
+  const client = async (wsOptions: WebSocket.ClientOptions = {}) => {
+    const ws = new WebSocket(`ws://${base}/`, wsOptions);
+    const received: ServerMessage[] = [];
+    const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
+    ws.on('message', (data) =>
+      received.push(JSON.parse((data as Buffer).toString()) as ServerMessage),
+    );
+    await new Promise((resolve, reject) => {
+      ws.once('open', resolve);
+      ws.once('error', reject);
+    });
+    let n = 0;
+    const send = (type: string, payload: object = {}) =>
+      ws.send(JSON.stringify({ version: 1, type, requestId: `r${++n}`, payload }));
+    /** Resolves to the first message of the type received from now on, or already received. */
+    const next = (type: string) =>
+      vi.waitFor(() => {
+        const message = received.find((m) => m.type === type);
+        if (message === undefined) throw new Error(`no ${type}`);
+        received.splice(received.indexOf(message), 1);
+        return message;
+      });
+    const authenticate = async (claims: {
+      sub: string;
+      device_id: string;
+      namespaces: string[];
+    }) => {
+      send('auth.authenticate', {
+        token: await mintDevToken({ app_id: 'notes', ...claims }, { now: new Date() }),
+      });
+      await next('rtc.ice_config');
+    };
+    return { ws, received, closed, send, next, authenticate };
+  };
+
+  /** Rejects with the HTTP status of a refused upgrade. */
+  const refusedUpgrade = (headers: Record<string, string> = {}) =>
+    new Promise<number>((resolve, reject) => {
+      const ws = new WebSocket(`ws://${base}/`, { headers });
+      ws.once('unexpected-response', (_, response) => resolve(response.statusCode ?? 0));
+      ws.once('open', () => reject(new Error('upgrade accepted')));
+      ws.once('error', () => {});
+    });
+
+  const http = (path: string) => fetch(`http://${base}${path}`).then((r) => r.status);
+
+  return { server, coordination, client, refusedUpgrade, http };
+}
+
+describe('SignalingServer', () => {
+  it('serves health and readiness, and 404 elsewhere', async () => {
+    const { http } = await start();
+    expect(await http('/healthz')).toBe(200);
+    expect(await http('/readyz')).toBe(200);
+    expect(await http('/')).toBe(404);
+  });
+
+  describe('Origin at the upgrade', () => {
+    const allowed = new Set(['https://app.example']);
+
+    it('refuses a disallowed origin with 403', async () => {
+      const { refusedUpgrade } = await start({ allowedOrigins: allowed });
+      expect(await refusedUpgrade({ origin: 'https://evil.example' })).toBe(403);
+    });
+
+    it('accepts an allowed origin and a request without one', async () => {
+      const { client } = await start({ allowedOrigins: allowed });
+      await client({ headers: { origin: 'https://app.example' } });
+      await client();
+    });
+  });
+
+  it('signals a session between two clients end to end', async () => {
+    const { client } = await start();
+    const alice = await client();
+    const bob = await client();
+    await alice.authenticate({ sub: 'u1', device_id: 'd1', namespaces: ['notes:a'] });
+    await bob.authenticate({ sub: 'u2', device_id: 'd2', namespaces: ['notes:a'] });
+    alice.send('namespace.join', { namespace: 'notes:a' });
+    await alice.next('ack');
+    bob.send('namespace.join', { namespace: 'notes:a' });
+    await bob.next('ack');
+    expect(await alice.next('presence.changed')).toMatchObject({
+      payload: { userId: 'u2', deviceId: 'd2', present: true },
+    });
+
+    alice.send('session.create', { namespace: 'notes:a', userId: 'u2', deviceId: 'd2' });
+    const created = await alice.next('session.created');
+    const sessionId = (created.payload as { sessionId: string }).sessionId;
+    expect(await bob.next('session.request')).toMatchObject({ payload: { sessionId } });
+    bob.send('session.accept', { sessionId });
+    await alice.next('session.accepted');
+
+    alice.send('rtc.offer', { sessionId, sdp: 'v=0' });
+    expect(await bob.next('rtc.offer')).toEqual({
+      version: 1,
+      type: 'rtc.offer',
+      payload: { sessionId, sdp: 'v=0' },
+    });
+
+    alice.ws.close();
+    expect(await bob.next('session.terminated')).toMatchObject({
+      payload: { sessionId, reason: 'peer_disconnected' },
+    });
+  });
+
+  it('closes on a binary frame with malformed_frame', async () => {
+    const { client } = await start();
+    const alice = await client();
+    alice.ws.send(Buffer.from('{}'), { binary: true });
+    expect(await alice.closed).toBe(4002);
+    expect(alice.received).toEqual([
+      { version: 1, type: 'error', payload: { code: 'malformed_frame' } },
+    ]);
+  });
+
+  it('closes on an oversized message with message_too_large', async () => {
+    const { client } = await start({ maxMessageBytes: 256 });
+    const alice = await client();
+    alice.send('connection.ping', { pad: 'x'.repeat(300) });
+    expect(await alice.closed).toBe(4002);
+    expect(alice.received).toMatchObject([
+      { type: 'error', payload: { code: 'message_too_large' } },
+    ]);
+  });
+
+  it('cuts a frame far above the limit with 1009', async () => {
+    const { client } = await start({ maxMessageBytes: 256 });
+    const alice = await client();
+    alice.send('connection.ping', { pad: 'x'.repeat(1_000) });
+    expect(await alice.closed).toBe(1009);
+  });
+
+  it('terminates a client that stops answering pings, and renews the others', async () => {
+    const { client, coordination } = await start({ heartbeatIntervalMs: 50, presenceLeaseMs: 120 });
+    const alive = await client();
+    const dead = await client({ autoPong: false });
+    await alive.authenticate({ sub: 'u1', device_id: 'd1', namespaces: ['notes:a'] });
+    alive.send('namespace.join', { namespace: 'notes:a' });
+    await alive.next('ack');
+    expect(await dead.closed).toBe(1006);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(await coordination.listPresence('notes:a')).toEqual([
+      { appId: 'notes', userId: 'u1', deviceId: 'd1' },
+    ]);
+  });
+
+  it('drains: fails readiness, refuses upgrades, and closes clients with 1001', async () => {
+    const { server, client, coordination, refusedUpgrade, http } = await start();
+    const alice = await client();
+    await alice.authenticate({ sub: 'u1', device_id: 'd1', namespaces: ['notes:a'] });
+    alice.send('namespace.join', { namespace: 'notes:a' });
+    await alice.next('ack');
+    // A slow adapter: drain still waits until the connection released its presence.
+    const release = coordination.releasePresence.bind(coordination);
+    coordination.releasePresence = async (...args) => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return release(...args);
+    };
+    await server.drain();
+    expect(await alice.closed).toBe(GOING_AWAY);
+    expect(await coordination.listPresence('notes:a')).toEqual([]);
+    expect(await http('/readyz')).toBe(503);
+    expect(await http('/healthz')).toBe(200);
+    expect(await refusedUpgrade()).toBe(503);
+  });
+});

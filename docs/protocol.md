@@ -198,8 +198,10 @@ application is closed (spec §5.5).
 ## 8. Heartbeat
 
 - The server detects dead connections with WebSocket ping frames, which browsers answer
-  automatically. Each answer renews the connection's presence leases, which outlive a few missed
-  heartbeats; a connection lost without a close leaves presence only until its leases expire.
+  automatically. It pings every connection at the configured heartbeat interval and terminates one
+  that did not answer the previous ping. Each answer renews the connection's presence leases,
+  which outlive a few missed heartbeats; a connection lost without a close leaves presence only
+  until its leases expire.
 - The SDK detects a dead server by sending `connection.ping`; the server replies
   `connection.pong`. `connection.ping` counts toward the signaling rate limit.
 
@@ -217,6 +219,15 @@ WebSocket with the close code of the code's class:
 | retryable | `4001` | Reconnect with backoff; get a new token first if the token expired. |
 | terminal | `4002` | Stop reconnecting and close every session (spec §6.4). |
 | superseded | `4003` | Do not reconnect automatically (spec §8.3). |
+
+Two closures carry no `error`:
+
+- **Shutdown.** A server shutting down fails its readiness check, refuses new upgrades with HTTP
+  `503`, and closes every connection with `1001` (Going Away). The SDK reconnects with backoff,
+  reaching another instance or the restarted one.
+- **Oversized frame.** A frame above twice the maximum message size is cut by the WebSocket layer
+  with `1009` (Message Too Big) before it is read; a smaller oversized message gets
+  `message_too_large`. The SDK treats `1009` like a terminal close.
 
 Initial catalog:
 
