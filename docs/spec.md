@@ -822,46 +822,63 @@ blindsignal/
 
 Adapt to existing repository conventions rather than imposing this structure blindly.
 
-## 20. Initial SDK API (illustrative)
+## 20. SDK API
+
+`@blindsignal/sdk` (`packages/sdk/README.md`) is the browser client. Its connection behavior —
+backoff, refresh, heartbeat, reconnect, and session cleanup — is specified in
+`docs/protocol.md` §10.
 
 ```typescript
 const client = new BlindSignalClient({
   serverUrl: "wss://signal.example.com",
-  accessTokenProvider: async () => {
-    // Obtain a short-lived token from the application backend.
-    return applicationBackend.getBlindSignalToken();
-  },
-  deviceIdentity,
-  iceServers: [
-    { urls: ["stun:stun.example.com:3478"] }
-  ]
+  // Called for every authentication and refresh: tokens are single-use (ADR 0006).
+  accessTokenProvider: () => applicationBackend.getBlindSignalToken(),
+  iceServers: [{ urls: ["stun:stun.example.com:3478"] }],
 });
 
-await client.connect();
-
-const devices = await client.discover({
-  namespace: "blindnotes:workspace"
+client.on("state", ({ state, error }) => {
+  // "connecting", "connected", or "disconnected"; `error` says why the client stopped.
 });
+
+await client.connect(); // resolves to { userId, deviceId } from the token
+await client.join("blindnotes:workspace");
+const [device] = await client.discover("blindnotes:workspace");
 
 const session = await client.createSession({
   namespace: "blindnotes:workspace",
-  deviceId: devices[0].id
+  userId: device.userId,
+  deviceId: device.deviceId,
 });
-
+session.on("open", () => session.send("hello")); // string, ArrayBuffer, or a typed array
 session.on("data", (data) => {
-  // Application-defined payload handling.
+  // Application-defined payload: a string or an ArrayBuffer.
 });
-
 session.on("connectionType", (type) => {
   // "direct", "relay", or "unknown"
 });
+
+client.on("sessionRequest", async (request) => {
+  // The application decides; an unanswered request times out.
+  const incoming = await request.accept(); // or request.reject()
+});
 ```
 
-`iceServers` accepts STUN URLs only. TURN servers are merged in from `rtc.ice_config` (§12.3).
-
-The SDK must not accept or require a permanent application secret.
-
-The final API must define token refresh, authentication errors, device enrollment, and lifecycle behavior.
+- **Credentials.** `accessTokenProvider` is the only credential input. The SDK accepts no
+  application secret, and `iceServers` accepts STUN URLs only: TURN servers and credentials are
+  merged in from `rtc.ice_config` (§12.3).
+- **Device enrollment.** There is no enrollment call: the token's `device_id` enrolls the device
+  on its first successful authentication (ADR 0006). The application backend chooses and keeps the
+  device ID.
+- **Token refresh** is automatic: `auth.refresh` with a new token from the provider before expiry.
+- **Errors.** Failed requests reject with `BlindSignalError`, whose `code` is the protocol error
+  code (`docs/protocol.md` §9), `connection_closed`, or `protocol_error`, plus `retryAfterMs` for
+  `rate_limited`. Retryable failures reconnect on their own; a terminal or superseded error stops
+  the client, reported by the `state` event's `error` and by the rejected `connect()`.
+- **Lifecycle.** `client.close()` closes the signaling connection and stops reconnecting; open
+  DataChannels stay until their sessions close. A session is `pending` until the target accepts,
+  then `active`, then `ended` (with a reason) when its server-side session ends; its `close`
+  event reports that the DataChannel itself closed. `session.close()` ends both. A terminal
+  authentication failure closes every DataChannel (§6.4).
 
 ## 21. Testing requirements
 

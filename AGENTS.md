@@ -24,9 +24,10 @@ the roadmap, or an ADR in the same change.
 
 ## Current status
 
-Phase 3 (MVP signaling server) is complete: `apps/server` serves authentication, presence,
-sessions, and `rtc.*` relay over WebSocket, with in-memory adapters, registry reload on `SIGHUP`,
-logs, metrics, and a Docker image. Next is Phase 4 (browser SDK and local WebRTC). The workspace
+Phase 4 (browser SDK and local WebRTC) is complete: `packages/sdk` authenticates, reconnects,
+discovers devices, and opens a DataChannel per session, and `examples/browser-demo` runs it in
+Chromium and Firefox under Playwright, against the Phase 3 signaling server in `apps/server`. Next
+are the MVP subsets of Phases 5 and 6 (authorization and abuse prevention). The workspace
 uses the toolchain in `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm
 workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a
 new ADR.
