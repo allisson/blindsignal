@@ -8,11 +8,17 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TokenVerifier } from '../domain/auth.ts';
 import { parseRegistry } from '../domain/registry.ts';
-import { Connection, connectionTopic, type ConnectionDependencies } from './connection.ts';
+import {
+  Connection,
+  connectionTopic,
+  presenceTopic,
+  type ConnectionDependencies,
+} from './connection.ts';
 
 const START = new Date('2026-11-02T00:00:00Z');
 const SKEW_MS = 60_000;
 const LIFETIME_MS = 300_000;
+const LEASE_MS = 90_000;
 const ICE = [{ urls: ['stun:stun.example:3478'] }];
 const d1 = { app_id: 'notes', sub: 'u1', device_id: 'd1' };
 
@@ -54,11 +60,12 @@ async function setup(
     iceServers: ICE,
     clockSkewSeconds: SKEW_MS / 1000,
     deviceLimits: { ttlMs: 86_400_000, maxDevices: 10 },
+    presenceLeaseMs: LEASE_MS,
     ...options,
   };
 
-  /** A connection whose transport, like the real one, reports its own close. */
-  const connect = () => {
+  /** A connection whose transport, like the real one, reports its own close unless told not to. */
+  const connect = ({ reportsClose = true } = {}) => {
     const sent: ServerMessage[] = [];
     const closes: number[] = [];
     const connection: Connection = new Connection(
@@ -66,7 +73,7 @@ async function setup(
         send: (message) => sent.push(message),
         close: (code) => {
           closes.push(code);
-          void connection.closed();
+          if (reportsClose) void connection.closed();
         },
       },
       deps,
@@ -86,11 +93,16 @@ async function setup(
       });
     const errors = () =>
       sent.flatMap((message) => (message.type === 'error' ? [message.payload.code] : []));
-    return { connection, sent, closes, request, authenticate, refresh, errors };
+    const presence = () =>
+      sent.flatMap((message) => (message.type === 'presence.changed' ? [message.payload] : []));
+    const last = () => sent.at(-1);
+    return { connection, sent, closes, request, authenticate, refresh, errors, presence, last };
   };
 
   return { connect, load, coordination, devices, deps };
 }
+
+type Connect = Awaited<ReturnType<typeof setup>>['connect'];
 
 describe('Connection', () => {
   describe('auth.authenticate', () => {
@@ -183,7 +195,14 @@ describe('Connection', () => {
         new Date(),
         { ttlMs: 86_400_000, maxDevices: 1 },
       );
-      expect(touched.ok && touched.record.firstSeenAt).toEqual(START);
+      // The record holds the identity only, never the token's namespaces or expiry.
+      expect(touched.ok && touched.record).toEqual({
+        appId: 'notes',
+        userId: 'u1',
+        deviceId: 'd1',
+        firstSeenAt: START,
+        lastAuthenticatedAt: START,
+      });
     });
 
     it("takes the application's device quota over the server's", async () => {
@@ -277,7 +296,7 @@ describe('Connection', () => {
       const { connect } = await setup();
       const client = connect();
       await client.authenticate({ namespaces: ['notes:a'] });
-      await client.request('namespace.join', { namespace: 'notes:a' });
+      await client.request('session.accept', { sessionId: crypto.randomUUID() });
       expect(client.errors()).toEqual(['not_authorized']);
       expect(client.closes).toEqual([]);
     });
@@ -476,6 +495,210 @@ describe('Connection', () => {
       await client.refresh();
       expect(client.errors()).toEqual(['application_unavailable']);
       expect(client.closes).toEqual([4002]);
+    });
+  });
+
+  describe('namespaces and presence', () => {
+    const device = (userId: string, deviceId: string) => ({ appId: 'notes', userId, deviceId });
+    const event = (userId: string, deviceId: string, present: boolean, namespace = 'notes:a') => ({
+      namespace,
+      userId,
+      deviceId,
+      present,
+    });
+
+    async function joined(connect: Connect, claims: object, namespaces = ['notes:a']) {
+      const client = connect();
+      await client.authenticate({ ...claims, namespaces });
+      for (const namespace of namespaces) await client.request('namespace.join', { namespace });
+      return client;
+    }
+
+    it('acks a join, registers presence, and announces it to the other joined devices', async () => {
+      const { connect, coordination } = await setup();
+      const alice = await joined(connect, d1);
+      expect(alice.last()).toEqual({ version: 1, type: 'ack', requestId: 'r2', payload: {} });
+      const bob = await joined(connect, { sub: 'u2', device_id: 'd2' });
+      expect(await coordination.listPresence('notes:a')).toEqual([
+        device('u1', 'd1'),
+        device('u2', 'd2'),
+      ]);
+      expect(alice.presence()).toEqual([event('u2', 'd2', true)]);
+      expect(bob.presence()).toEqual([]);
+    });
+
+    it.each(['notes:b', 'other:a'])(
+      'refuses %s, outside the token, with not_authorized',
+      async (namespace) => {
+        const { connect, coordination } = await setup();
+        const client = connect();
+        await client.authenticate({ namespaces: ['notes:a'] });
+        await client.request('namespace.join', { namespace });
+        expect(client.errors()).toEqual(['not_authorized']);
+        expect(client.closes).toEqual([]);
+        expect(await coordination.listPresence(namespace)).toEqual([]);
+        expect(coordination.subscribedTopics).toBe(1);
+      },
+    );
+
+    it('acks a second join without announcing it again', async () => {
+      const { connect } = await setup();
+      const alice = await joined(connect, d1);
+      const bob = await joined(connect, { sub: 'u2', device_id: 'd2' });
+      await bob.request('namespace.join', { namespace: 'notes:a' });
+      expect(bob.last()).toMatchObject({ type: 'ack' });
+      expect(alice.presence()).toEqual([event('u2', 'd2', true)]);
+    });
+
+    it('leaves: acks, releases presence, announces it, and stops the events', async () => {
+      const { connect, coordination } = await setup();
+      const alice = await joined(connect, d1);
+      const bob = await joined(connect, { sub: 'u2', device_id: 'd2' });
+      await bob.request('namespace.leave', { namespace: 'notes:a' });
+      expect(bob.last()).toEqual({ version: 1, type: 'ack', requestId: 'r3', payload: {} });
+      expect(alice.presence()).toEqual([event('u2', 'd2', true), event('u2', 'd2', false)]);
+      expect(await coordination.listPresence('notes:a')).toEqual([device('u1', 'd1')]);
+      await joined(connect, { sub: 'u3', device_id: 'd3' });
+      expect(bob.presence()).toEqual([]);
+    });
+
+    it('acks leaving a namespace not joined', async () => {
+      const { connect } = await setup();
+      const client = connect();
+      await client.authenticate();
+      await client.request('namespace.leave', { namespace: 'notes:a' });
+      expect(client.last()).toMatchObject({ type: 'ack' });
+    });
+
+    it('drops a presence event queued before a leave', async () => {
+      const { connect, coordination } = await setup();
+      const alice = await joined(connect, d1);
+      const leave = alice.request('namespace.leave', { namespace: 'notes:a' });
+      await coordination.publish(presenceTopic('notes:a'), event('u2', 'd2', true));
+      await leave;
+      expect(alice.presence()).toEqual([]);
+    });
+
+    it('never forwards an event about the device itself', async () => {
+      const { connect, coordination } = await setup();
+      const alice = await joined(connect, d1);
+      await coordination.publish(presenceTopic('notes:a'), event('u1', 'd1', false));
+      await alice.request('connection.ping');
+      expect(alice.presence()).toEqual([]);
+    });
+
+    describe('discovery.request', () => {
+      it('returns the other devices present', async () => {
+        const { connect } = await setup();
+        const alice = await joined(connect, d1);
+        // Another user's device with the same deviceId is a different device (ADR 0006).
+        await joined(connect, { sub: 'u2', device_id: 'd1' });
+        await joined(connect, { sub: 'u1', device_id: 'd3' });
+        await alice.request('discovery.request', { namespace: 'notes:a' });
+        expect(alice.last()).toEqual({
+          version: 1,
+          type: 'discovery.result',
+          requestId: 'r3',
+          payload: {
+            namespace: 'notes:a',
+            devices: [
+              { userId: 'u2', deviceId: 'd1' },
+              { userId: 'u1', deviceId: 'd3' },
+            ],
+          },
+        });
+      });
+
+      it('refuses a namespace outside the token with not_authorized', async () => {
+        const { connect } = await setup();
+        const alice = await joined(connect, d1);
+        await alice.request('discovery.request', { namespace: 'notes:b' });
+        expect(alice.errors()).toEqual(['not_authorized']);
+      });
+
+      it('refuses an authorized namespace not joined with not_joined', async () => {
+        const { connect } = await setup();
+        const alice = await joined(connect, d1, []);
+        await alice.refresh({ namespaces: ['notes:a'] });
+        await alice.request('discovery.request', { namespace: 'notes:a' });
+        expect(alice.errors()).toEqual(['not_joined']);
+        expect(alice.closes).toEqual([]);
+      });
+    });
+
+    it('leaves every namespace when the connection closes', async () => {
+      const { connect, coordination } = await setup();
+      const alice = await joined(connect, d1);
+      const bob = await joined(connect, { sub: 'u2', device_id: 'd2' }, ['notes:a', 'notes:b']);
+      await bob.connection.closed();
+      expect(alice.presence()).toEqual([event('u2', 'd2', true), event('u2', 'd2', false)]);
+      expect(await coordination.listPresence('notes:a')).toEqual([device('u1', 'd1')]);
+      expect(await coordination.listPresence('notes:b')).toEqual([]);
+      // Alice's own topic and notes:a; Bob's three are gone.
+      expect(coordination.subscribedTopics).toBe(2);
+    });
+
+    it('never announces a superseded device as gone once its replacement joined', async () => {
+      const { connect, coordination } = await setup();
+      const observer = await joined(connect, { sub: 'u2', device_id: 'd2' });
+      const older = connect({ reportsClose: false });
+      await older.authenticate({ namespaces: ['notes:a'] });
+      await older.request('namespace.join', { namespace: 'notes:a' });
+      const newer = connect();
+      await newer.authenticate({ namespaces: ['notes:a'] });
+      await newer.request('namespace.join', { namespace: 'notes:a' });
+      expect(older.closes).toEqual([4003]);
+      await older.connection.closed();
+      expect(observer.presence()).toEqual([event('u1', 'd1', true), event('u1', 'd1', true)]);
+      expect(await coordination.listPresence('notes:a')).toEqual([
+        device('u2', 'd2'),
+        device('u1', 'd1'),
+      ]);
+    });
+
+    it('renews the leases on every heartbeat', async () => {
+      const { connect, coordination } = await setup();
+      const alice = await joined(connect, d1, ['notes:a', 'notes:b']);
+      await vi.advanceTimersByTimeAsync(LEASE_MS - 1_000);
+      await alice.connection.heartbeat();
+      await vi.advanceTimersByTimeAsync(LEASE_MS - 1_000);
+      expect(await coordination.listPresence('notes:a')).toEqual([device('u1', 'd1')]);
+      expect(await coordination.listPresence('notes:b')).toEqual([device('u1', 'd1')]);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(await coordination.listPresence('notes:a')).toEqual([]);
+    });
+
+    describe('auth.refresh', () => {
+      it('leaves the namespaces the new token drops, and only those', async () => {
+        const { connect, coordination } = await setup();
+        const observer = await joined(connect, { sub: 'u2', device_id: 'd2' }, [
+          'notes:a',
+          'notes:b',
+        ]);
+        const alice = await joined(connect, d1, ['notes:a', 'notes:b']);
+        await alice.refresh({ namespaces: ['notes:b', 'notes:c'] });
+        expect(alice.sent.slice(-2).map((message) => message.type)).toEqual([
+          'auth.result',
+          'rtc.ice_config',
+        ]);
+        expect(observer.presence()).toEqual([
+          event('u1', 'd1', true, 'notes:a'),
+          event('u1', 'd1', true, 'notes:b'),
+          event('u1', 'd1', false, 'notes:a'),
+        ]);
+        expect(await coordination.listPresence('notes:a')).toEqual([device('u2', 'd2')]);
+        expect(await coordination.listPresence('notes:c')).toEqual([]);
+        await alice.request('discovery.request', { namespace: 'notes:a' });
+        expect(alice.errors()).toEqual(['not_authorized']);
+      });
+
+      it('keeps the namespaces on a rejected refresh', async () => {
+        const { connect, coordination } = await setup();
+        const alice = await joined(connect, d1);
+        await alice.refresh({ namespaces: [], aud: 'other' });
+        expect(alice.errors()).toEqual(['invalid_token']);
+        expect(await coordination.listPresence('notes:a')).toEqual([device('u1', 'd1')]);
+      });
     });
   });
 

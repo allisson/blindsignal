@@ -173,11 +173,11 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Integrate application authentication, rejecting protected messages sent before authentication completes.
 - [x] Create device records on first successful authentication, keyed by `(app_id, sub, device_id)`, and expire them after a configurable inactivity period (`docs/adr/0006-token-profile-and-device-identity.md`, `docs/adr/0010-adapter-interfaces.md`).
 - [x] Implement in-memory device repository.
-- [ ] Authorize namespaces from the token's `namespaces` claim, and apply namespace removals on `auth.refresh` (`docs/adr/0007-namespace-authorization.md`).
-- [ ] Implement `namespace.join` and `namespace.leave`, admitting a device only to namespaces it is authorized in (spec §7.3, §13).
-- [ ] Implement in-memory presence management.
+- [x] Authorize namespaces from the token's `namespaces` claim, and apply namespace removals on `auth.refresh` (`docs/adr/0007-namespace-authorization.md`).
+- [x] Implement `namespace.join` and `namespace.leave`, admitting a device only to namespaces it is authorized in (spec §7.3, §13).
+- [x] Implement in-memory presence management.
 - [x] Extend the Phase 2 in-memory coordination adapter with presence leases, signaling event delivery, and TTL-based cleanup.
-- [ ] Implement device discovery.
+- [x] Implement device discovery.
 - [ ] Implement session creation and lifecycle, with each session scoped to one namespace in which both devices are authorized (spec §13).
 - [ ] Implement SDP offer/answer signaling, including ICE restart as a new `rtc.offer`.
 - [ ] Implement ICE candidate exchange.

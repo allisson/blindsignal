@@ -134,7 +134,9 @@ sender, such as a client-sent `session.request` or `rtc.ice_config`.
 
 - `namespace.join` registers the device's presence in the namespace and subscribes the connection
   to that namespace's `presence.changed` events. `namespace.leave` undoes both. Closing the
-  connection leaves every joined namespace.
+  connection leaves every joined namespace. Joining a namespace already joined and leaving one not
+  joined are acknowledged without effect.
+- Neither `presence.changed` nor `discovery.result` includes the receiving device itself.
 - `discovery.request` is accepted only for a namespace the connection has joined (`not_joined`
   otherwise) and returns the devices present in it.
 - An unauthorized namespace and a nonexistent one get the same `not_authorized`, so namespaces
@@ -193,7 +195,8 @@ application is closed (spec §5.5).
 ## 8. Heartbeat
 
 - The server detects dead connections with WebSocket ping frames, which browsers answer
-  automatically.
+  automatically. Each answer renews the connection's presence leases, which outlive a few missed
+  heartbeats; a connection lost without a close leaves presence only until its leases expire.
 - The SDK detects a dead server by sending `connection.ping`; the server replies
   `connection.pong`. `connection.ping` counts toward the signaling rate limit.
 
