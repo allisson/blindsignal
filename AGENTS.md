@@ -23,7 +23,8 @@ the roadmap, or an ADR in the same change.
 
 ## Current status
 
-Phase 1 (shared foundation and protocol). The workspace is scaffolded with the toolchain in
+Phase 2 (application access control and authentication foundation). Phase 1 delivered the
+`protocol` and `core` packages. The workspace uses the toolchain in
 `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
 `jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a new ADR.
 
