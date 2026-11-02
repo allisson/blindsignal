@@ -48,7 +48,7 @@ Application payloads are not an asset of the server: they never reach it (spec ย
 |---|---|---|
 | An unregistered or unknown application uses the service | Token validated against the registry; unknown issuer or application gets `invalid_token`, indistinguishable from a bad signature | spec ยง5.3, protocol ยง9 |
 | Forged or altered token | Asymmetric signature, algorithm allowlist, required `kid`, checks of `iss`, `aud`, `exp`, `iat`, `nbf` | ADR 0006 |
-| Replayed token | Single-use `(iss, jti)`, tracked until `exp` + skew | ADR 0006 |
+| Replayed token | Single-use `(iss, jti)`, tracked until `exp` + skew; tokens issued before a restart rejected while tracking is in memory | ADR 0006 |
 | Token leaked through URLs or logs | Token only in the `auth.*` payload after the socket opens; never logged | spec ยง16 |
 | A user takes over another user's device | Device identified by `(app_id, sub, device_id)`; `auth.refresh` cannot change identity | ADR 0006 |
 | Access to another application's namespaces | Namespace IDs carry the `<app_id>:` prefix; a foreign prefix rejects the token | ADR 0007 |
@@ -112,8 +112,8 @@ Application payloads are not an asset of the server: they never reach it (spec ย
    session participants. BlindSignal provides no anonymity, and operators can see this metadata.
 6. **Peers see each other's network addresses** through ICE candidates, inherent to WebRTC.
 7. **In-memory adapters are single-instance** and lose device records, presence, and `jti`
-   history on restart. A restart within a token's lifetime forgets its `jti`, so a captured token
-   could be replayed once against the new process. Revocations survive in the registry file.
+   history on restart. Tokens issued before the restart are rejected, so the lost `jti` history
+   allows no replay (ADR 0006); revocations survive in the registry file.
 8. **A flooding connection is answered, not closed** (ADR 0011); closing on repeated violations
    and abuse-triggered suspension are post-MVP.
 
