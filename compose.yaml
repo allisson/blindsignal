@@ -1,0 +1,14 @@
+# Local development: the dev issuer is trusted, so never expose this setup.
+services:
+  server:
+    build: .
+    environment:
+      BLINDSIGNAL_ENV: development
+      BLINDSIGNAL_REGISTRY_PATH: /etc/blindsignal/registry.json
+      # Inside the container; the host only reaches it through the loopback port below.
+      BLINDSIGNAL_ADMIN_HOST: 0.0.0.0
+    volumes:
+      - ./examples/registry.dev.json:/etc/blindsignal/registry.json:ro
+    ports:
+      - 127.0.0.1:8080:8080
+      - 127.0.0.1:9090:9090

@@ -1,0 +1,20 @@
+{
+  "applications": [
+    {
+      "appId": "notes",
+      "name": "notes (development)",
+      "status": "active",
+      "issuer": "https://dev-issuer.blindsignal.invalid/notes",
+      "audience": "blindsignal",
+      "publicKeys": [
+        {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "wAzWXTlkeTKt5gt4V5mhStDncwJrxy3TTMKI-uoSCSg",
+          "kid": "blindsignal-dev"
+        }
+      ],
+      "algorithms": ["EdDSA"]
+    }
+  ]
+}

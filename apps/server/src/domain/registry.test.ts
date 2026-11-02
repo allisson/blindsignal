@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   DEV_PUBLIC_JWK,
@@ -217,5 +218,15 @@ describe('parseRegistry and the dev issuer', () => {
     ['a dev issuer with another key', app({ issuer: `${DEV_ISSUER_ORIGIN}/notes` })],
   ])('refuses %s outside development mode', (_, entry) => {
     expect(error(file(entry))).toBe('notes: the dev issuer is trusted only in development mode');
+  });
+
+  it('ships a development example that loads only in development mode', () => {
+    const text = readFileSync(
+      new URL('../../../../examples/registry.dev.json', import.meta.url),
+      'utf8',
+    );
+    expect(JSON.parse(text)).toEqual({ applications: [devApplication('notes')] });
+    expect(parseRegistry(text, { now: t0, development: true }).ok).toBe(true);
+    expect(parseRegistry(text, { now: t0 }).ok).toBe(false);
   });
 });
