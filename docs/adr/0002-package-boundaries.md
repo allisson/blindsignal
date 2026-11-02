@@ -25,6 +25,11 @@ replaced by `packages/core`, a server-side package that the SDK never imports.
   logic (authentication, authorization, sessions, presence), layered internally as transport,
   handlers, and domain so the logic is testable without opening a socket. Logic moves to its own
   package only when a second consumer, such as a control-plane CLI, needs it.
+- **`packages/dev-issuer`**: the development token issuer and its test keys (roadmap Phase 2), used
+  by tests, `examples/`, and the Docker Compose development workflow.
+
+All packages use the `@blindsignal/*` scope and stay `"private": true` until Phase 12 defines
+semantic versioning and publication.
 
 ## Dependency rules
 
@@ -32,6 +37,7 @@ replaced by `packages/core`, a server-side package that the SDK never imports.
 packages/protocol   → zod
 packages/core       → protocol
 packages/sdk        → protocol
+packages/dev-issuer → jose
 adapters/*/*        → core
 apps/server         → protocol, core, adapters/*, jose, ws
 ```
@@ -39,3 +45,30 @@ apps/server         → protocol, core, adapters/*, jose, ws
 Nothing imports `apps/server`. The SDK never imports `core`, `adapters/*`, or `jose`. `core`
 imports no provider. Declared dependencies under strict pnpm (ADR 0001) and an ESLint
 restricted-import rule enforce this.
+
+- **`protocol` is isomorphic**: no `node:*` import. JWT claim schemas are not protocol: the SDK
+  treats the access token as opaque, and only `apps/server` validates claims.
+- **Only the composition root imports adapters.** `apps/server` exports a side-effect-free
+  `createServer(config, adapters)`; `src/main.ts` reads the environment, builds the adapters, and
+  calls it. The ESLint rule forbids importing `adapters/*` anywhere else in `apps/server/src`, since
+  the server must declare the adapters to wire them and declared dependencies alone cannot stop the
+  domain layer from importing one. Tests may import the in-memory adapters to pass them to
+  `createServer`.
+- **Server source never imports `dev-issuer`.** The server trusts the development issuer only
+  through configuration, as a registry entry with its static public key, which keeps development
+  credentials out of production trust configuration (spec §14.1). Only `apps/server` tests import
+  it, as a devDependency.
+- **The SDK uses only web-standard globals** (`WebSocket`, `crypto.subtle`, `RTCPeerConnection`)
+  and never depends on `ws`. Node.js LTS provides the first two globally, so the SDK's signaling
+  layer runs unmodified under Vitest; WebRTC runs only under Playwright.
+- **Applications depend only on `sdk`.** It re-exports the protocol values it surfaces (error codes
+  and their classes, connection types, event types), so an application never pins `protocol`.
+
+## Tests
+
+- Each package holds its own unit and integration tests (Vitest).
+- Server integration tests start `createServer` in-process on an ephemeral port with in-memory
+  adapters and drive it with the real SDK and `dev-issuer` tokens (both devDependencies of
+  `apps/server`).
+- The root `tests/` directory holds only Playwright browser-to-browser tests, which need the
+  server, the SDK, and a page together.
