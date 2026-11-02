@@ -6,9 +6,24 @@ import {
 } from '@blindsignal/storage-memory';
 import { loadConfig } from './config.ts';
 import { TokenVerifier } from './domain/auth.ts';
-import { parseRegistry } from './domain/registry.ts';
+import {
+  parseRegistry,
+  type ParseRegistryOptions,
+  type RegistryResult,
+} from './domain/registry.ts';
 import { SessionRegistry } from './domain/sessions.ts';
 import { SignalingServer } from './server.ts';
+
+async function readRegistry(path: string, options: ParseRegistryOptions): Promise<RegistryResult> {
+  let text: string;
+  try {
+    text = await readFile(path, 'utf8');
+  } catch {
+    // The path is operator configuration, not a secret; the error's message could quote more.
+    return { ok: false, error: `cannot read the registry at ${path}` };
+  }
+  return parseRegistry(text, options);
+}
 
 /** Wires the adapters and starts the server; the only module that imports adapters (ADR 0002). */
 async function main(): Promise<void> {
@@ -16,19 +31,14 @@ async function main(): Promise<void> {
   if (!loaded.ok) throw new Error(`invalid configuration: ${loaded.error}`);
   const config = loaded.config;
   const startedAt = new Date();
+  const { registryPath, development } = config;
 
-  let text: string;
-  try {
-    text = await readFile(config.registryPath, 'utf8');
-  } catch {
-    // The path is operator configuration, not a secret; the error's message could quote more.
-    throw new Error(`cannot read the registry at ${config.registryPath}`);
-  }
-  const registry = parseRegistry(text, { now: startedAt, development: config.development });
-  if (!registry.ok) throw new Error(`invalid registry: ${registry.error}`);
+  const initial = await readRegistry(registryPath, { now: startedAt, development });
+  if (!initial.ok) throw new Error(`invalid registry: ${initial.error}`);
+  let registry = initial.registry;
 
   const applications = new InMemoryApplicationRepository();
-  await applications.replaceAll(registry.registry.applications);
+  await applications.replaceAll(registry.applications);
   const coordination = new InMemoryCoordinationAdapter();
   const server = new SignalingServer({
     allowedOrigins: config.allowedOrigins,
@@ -46,6 +56,28 @@ async function main(): Promise<void> {
     },
   });
   await server.listen(config.port);
+
+  // All or nothing: a rejected reload keeps the current registry (ADR 0005).
+  const reload = async () => {
+    const next = await readRegistry(registryPath, {
+      now: new Date(),
+      previous: registry,
+      development,
+    });
+    if (!next.ok) {
+      console.error(`registry reload rejected: ${next.error}`);
+      return;
+    }
+    registry = next.registry;
+    await applications.replaceAll(registry.applications);
+    await server.enforce(registry.applications);
+    console.error('registry reloaded');
+  };
+  // One reload at a time, so each is checked against the registry the previous one installed.
+  let reloading = Promise.resolve();
+  process.on('SIGHUP', () => {
+    reloading = reloading.then(reload);
+  });
 
   const shutdown = async () => {
     await server.drain();

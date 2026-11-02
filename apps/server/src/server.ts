@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
+import type { ApplicationRecord } from '@blindsignal/core';
 import { MAX_MESSAGE_BYTES } from '@blindsignal/protocol';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { isOriginAllowed, type AllowedOrigins } from './domain/origin.ts';
@@ -22,6 +23,7 @@ export class SignalingServer {
   readonly #options: SignalingServerOptions;
   readonly #http = createServer((request, response) => this.#serveHttp(request, response));
   readonly #wss: WebSocketServer;
+  readonly #connections = new Set<Connection>();
   readonly #alive = new WeakSet<WebSocket>();
   readonly #heartbeat: ReturnType<typeof setInterval>;
   /** Connections still releasing their sessions and presence after the socket closed. */
@@ -63,6 +65,14 @@ export class SignalingServer {
     for (const ws of this.#wss.clients) ws.close(GOING_AWAY);
     await Promise.all(closing);
     await Promise.all(this.#releasing);
+  }
+
+  /**
+   * Applies a reloaded registry to the open connections, closing those whose application or
+   * device is no longer available (ADR 0005).
+   */
+  async enforce(applications: readonly ApplicationRecord[]): Promise<void> {
+    await Promise.all([...this.#connections].map((c) => c.enforce(applications)));
   }
 
   /** Stops listening and the heartbeat; call after `drain`. */
@@ -107,6 +117,7 @@ export class SignalingServer {
       },
       this.#options.connection,
     );
+    this.#connections.add(connection);
     this.#alive.add(ws);
     // Protocol errors (oversized frame, invalid UTF-8) close the socket; 'close' releases.
     ws.on('error', () => {});
@@ -119,6 +130,7 @@ export class SignalingServer {
       void connection.heartbeat();
     });
     ws.on('close', () => {
+      this.#connections.delete(connection);
       const released = connection.closed();
       this.#releasing.add(released);
       void released.finally(() => this.#releasing.delete(released));

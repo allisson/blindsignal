@@ -185,9 +185,9 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Send `rtc.ice_config` after every successful authentication and `auth.refresh`, even when no TURN server is configured (spec §11, `docs/adr/0009-ice-configuration.md`).
 - [x] Implement heartbeat and disconnect detection.
 - [x] Implement stale presence cleanup.
-- [ ] Implement application suspension and revocation handling: reject new authentication and close the application's active WebSocket connections (spec §5.5).
+- [x] Implement application suspension and revocation handling: reject new authentication and close the application's active WebSocket connections (spec §5.5).
 - [x] Implement the duplicate-connection policy: an authenticated newer connection replaces the device's older one, closed with `superseded` (`docs/adr/0008-duplicate-connections.md`).
-- [ ] Implement the control plane for application registration, update, suspension, reactivation, and revocation, using the mechanism chosen in Phase 0 (spec §5.6).
+- [x] Implement the control plane for application registration, update, suspension, reactivation, and revocation, using the mechanism chosen in Phase 0 (spec §5.6).
 - [x] Add health and readiness endpoints.
 - [ ] Add structured logs and basic metrics.
 - [x] Implement `auth.refresh` handling for credential renewal without reconnecting, rejecting tokens whose `app_id`, `sub`, or `device_id` differs from the connection's (spec §5.3).
@@ -274,9 +274,9 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement session authorization.
 - [ ] Design and review pairing protocol.
 - [ ] Implement pairing approval policy.
-- [ ] Implement device revocation, including the control-plane operation (spec §5.6). *(MVP)*
-- [ ] Propagate device revocation to the revoked device's active connections and sessions. *(MVP)*
-- [ ] Notify remaining peers on revocation with `session.terminated` so the SDK closes established sessions (spec §6.4). *(MVP)*
+- [x] Implement device revocation, including the control-plane operation (spec §5.6). *(MVP)*
+- [x] Propagate device revocation to the revoked device's active connections and sessions. *(MVP)*
+- [x] Notify remaining peers on revocation with `session.terminated` so the SDK closes established sessions (spec §6.4). *(MVP)*
 - [ ] Implement pairing attempt rate limits (spec §8.1).
 - [ ] Add signaling message validation and abuse protection.
 - [ ] Review token and credential handling.

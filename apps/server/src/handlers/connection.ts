@@ -1,4 +1,5 @@
 import type {
+  ApplicationRecord,
   ConnectionContext,
   CoordinationAdapter,
   DeviceIdentity,
@@ -14,7 +15,7 @@ import {
   type Payload,
   type ServerMessage,
 } from '@blindsignal/protocol';
-import type { TokenVerifier } from '../domain/auth.ts';
+import { unavailability, type TokenVerifier } from '../domain/auth.ts';
 import type { Participant, Session, SessionRegistry } from '../domain/sessions.ts';
 
 /** What a handler needs from the transport. */
@@ -90,6 +91,8 @@ export class Connection {
   // shortcut: unbounded per-connection queue; Phase 6 bounds it with the message rate limits.
   #queue: Promise<void> = Promise.resolve();
   #closed = false;
+  /** What the other participants of this connection's sessions are told when it ends. */
+  #endReason: TerminationReason = 'peer_disconnected';
   #context: ConnectionContext | undefined;
   #expiryTimer: ReturnType<typeof setTimeout> | undefined;
   #unsubscribe: (() => Promise<void>) | undefined;
@@ -119,6 +122,24 @@ export class Connection {
     return (this.#queue = this.#queue.then(() => this.#release()));
   }
 
+  /**
+   * A registry reload changed the applications: closes the connection when its application or
+   * device is no longer available (ADR 0005). Queued, so an authentication in flight is checked.
+   */
+  enforce(applications: readonly ApplicationRecord[]): Promise<void> {
+    return this.#enqueue(() => {
+      const context = this.#context;
+      if (context === undefined) return Promise.resolve();
+      const application = applications.find((app) => app.appId === context.appId);
+      const code = unavailability(application, context);
+      // A revoked device's peers learn why their sessions end (spec §6.4); an unavailable
+      // application closes every connection, so no peer is left to tell (docs/protocol.md §7).
+      if (code === 'device_revoked') this.#endReason = 'peer_revoked';
+      if (code !== undefined) this.#error(code, undefined, true);
+      return Promise.resolve();
+    });
+  }
+
   /** The transport saw the client alive: renews the presence leases (docs/protocol.md §8). */
   heartbeat(): Promise<void> {
     return this.#enqueue(async () => {
@@ -135,7 +156,7 @@ export class Connection {
     // Unregistered in the same tick as the session scan, so no new session can slip in between.
     if (device !== undefined) this.#deps.sessions.unregister(device, this.id);
     for (const session of this.#deps.sessions.of(this.id)) {
-      await this.#terminate(session, 'peer_disconnected');
+      await this.#terminate(session, this.#endReason);
     }
     for (const namespace of [...this.#joined.keys()]) await this.#leave(namespace);
     const unsubscribe = this.#unsubscribe;

@@ -212,6 +212,17 @@ describe('SignalingServer', () => {
     ]);
   });
 
+  it('closes the connections a reloaded registry makes unavailable', async () => {
+    const { server, client } = await start();
+    const alice = await client();
+    await alice.authenticate({ sub: 'u1', device_id: 'd1', namespaces: ['notes:a'] });
+    await server.enforce([]);
+    expect(await alice.next('error')).toMatchObject({
+      payload: { code: 'application_unavailable' },
+    });
+    expect(await alice.closed).toBe(4002);
+  });
+
   it('drains: fails readiness, refuses upgrades, and closes clients with 1001', async () => {
     const { server, client, coordination, refusedUpgrade, http } = await start();
     const alice = await client();

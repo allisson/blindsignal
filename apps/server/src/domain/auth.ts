@@ -69,6 +69,21 @@ export interface VerifiedToken {
 export type VerifyFailure =
   'invalid_token' | 'token_expired' | 'application_unavailable' | 'device_revoked';
 
+/**
+ * Why a device of the application may not use the service, or undefined when it may. An
+ * application missing from the registry is unavailable.
+ */
+export function unavailability(
+  application: ApplicationRecord | undefined,
+  device: { readonly userId: string; readonly deviceId: string },
+): 'application_unavailable' | 'device_revoked' | undefined {
+  if (application?.status !== 'active') return 'application_unavailable';
+  const revoked = application.revokedDevices.some(
+    (d) => d.userId === device.userId && d.deviceId === device.deviceId,
+  );
+  return revoked ? 'device_revoked' : undefined;
+}
+
 export type VerifyResult =
   | { readonly ok: true; readonly token: VerifiedToken }
   | { readonly ok: false; readonly code: VerifyFailure };
@@ -152,11 +167,8 @@ export class TokenVerifier {
     }
 
     // 5–6. Only a verified token learns the application's or device's status.
-    if (application.status !== 'active') return fail('application_unavailable');
-    const revoked = application.revokedDevices.some(
-      (device) => device.userId === sub && device.deviceId === device_id,
-    );
-    if (revoked) return fail('device_revoked');
+    const unavailable = unavailability(application, { userId: sub, deviceId: device_id });
+    if (unavailable !== undefined) return fail(unavailable);
 
     // 7. Single use, tracked until the token can no longer pass the `exp` check.
     const ttlMs = (exp + skew) * 1000 - now.getTime();
