@@ -59,6 +59,7 @@ async function main(): Promise<void> {
       iceServers: config.iceServers.map(({ urls }) => ({ urls: [...urls] })),
       clockSkewSeconds: config.token.clockSkewSeconds,
       authenticationTimeoutMs: config.preAuthentication.authenticationTimeoutMs,
+      authenticationAttempts: config.preAuthentication.authenticationAttempts,
       deviceTtlMs: config.deviceTtlMs,
       limits: config.limits,
       maxMessageBytes: config.maxMessageBytes,

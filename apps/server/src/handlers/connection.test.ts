@@ -81,6 +81,7 @@ async function setup(
     iceServers: ICE,
     clockSkewSeconds: SKEW_MS / 1000,
     authenticationTimeoutMs: AUTH_MS,
+    authenticationAttempts: { ratePerSecond: 100, burst: 100 },
     deviceTtlMs: 86_400_000,
     limits: limits(10),
     presenceLeaseMs: LEASE_MS,
@@ -92,12 +93,13 @@ async function setup(
   };
 
   /** A connection whose transport, like the real one, reports its own close unless told not to. */
-  const connect = ({ reportsClose = true } = {}) => {
+  const connect = ({ reportsClose = true, clientIp = '192.0.2.1' } = {}) => {
     const sent: ServerMessage[] = [];
     const closes: number[] = [];
     let authenticated = 0;
     const connection: Connection = new Connection(
       {
+        clientIp,
         send: (message) => sent.push(message),
         authenticated: () => authenticated++,
         close: (code) => {
@@ -201,6 +203,93 @@ describe('Connection', () => {
       const client = connect();
       await client.authenticate({ aud: 'other' });
       expect(client.authenticated()).toBe(0);
+    });
+  });
+
+  describe('authentication attempts', () => {
+    const attempts = { ratePerSecond: 1, burst: 2 };
+
+    it('limits auth.authenticate and auth.refresh per client IP, keeping the connection', async () => {
+      const { connect, deps } = await setup(undefined, { authenticationAttempts: attempts });
+      const verify = vi.spyOn(deps.verifier, 'verify');
+      const first = connect();
+      await first.authenticate();
+      await first.refresh();
+      await first.refresh();
+      expect(first.last()).toEqual({
+        version: 1,
+        type: 'error',
+        requestId: 'r3',
+        payload: { code: 'rate_limited', retryAfterMs: 1000 },
+      });
+      const second = connect();
+      await second.authenticate({ device_id: 'd2' });
+      expect(second.errors()).toEqual(['rate_limited']);
+      expect(second.connection.context).toBeUndefined();
+      expect([first.closes, second.closes]).toEqual([[], []]);
+      expect(verify).toHaveBeenCalledTimes(2);
+
+      await connect({ clientIp: '192.0.2.2' }).authenticate({ device_id: 'd3' });
+      expect(verify).toHaveBeenCalledTimes(3);
+      vi.advanceTimersByTime(1000);
+      await second.authenticate({ device_id: 'd2' });
+      expect(second.connection.context?.deviceId).toBe('d2');
+    });
+
+    it('counts a rate_limited error', async () => {
+      const { connect, metrics } = await setup(undefined, {
+        authenticationAttempts: { ratePerSecond: 1, burst: 1 },
+      });
+      await connect().authenticate();
+      await connect().authenticate({ device_id: 'd2' });
+      expect(metrics.render()).toContain('blindsignal_errors_total{code="rate_limited"} 1');
+    });
+  });
+
+  describe('application connection quota', () => {
+    const oneConnection = [{ ...devApplication('notes'), quotas: { connections: 1 } }];
+
+    it("refuses a connection beyond the registry entry's quota, until one closes", async () => {
+      const { connect } = await setup(oneConnection);
+      const first = connect();
+      await first.authenticate();
+      const second = connect();
+      await second.authenticate({ device_id: 'd2' });
+      expect(second.errors()).toEqual(['quota_exceeded']);
+      expect(second.closes).toEqual([4001]);
+      await first.connection.closed();
+      const third = connect();
+      await third.authenticate({ device_id: 'd2' });
+      expect(third.connection.context?.deviceId).toBe('d2');
+    });
+
+    it('keeps the slot on auth.refresh', async () => {
+      const { connect } = await setup(oneConnection);
+      const client = connect();
+      await client.authenticate();
+      await client.refresh();
+      expect(client.errors()).toEqual([]);
+    });
+
+    it('releases the slot when the device quota refuses the authentication', async () => {
+      const { connect } = await setup(oneConnection, { limits: limits(1) });
+      const first = connect();
+      await first.authenticate();
+      await first.connection.closed();
+      const second = connect();
+      await second.authenticate({ device_id: 'd2' });
+      expect(second.errors()).toEqual(['quota_exceeded']);
+      const third = connect();
+      await third.authenticate();
+      expect(third.errors()).toEqual([]);
+    });
+
+    it('takes no slot for a token that fails verification', async () => {
+      const { connect } = await setup(oneConnection);
+      await connect().authenticate({ aud: 'other' });
+      const client = connect();
+      await client.authenticate();
+      expect(client.errors()).toEqual([]);
     });
   });
 
@@ -1329,7 +1418,7 @@ describe('Connection', () => {
     };
     const sent: ServerMessage[] = [];
     const connection = new Connection(
-      { send: (message) => sent.push(message), close: () => {} },
+      { clientIp: '192.0.2.1', send: (message) => sent.push(message), close: () => {} },
       { ...deps, verifier },
     );
     const token = await mintDevToken(d1, { now: new Date() });

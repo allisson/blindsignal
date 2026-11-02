@@ -53,6 +53,7 @@ async function start(options: Options = {}) {
   await applications.replaceAll(registry.registry.applications);
   const coordination = new InMemoryCoordinationAdapter();
   const logs: Record<string, unknown>[] = [];
+  const preAuthentication = { ...defaults.preAuthentication, ...options.preAuthentication };
   const server = new SignalingServer({
     allowedOrigins: options.allowedOrigins ?? '*',
     proxyTrust: {
@@ -60,7 +61,7 @@ async function start(options: Options = {}) {
       header: 'x-forwarded-for',
     },
     heartbeatIntervalMs: options.heartbeatIntervalMs ?? 60_000,
-    preAuthentication: { ...defaults.preAuthentication, ...options.preAuthentication },
+    preAuthentication,
     coordination,
     connection: {
       verifier: new TokenVerifier({
@@ -78,6 +79,7 @@ async function start(options: Options = {}) {
       iceServers: [],
       clockSkewSeconds: 60,
       authenticationTimeoutMs: 10_000,
+      authenticationAttempts: preAuthentication.authenticationAttempts,
       deviceTtlMs: 86_400_000,
       limits: defaults.limits,
       presenceLeaseMs: options.presenceLeaseMs ?? 90_000,
@@ -240,6 +242,18 @@ describe('SignalingServer', () => {
       expect(refused.statusCode).toBe(429);
       expect(refused.headers['retry-after']).toBe('2');
       await client(from('203.0.113.2'));
+    });
+
+    it('limits authentication attempts per client IP', async () => {
+      const { client } = await start({
+        trustedProxies: proxied,
+        preAuthentication: { authenticationAttempts: { ratePerSecond: 0.001, burst: 1 } },
+      });
+      await (await client(from('203.0.113.1'))).authenticate(claims);
+      await (await client(from('203.0.113.2'))).authenticate({ ...claims, device_id: 'd2' });
+      const limited = await client(from('203.0.113.1'));
+      limited.send('auth.authenticate', { token: 'unverified' });
+      expect(await limited.next('error')).toMatchObject({ payload: { code: 'rate_limited' } });
     });
 
     it('releases the count of an attempt refused by the rate limit', async () => {

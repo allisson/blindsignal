@@ -95,6 +95,7 @@ const environment = z
     BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: count.default(20),
     BLINDSIGNAL_MAX_UNAUTHENTICATED: count.default(1_000),
     BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS: rateLimit(5, 20),
+    BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION: rateLimit(1, 10),
     // The protocol caps it at its default (docs/protocol.md §1).
     BLINDSIGNAL_MAX_MESSAGE_BYTES: count.max(MAX_MESSAGE_BYTES).default(MAX_MESSAGE_BYTES),
     // Server defaults for every application; a registry entry may override each (ADR 0011). They
@@ -148,6 +149,8 @@ export interface PreAuthentication {
   readonly maxUnauthenticatedPerIp: number;
   readonly maxUnauthenticated: number;
   readonly connectionAttempts: RateLimitPolicy;
+  /** `auth.authenticate` and `auth.refresh`, per client IP. */
+  readonly authenticationAttempts: RateLimitPolicy;
 }
 
 export type ConfigResult =
@@ -192,6 +195,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
         maxUnauthenticatedPerIp: vars.BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP,
         maxUnauthenticated: vars.BLINDSIGNAL_MAX_UNAUTHENTICATED,
         connectionAttempts: vars.BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS,
+        authenticationAttempts: vars.BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION,
       },
       maxMessageBytes: vars.BLINDSIGNAL_MAX_MESSAGE_BYTES,
       limits: {

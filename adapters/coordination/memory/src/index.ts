@@ -3,6 +3,7 @@ import type {
   DeviceIdentity,
   RateLimitDecision,
   RateLimitPolicy,
+  Slot,
 } from '@blindsignal/core';
 
 const SWEEP_INTERVAL_MS = 60_000;
@@ -29,18 +30,16 @@ const deviceKey = ({ appId, userId, deviceId }: DeviceIdentity) =>
 
 /**
  * Single-instance only: state lives in this process and is lost on restart (spec §10.3).
- * Concurrency slots arrive with Phase 6.
  */
-export class InMemoryCoordinationAdapter implements Omit<
-  CoordinationAdapter,
-  'acquireSlots' | 'releaseSlots'
-> {
+export class InMemoryCoordinationAdapter implements CoordinationAdapter {
   readonly #now: () => number;
   readonly #jtis = new Map<string, number>();
   readonly #connections = new Map<string, string>();
   readonly #presence = new Map<string, Map<string, Lease>>();
   readonly #topics = new Map<string, Set<Subscription>>();
   readonly #buckets = new Map<string, Bucket>();
+  /** The holders of each key's slots. */
+  readonly #slots = new Map<string, Set<string>>();
   #lastSweep: number;
 
   constructor({ now = Date.now }: { now?: () => number } = {}) {
@@ -132,6 +131,29 @@ export class InMemoryCoordinationAdapter implements Omit<
     return Promise.resolve({ allowed: true });
   }
 
+  acquireSlots(holder: string, slots: readonly Slot[]): Promise<boolean> {
+    // A slot the holder already has stays its own, without taking a second one.
+    const free = slots.every(({ key, limit }) => {
+      const holders = this.#slots.get(key);
+      return holders === undefined || holders.has(holder) || holders.size < limit;
+    });
+    if (!free) return Promise.resolve(false);
+    for (const { key } of slots) {
+      let holders = this.#slots.get(key);
+      if (holders === undefined) this.#slots.set(key, (holders = new Set<string>()));
+      holders.add(holder);
+    }
+    return Promise.resolve(true);
+  }
+
+  releaseSlots(holder: string, keys: readonly string[]): Promise<void> {
+    for (const key of keys) {
+      const holders = this.#slots.get(key);
+      if (holders?.delete(holder) && holders.size === 0) this.#slots.delete(key);
+    }
+    return Promise.resolve();
+  }
+
   publish(topic: string, event: unknown): Promise<void> {
     // A copy, so a handler that unsubscribes does not skip the next one.
     for (const { handler } of [...(this.#topics.get(topic) ?? [])]) handler(event);
@@ -181,6 +203,11 @@ export class InMemoryCoordinationAdapter implements Omit<
   /** Tracked rate-limit buckets, full ones not yet swept included; for tests. */
   get trackedBuckets(): number {
     return this.#buckets.size;
+  }
+
+  /** Keys with at least one slot held; for tests. */
+  get heldSlotKeys(): number {
+    return this.#slots.size;
   }
 
   /** Topics with at least one subscriber; for tests. */

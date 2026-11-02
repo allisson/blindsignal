@@ -37,6 +37,7 @@ describe('loadConfig', () => {
         maxUnauthenticatedPerIp: 20,
         maxUnauthenticated: 1_000,
         connectionAttempts: { ratePerSecond: 5, burst: 20 },
+        authenticationAttempts: { ratePerSecond: 1, burst: 10 },
       },
       maxMessageBytes: 65_536,
       limits: {
@@ -82,6 +83,7 @@ describe('loadConfig', () => {
       BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: '3',
       BLINDSIGNAL_MAX_UNAUTHENTICATED: '30',
       BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS: '1,4',
+      BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION: '0.2,3',
       BLINDSIGNAL_MAX_MESSAGE_BYTES: '1024',
       BLINDSIGNAL_MAX_CONNECTIONS_PER_APP: '40',
       BLINDSIGNAL_MAX_DEVICES_PER_APP: '50',
@@ -112,6 +114,7 @@ describe('loadConfig', () => {
         maxUnauthenticatedPerIp: 3,
         maxUnauthenticated: 30,
         connectionAttempts: { ratePerSecond: 1, burst: 4 },
+        authenticationAttempts: { ratePerSecond: 0.2, burst: 3 },
       },
       maxMessageBytes: 1024,
       limits: {
@@ -185,6 +188,7 @@ describe('loadConfig', () => {
     ['BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP', '0'],
     ['BLINDSIGNAL_MAX_UNAUTHENTICATED', '2.5'],
     ['BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS', '5'],
+    ['BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION', '1,'],
     ['BLINDSIGNAL_MAX_DEVICES_PER_APP', '0'],
     ['BLINDSIGNAL_MAX_MESSAGE_BYTES', '0'],
     ['BLINDSIGNAL_MAX_MESSAGE_BYTES', '65537'],

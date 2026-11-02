@@ -153,6 +153,7 @@ export class SignalingServer {
   #accept(ws: WebSocket, ip: string, authenticated: () => void): void {
     const connection = new Connection(
       {
+        clientIp: ip,
         send: (message) => ws.send(JSON.stringify(message)),
         close: (code) => ws.close(code),
         authenticated,

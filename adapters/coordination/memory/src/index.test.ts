@@ -221,3 +221,52 @@ describe('InMemoryCoordinationAdapter.consumeRateLimit', () => {
     expect(adapter.trackedBuckets).toBe(2);
   });
 });
+
+describe('InMemoryCoordinationAdapter slots', () => {
+  const app = { key: 'app', limit: 2 };
+  const device = { key: 'device', limit: 1 };
+
+  it('takes slots up to each limit', async () => {
+    const { adapter } = setup();
+    expect(await adapter.acquireSlots('h1', [app])).toBe(true);
+    expect(await adapter.acquireSlots('h2', [app])).toBe(true);
+    expect(await adapter.acquireSlots('h3', [app])).toBe(false);
+  });
+
+  it('takes all the slots or none', async () => {
+    const { adapter } = setup();
+    await adapter.acquireSlots('h1', [device]);
+    expect(await adapter.acquireSlots('h2', [app, device])).toBe(false);
+    expect(await adapter.acquireSlots('h3', [app])).toBe(true);
+    expect(await adapter.acquireSlots('h4', [app])).toBe(true);
+  });
+
+  it('keeps a slot the holder already has without taking another', async () => {
+    const { adapter } = setup();
+    await adapter.acquireSlots('h1', [device]);
+    expect(await adapter.acquireSlots('h1', [device])).toBe(true);
+    await adapter.releaseSlots('h1', ['device']);
+    expect(await adapter.acquireSlots('h2', [device])).toBe(true);
+  });
+
+  it('frees released slots, only the holder releases its own, and twice has no effect', async () => {
+    const { adapter } = setup();
+    await adapter.acquireSlots('h1', [device]);
+    await adapter.releaseSlots('h2', ['device', 'unknown']);
+    expect(await adapter.acquireSlots('h2', [device])).toBe(false);
+    await adapter.releaseSlots('h1', ['device']);
+    await adapter.releaseSlots('h1', ['device']);
+    expect(adapter.heldSlotKeys).toBe(0);
+    expect(await adapter.acquireSlots('h2', [device])).toBe(true);
+  });
+
+  it('drops a key only once its last holder releases', async () => {
+    const { adapter } = setup();
+    await adapter.acquireSlots('h1', [app]);
+    await adapter.acquireSlots('h2', [app]);
+    await adapter.releaseSlots('h1', ['app']);
+    expect(adapter.heldSlotKeys).toBe(1);
+    expect(await adapter.acquireSlots('h3', [app])).toBe(true);
+    expect(await adapter.acquireSlots('h4', [app])).toBe(false);
+  });
+});

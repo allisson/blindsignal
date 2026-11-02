@@ -4,6 +4,7 @@ import type {
   CoordinationAdapter,
   DeviceIdentity,
   DeviceRepository,
+  RateLimitPolicy,
 } from '@blindsignal/core';
 import {
   closeCodeFor,
@@ -22,6 +23,8 @@ import type { Logger, Metrics } from '../telemetry.ts';
 
 /** What a handler needs from the transport. */
 export interface ConnectionPort {
+  /** Keys the authentication-attempt rate limit (ADR 0011). */
+  readonly clientIp: string;
   send(message: ServerMessage): void;
   close(code: number): void;
   /** The connection authenticated: it no longer counts as unauthenticated (spec §8.4). */
@@ -43,11 +46,16 @@ export interface ConnectionDependencies {
     | 'listPresence'
     | 'publish'
     | 'subscribe'
+    | 'consumeRateLimit'
+    | 'acquireSlots'
+    | 'releaseSlots'
   >;
   readonly iceServers: Payload<'rtc.ice_config'>['iceServers'];
   readonly clockSkewSeconds: number;
   /** A connection not authenticated this long after it opened is closed (spec §8.4). */
   readonly authenticationTimeoutMs: number;
+  /** `auth.authenticate` and `auth.refresh` attempts per client IP. */
+  readonly authenticationAttempts: RateLimitPolicy;
   /** A device record not seen for this long stops counting toward the device quota. */
   readonly deviceTtlMs: number;
   /** Server defaults; an application's registry entry overrides each limit it sets (ADR 0011). */
@@ -68,6 +76,9 @@ export const connectionTopic = (connectionId: string) => `connection:${connectio
 
 /** Joined connections receive the namespace's `presence.changed` events on it. */
 export const presenceTopic = (namespace: string) => `presence:${namespace}`;
+
+/** Each authenticated connection holds one slot of its application's connection quota. */
+const connectionSlot = (appId: string) => `connections:${appId}`;
 
 const SUPERSEDED = { type: 'superseded' } as const;
 
@@ -107,6 +118,8 @@ export class Connection {
   /** What the other participants of this connection's sessions are told when it ends. */
   #endReason: TerminationReason = 'peer_disconnected';
   #context: ConnectionContext | undefined;
+  /** The connection-quota key this connection holds a slot under, once it took one. */
+  #slot: string | undefined;
   #expiryTimer: ReturnType<typeof setTimeout> | undefined;
   readonly #deadline: ReturnType<typeof setTimeout>;
   #unsubscribe: (() => Promise<void>) | undefined;
@@ -185,6 +198,7 @@ export class Connection {
     if (device !== undefined) {
       await this.#deps.coordination.releaseDeviceConnection(device, this.id);
     }
+    if (this.#slot !== undefined) await this.#deps.coordination.releaseSlots(this.id, [this.#slot]);
   }
 
   async #handleFrame(text: string): Promise<void> {
@@ -231,10 +245,17 @@ export class Connection {
 
   async #authenticate(message: ClientMessage & { type: 'auth.authenticate' }): Promise<void> {
     const { requestId } = message;
+    if (!(await this.#allowAuthentication(requestId))) return;
     const verified = await this.#deps.verifier.verify(message.payload.token);
     if (!verified.ok) return this.#rejectAuthentication(verified.code, requestId);
     const { application, context } = verified.token;
-    if (!(await this.#touch(context, application))) {
+    // Released with the connection, whether or not the authentication completes.
+    this.#slot = connectionSlot(context.appId);
+    const limit = applicationLimits(this.#deps.limits, application).quotas.connections;
+    if (
+      !(await this.#deps.coordination.acquireSlots(this.id, [{ key: this.#slot, limit }])) ||
+      !(await this.#touch(context, application))
+    ) {
       return this.#rejectAuthentication('quota_exceeded', requestId);
     }
     this.#deps.metrics.count('blindsignal_authentications_total', { result: 'ok' });
@@ -268,6 +289,22 @@ export class Connection {
     this.#closed = true;
   }
 
+  /**
+   * Takes a token from the client IP's authentication bucket before the token is verified; when
+   * none is left, answers `rate_limited` and keeps the connection (ADR 0011).
+   */
+  async #allowAuthentication(requestId: string): Promise<boolean> {
+    const decision = await this.#deps.coordination.consumeRateLimit(
+      `authentication:${this.#port.clientIp}`,
+      this.#deps.authenticationAttempts,
+    );
+    if (decision.allowed) return true;
+    const { retryAfterMs } = decision;
+    this.#send({ type: 'error', requestId, payload: { code: 'rate_limited', retryAfterMs } });
+    this.#deps.metrics.count('blindsignal_errors_total', { code: 'rate_limited' });
+    return false;
+  }
+
   /** Every rejection closes: the connection has nothing to keep. */
   #rejectAuthentication(code: ErrorCode, requestId: string): void {
     this.#deps.metrics.count('blindsignal_authentications_total', { result: code });
@@ -277,6 +314,7 @@ export class Connection {
   async #refresh(message: ClientMessage & { type: 'auth.refresh' }): Promise<void> {
     const { requestId } = message;
     const current = this.#context as ConnectionContext;
+    if (!(await this.#allowAuthentication(requestId))) return;
     // A rejected refresh keeps the current token; only terminal codes close (docs/protocol.md §9).
     const verified = await this.#deps.verifier.verify(message.payload.token);
     if (!verified.ok) return this.#error(verified.code, requestId);
