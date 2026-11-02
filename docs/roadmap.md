@@ -30,12 +30,12 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [x] Choose language, runtime, package and monorepo tooling, schema-validation library, and test frameworks, including browser automation for DataChannel tests (`docs/adr/0001-typescript-node-toolchain.md`).
 - [x] Define server, SDK, and shared protocol boundaries (`docs/adr/0002-package-boundaries.md`).
 - [x] Define signaling protocol and versioning (`docs/protocol.md`).
-- [ ] Define application registration and trust model.
+- [x] Define application registration and trust model (spec §5.1, `docs/adr/0005-control-plane.md`, `docs/adr/0006-token-profile-and-device-identity.md`).
 - [x] Define application issuer and JWKS configuration, including HTTPS-only JWKS URIs, fetch timeouts, and rate-limited refetch on an unknown `kid` (spec §5.3).
 - [x] Define JWT claims and validation requirements (`docs/adr/0006-token-profile-and-device-identity.md`).
 - [x] Define the issuer-to-application mapping, the `app_id` claim rule, the `jti` replay policy, the maximum token lifetime, and the clock-skew tolerance (`docs/adr/0006-token-profile-and-device-identity.md`).
-- [ ] Define application suspension and revocation behavior.
-- [ ] Define revocation enforcement limits for established P2P sessions (spec §6.4).
+- [x] Define application suspension and revocation behavior (spec §5.5, `docs/adr/0005-control-plane.md`, `docs/protocol.md`; cross-instance propagation in Phase 9).
+- [x] Define revocation enforcement limits for established P2P sessions (spec §6.4, `docs/threat-model.md`).
 - [x] Define the control-plane mechanism for application registration, suspension, revocation, and device revocation (spec §5.6) (`docs/adr/0005-control-plane.md`).
 - [x] Define user and device identity (`docs/adr/0006-token-profile-and-device-identity.md`).
 - [x] Decide whether MVP enrollment includes device-key proof-of-possession or relies only on the backend-asserted `device_id` claim (spec §6.2), and whether device records are created on first sight, which places the per-application device-count quota in the MVP (Phase 6) (backend-asserted, created on first authentication: `docs/adr/0006-token-profile-and-device-identity.md`).
@@ -53,7 +53,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [x] Decide whether `rtc.ice_restart` remains a separate message type or ICE restart is a new `rtc.offer` (spec §11) (a new `rtc.offer`, `docs/protocol.md`).
 - [x] Define WebSocket reconnect and token renewal behavior (`docs/protocol.md`, "SDK connection behavior").
 - [x] Decide what happens when a connection's token reaches `exp` without a successful `auth.refresh` (spec §5.3) (closed with `token_expired`, `docs/adr/0006-token-profile-and-device-identity.md`).
-- [ ] Define security and threat-model assumptions.
+- [x] Define security and threat-model assumptions (`docs/threat-model.md`).
 
 ### Deliverables
 
