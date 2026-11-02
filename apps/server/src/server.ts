@@ -3,11 +3,14 @@ import type { AddressInfo, Socket } from 'node:net';
 import type { ApplicationRecord } from '@blindsignal/core';
 import { MAX_MESSAGE_BYTES } from '@blindsignal/protocol';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { clientIp, type ProxyTrust } from './domain/client-ip.ts';
 import { isOriginAllowed, type AllowedOrigins } from './domain/origin.ts';
 import { Connection, type ConnectionDependencies } from './handlers/connection.ts';
 
 export interface SignalingServerOptions {
   readonly allowedOrigins: AllowedOrigins;
+  /** Which forwarding headers to trust when deriving the client IP for logs (spec §8.1). */
+  readonly proxyTrust: ProxyTrust;
   readonly heartbeatIntervalMs: number;
   readonly connection: ConnectionDependencies;
 }
@@ -40,6 +43,11 @@ export class SignalingServer {
       this.#upgrade(request, socket, head),
     );
     this.#heartbeat = setInterval(() => this.#ping(), options.heartbeatIntervalMs);
+  }
+
+  /** Open WebSocket connections. */
+  get connections(): number {
+    return this.#connections.size;
   }
 
   /** Resolves to the bound port; port 0 picks a free one. */
@@ -106,10 +114,15 @@ export class SignalingServer {
       );
       return;
     }
-    this.#wss.handleUpgrade(request, socket, head, (ws) => this.#accept(ws));
+    const ip = clientIp(
+      request.socket.remoteAddress ?? '',
+      request.headers,
+      this.#options.proxyTrust,
+    );
+    this.#wss.handleUpgrade(request, socket, head, (ws) => this.#accept(ws, ip));
   }
 
-  #accept(ws: WebSocket): void {
+  #accept(ws: WebSocket, ip: string): void {
     const connection = new Connection(
       {
         send: (message) => ws.send(JSON.stringify(message)),
@@ -117,6 +130,8 @@ export class SignalingServer {
       },
       this.#options.connection,
     );
+    const { logger } = this.#options.connection;
+    logger.log('info', 'connection.opened', { connectionId: connection.id, ip });
     this.#connections.add(connection);
     this.#alive.add(ws);
     // Protocol errors (oversized frame, invalid UTF-8) close the socket; 'close' releases.
@@ -129,8 +144,13 @@ export class SignalingServer {
       this.#alive.add(ws);
       void connection.heartbeat();
     });
-    ws.on('close', () => {
+    ws.on('close', (code) => {
       this.#connections.delete(connection);
+      logger.log('info', 'connection.closed', {
+        connectionId: connection.id,
+        appId: connection.context?.appId,
+        code,
+      });
       const released = connection.closed();
       this.#releasing.add(released);
       void released.finally(() => this.#releasing.delete(released));

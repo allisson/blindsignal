@@ -66,6 +66,11 @@ export class SessionRegistry {
     return entry;
   }
 
+  /** Sessions pending or active. */
+  get size(): number {
+    return this.#sessions.size;
+  }
+
   get(sessionId: string): Session | undefined {
     return this.#sessions.get(sessionId);
   }

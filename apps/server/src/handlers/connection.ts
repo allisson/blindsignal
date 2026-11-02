@@ -17,6 +17,7 @@ import {
 } from '@blindsignal/protocol';
 import { unavailability, type TokenVerifier } from '../domain/auth.ts';
 import type { Participant, Session, SessionRegistry } from '../domain/sessions.ts';
+import type { Logger, Metrics } from '../telemetry.ts';
 
 /** What a handler needs from the transport. */
 export interface ConnectionPort {
@@ -48,6 +49,8 @@ export interface ConnectionDependencies {
   /** How long a session may stay `pending` (docs/protocol.md §7). */
   readonly negotiationTimeoutMs: number;
   readonly maxMessageBytes?: number;
+  readonly metrics: Pick<Metrics, 'count'>;
+  readonly logger: Logger;
 }
 
 /** Each connection receives events on its own topic, from any instance (ADR 0010). */
@@ -171,6 +174,7 @@ export class Connection {
     const parsed = parseClientMessage(text, { maxBytes: this.#deps.maxMessageBytes });
     if (!parsed.ok) return this.#error(parsed.code, parsed.requestId);
     const message = parsed.message;
+    this.#deps.metrics.count('blindsignal_messages_total', { type: message.type });
     if (this.#context === undefined && message.type !== 'auth.authenticate') {
       return this.#error('not_authenticated', message.requestId);
     }
@@ -211,12 +215,12 @@ export class Connection {
   async #authenticate(message: ClientMessage & { type: 'auth.authenticate' }): Promise<void> {
     const { requestId } = message;
     const verified = await this.#deps.verifier.verify(message.payload.token);
-    // Every rejection closes: the connection has nothing to keep.
-    if (!verified.ok) return this.#error(verified.code, requestId, true);
+    if (!verified.ok) return this.#rejectAuthentication(verified.code, requestId);
     const { application, context } = verified.token;
     if (!(await this.#touch(context, application.quotas.devices))) {
-      return this.#error('quota_exceeded', requestId, true);
+      return this.#rejectAuthentication('quota_exceeded', requestId);
     }
+    this.#deps.metrics.count('blindsignal_authentications_total', { result: 'ok' });
 
     // Subscribed before the claim, so a newer connection's `superseded` is never missed.
     this.#unsubscribe = await this.#deps.coordination.subscribe(connectionTopic(this.id), (event) =>
@@ -231,6 +235,16 @@ export class Connection {
     }
     this.#deps.sessions.register(identityOf(context), this.id);
     this.#accept({ ...context, protocolVersion: message.version }, requestId);
+    this.#deps.logger.log('info', 'connection.authenticated', {
+      connectionId: this.id,
+      appId: context.appId,
+    });
+  }
+
+  /** Every rejection closes: the connection has nothing to keep. */
+  #rejectAuthentication(code: ErrorCode, requestId: string): void {
+    this.#deps.metrics.count('blindsignal_authentications_total', { result: code });
+    this.#error(code, requestId, true);
   }
 
   async #refresh(message: ClientMessage & { type: 'auth.refresh' }): Promise<void> {
@@ -330,6 +344,7 @@ export class Connection {
       (expired) => void this.#enqueue(() => this.#terminate(expired, 'timeout', true)),
     );
     const sessionId = session.id;
+    this.#deps.metrics.count('blindsignal_sessions_created_total');
     this.#send({ type: 'session.created', requestId, payload: { sessionId } });
     await this.#publish(targetId, {
       type: 'session.request',
@@ -378,6 +393,7 @@ export class Connection {
   /** Ends the session; tells the other participant, and this one too when `both` is set. */
   async #terminate(session: Session, reason: TerminationReason, both = false): Promise<void> {
     if (!this.#deps.sessions.end(session.id)) return;
+    this.#deps.metrics.count('blindsignal_sessions_terminated_total', { reason });
     const terminated = { type: 'session.terminated', payload: { sessionId: session.id, reason } };
     if (both) this.#send(terminated as Outbound);
     await this.#publish(this.#peerOf(session), terminated as Outbound);
@@ -483,7 +499,14 @@ export class Connection {
       ...(requestId === undefined ? {} : { requestId }),
       payload: { code },
     });
+    this.#deps.metrics.count('blindsignal_errors_total', { code });
     if (!close && errorClasses[code] === 'retryable') return;
+    // Only closing errors are logged; the counter covers the rest. No `sub` or `device_id` (Q12).
+    this.#deps.logger.log('info', 'connection.error', {
+      connectionId: this.id,
+      appId: this.#context?.appId,
+      code,
+    });
     this.#port.close(closeCodeFor(code));
     this.#closed = true;
     clearTimeout(this.#expiryTimer);

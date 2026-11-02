@@ -189,7 +189,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement the duplicate-connection policy: an authenticated newer connection replaces the device's older one, closed with `superseded` (`docs/adr/0008-duplicate-connections.md`).
 - [x] Implement the control plane for application registration, update, suspension, reactivation, and revocation, using the mechanism chosen in Phase 0 (spec §5.6).
 - [x] Add health and readiness endpoints.
-- [ ] Add structured logs and basic metrics.
+- [x] Add structured logs and basic metrics.
 - [x] Implement `auth.refresh` handling for credential renewal without reconnecting, rejecting tokens whose `app_id`, `sub`, or `device_id` differs from the connection's (spec §5.3).
 - [x] Enforce token expiry on open connections: a connection whose token reaches `exp` without a successful `auth.refresh` is handled per the Phase 0 decision (spec §5.3).
 - [x] Implement environment-driven configuration.
