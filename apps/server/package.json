@@ -10,9 +10,12 @@
   "dependencies": {
     "@blindsignal/core": "workspace:*",
     "@blindsignal/protocol": "workspace:*",
+    "jose": "^6.2.14",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@blindsignal/dev-issuer": "workspace:*"
+    "@blindsignal/coordination-memory": "workspace:*",
+    "@blindsignal/dev-issuer": "workspace:*",
+    "@blindsignal/storage-memory": "workspace:*"
   }
 }
