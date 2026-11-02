@@ -39,14 +39,19 @@ adapter:
 
 - **`claimJti(iss, jti, ttl)`**: records the pair and reports whether it was new (ADR 0006).
 - **`claimDeviceConnection(device, connectionId)`**: makes the connection the device's only one
-  and returns the one it replaced, if any (ADR 0008).
+  and returns the one it replaced, if any (ADR 0008). `releaseDeviceConnection` removes the claim
+  when that connection closes.
 - **Presence leases**: acquire, renew, and release a device's presence in a namespace, and list
   the live leases of a namespace. Leases expire on their own, so a lost instance leaves no
   permanent presence (spec §10.2).
 - **`consumeRateLimit(key, policy)`**: takes one token from the key's bucket and reports whether
   it was allowed and, if not, when to retry.
-- **Concurrency slots**: acquire and release a slot under a limit, for the concurrent connection
-  and session quotas.
+- **Concurrency slots**: acquire slots under their limits, all or none, and release them, for the
+  concurrent connection and session quotas. A session takes the application's slot and both
+  devices' slots in one call (ADR 0011).
+- **Releases name the holder**: the connection that holds a device claim or a presence lease, or
+  the holder of a slot. A release by a stale holder, such as a superseded connection closing after
+  its replacement joined, has no effect, and releasing twice is harmless.
 - **`publish(topic, event)` / `subscribe(topic, handler)`**: signaling event delivery to the
   instance holding a connection, and application status propagation.
 
