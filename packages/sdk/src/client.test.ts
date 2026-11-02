@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { backoffDelay } from './backoff.ts';
 import { BlindSignalClient, type BlindSignalClientOptions, type SessionRequest } from './client.ts';
 import { BlindSignalError } from './errors.ts';
+import { FakePeerConnection } from './testing/fake-peer.ts';
 import { FakeSocket } from './testing/fake-socket.ts';
 
 const identity = { userId: 'alice', deviceId: 'laptop' };
@@ -12,6 +13,7 @@ type Sent = { type: string; requestId: string; payload: object };
 
 function setup(options: Partial<BlindSignalClientOptions> = {}) {
   const sockets: FakeSocket[] = [];
+  const peers: FakePeerConnection[] = [];
   /** Sockets that fail to open, in creation order; the rest open, unless `hold` keeps them pending. */
   const failOpen: boolean[] = [];
   const control = { hold: false };
@@ -29,6 +31,11 @@ function setup(options: Partial<BlindSignalClientOptions> = {}) {
       if (!control.hold) queueMicrotask(() => (fail ? socket.drop(1006) : socket.open()));
       return socket as unknown as WebSocket;
     },
+    createPeerConnection: (configuration) => {
+      const pc = new FakePeerConnection(configuration);
+      peers.push(pc);
+      return pc as unknown as RTCPeerConnection;
+    },
     ...options,
   });
   const states: unknown[] = [];
@@ -41,6 +48,7 @@ function setup(options: Partial<BlindSignalClientOptions> = {}) {
   return {
     client,
     sockets,
+    peers,
     failOpen,
     control,
     socket,
@@ -783,6 +791,235 @@ describe('BlindSignalClient sessions', () => {
     expect(third.ended).toEqual([{ reason: 'disconnected' }]);
     third.session.close();
     expect(harness.sent('session.close')).toHaveLength(0);
+  });
+});
+
+describe('BlindSignalClient WebRTC', () => {
+  const peer = { namespace: 'notes:a', userId: 'bob', deviceId: 'phone' };
+  const event = (type: string, payload: object) => ({ version: 1, type, payload });
+  const candidate = { candidate: 'candidate:1 1 udp 1 192.0.2.1 9 typ host', sdpMid: '0' };
+
+  /** A requester session the target accepted, with its offer sent. */
+  async function accepted(harness: Harness) {
+    const creating = harness.client.createSession(peer);
+    const sessionId = crypto.randomUUID();
+    harness.reply('session.created', { sessionId });
+    const session = await creating;
+    const pc = harness.peers.at(-1)!;
+    const channel = pc.channels[0]!;
+    const events: unknown[] = [];
+    session.on('open', () => events.push('open'));
+    session.on('data', (data) => events.push(data));
+    session.on('close', () => events.push('close'));
+    harness.socket().receive(event('session.accepted', { sessionId }));
+    await flush();
+    return { session, sessionId, pc, channel, events };
+  }
+
+  it('refuses TURN in iceServers', () => {
+    for (const urls of [
+      'turn:turn.example',
+      'turn:stun:turn.example',
+      ['stun:stun.example', 'turns:turn.example'],
+    ]) {
+      expect(() => setup({ iceServers: [{ urls }] })).toThrow(TypeError);
+    }
+    expect(() =>
+      setup({ iceServers: [{ urls: ['STUN:a.example', 'stuns:b.example'] }] }),
+    ).not.toThrow();
+  });
+
+  it('merges the STUN servers with the latest rtc.ice_config', async () => {
+    const stun = { urls: 'stun:stun.example' };
+    const harness = await connected(300_000, { iceServers: [stun] });
+    await accepted(harness);
+    expect(harness.peers[0]!.configuration).toEqual({
+      iceServers: [stun, ...iceConfig.iceServers],
+    });
+    const fresh = {
+      iceServers: [{ urls: ['turn:other.example'], username: 'v', credential: 'd' }],
+    };
+    harness.socket().receive(event('rtc.ice_config', fresh));
+    await accepted(harness);
+    expect(harness.peers[1]!.configuration).toEqual({ iceServers: [stun, ...fresh.iceServers] });
+  });
+
+  it('defaults to no ICE servers before any rtc.ice_config', async () => {
+    const harness = setup();
+    const connecting = harness.client.connect();
+    await flush();
+    harness.reply('auth.result', { ...identity, expiresInMs: 300_000 });
+    await connecting;
+    await accepted(harness);
+    expect(harness.peers[0]!.configuration).toEqual({ iceServers: [] });
+  });
+
+  it('negotiates through the signaling connection and exchanges data', async () => {
+    const harness = await connected();
+    const { session, sessionId, pc, channel, events } = await accepted(harness);
+    expect(harness.last()).toMatchObject({
+      type: 'rtc.offer',
+      payload: { sessionId, sdp: 'offer sdp' },
+    });
+    harness.socket().receive(event('rtc.answer', { sessionId, sdp: 'answer sdp' }));
+    harness
+      .socket()
+      .receive(event('rtc.ice_candidate', { sessionId, candidate: JSON.stringify(candidate) }));
+    harness.socket().receive(event('rtc.answer', { sessionId: crypto.randomUUID(), sdp: 'x' }));
+    await flush();
+    expect(pc.remoteDescription).toEqual({ type: 'answer', sdp: 'answer sdp' });
+    expect(pc.candidates).toEqual([candidate]);
+    pc.gather(candidate);
+    expect(harness.last()).toMatchObject({
+      type: 'rtc.ice_candidate',
+      payload: { sessionId, candidate: JSON.stringify(candidate) },
+    });
+    channel.open();
+    session.send('hi');
+    channel.receive('hello');
+    expect(channel.sent).toEqual(['hi']);
+    expect(events).toEqual(['open', 'hello']);
+  });
+
+  it('answers as the target', async () => {
+    const harness = await connected();
+    let accepting!: Promise<unknown>;
+    const sessionId = crypto.randomUUID();
+    harness.client.on('sessionRequest', (request) => {
+      accepting = request.accept();
+    });
+    harness.socket().receive(event('session.request', { sessionId, ...peer }));
+    harness.reply('ack', {});
+    await accepting;
+    harness.socket().receive(event('rtc.offer', { sessionId, sdp: 'offer sdp' }));
+    await flush();
+    expect(harness.last()).toMatchObject({
+      type: 'rtc.answer',
+      payload: { sessionId, sdp: 'answer sdp' },
+    });
+    expect(harness.peers[0]!.channels).toEqual([]);
+  });
+
+  it('relays nothing once the session ended', async () => {
+    const harness = await connected();
+    const { sessionId, pc } = await accepted(harness);
+    pc.channels[0]!.open();
+    harness
+      .socket()
+      .receive(event('session.terminated', { sessionId, reason: 'peer_disconnected' }));
+    const before = harness.socket().sent.length;
+    pc.gather(candidate);
+    expect(harness.socket().sent).toHaveLength(before);
+    harness.socket().receive(event('rtc.answer', { sessionId, sdp: 'answer sdp' }));
+    await flush();
+    expect(pc.remoteDescription).toBeNull();
+  });
+
+  it.each(['closed_by_peer', 'peer_revoked', 'namespace_unauthorized', 'timeout'])(
+    'closes an open DataChannel on %s',
+    async (reason) => {
+      const harness = await connected();
+      const { sessionId, channel, events } = await accepted(harness);
+      channel.open();
+      harness.socket().receive(event('session.terminated', { sessionId, reason }));
+      expect(channel.readyState).toBe('closed');
+      expect(events).toEqual(['open', 'close']);
+    },
+  );
+
+  it('keeps an open DataChannel when only signaling is lost, and closes one still opening', async () => {
+    const harness = await connected();
+    const open = await accepted(harness);
+    const opening = await accepted(harness);
+    const disconnected = await accepted(harness);
+    open.channel.open();
+    disconnected.channel.open();
+    harness
+      .socket()
+      .receive(
+        event('session.terminated', { sessionId: open.sessionId, reason: 'peer_disconnected' }),
+      );
+    harness
+      .socket()
+      .receive(
+        event('session.terminated', { sessionId: opening.sessionId, reason: 'peer_disconnected' }),
+      );
+    harness.socket().drop(1006);
+    expect(open.channel.readyState).toBe('open');
+    expect(disconnected.channel.readyState).toBe('open');
+    expect(opening.channel.readyState).toBe('closed');
+    expect(opening.events).toEqual(['close']);
+
+    open.session.send('still here');
+    expect(open.channel.sent).toEqual(['still here']);
+    open.session.close();
+    expect(open.channel.readyState).toBe('closed');
+    expect(open.events).toEqual(['open', 'close']);
+  });
+
+  it('closes the DataChannel with the session, and on rejection', async () => {
+    const harness = await connected();
+    const closed = await accepted(harness);
+    closed.channel.open();
+    closed.session.close();
+    expect(closed.channel.readyState).toBe('closed');
+    expect(harness.last()).toMatchObject({
+      type: 'session.close',
+      payload: { sessionId: closed.sessionId },
+    });
+
+    const creating = harness.client.createSession(peer);
+    const sessionId = crypto.randomUUID();
+    harness.reply('session.created', { sessionId });
+    await creating;
+    harness.socket().receive(event('session.rejected', { sessionId }));
+    expect(harness.peers.at(-1)!.connectionState).toBe('closed');
+  });
+
+  it.each([
+    [4002, 'device_revoked', 'closed'],
+    [1009, undefined, 'closed'],
+    [4003, 'superseded', 'open'],
+  ])('after close %i, leaves open DataChannels %s', async (code, sent, state) => {
+    const harness = await connected();
+    const ended = await accepted(harness);
+    const active = await accepted(harness);
+    ended.channel.open();
+    active.channel.open();
+    harness
+      .socket()
+      .receive(
+        event('session.terminated', { sessionId: ended.sessionId, reason: 'peer_disconnected' }),
+      );
+    if (sent) harness.socket().receive({ version: 1, type: 'error', payload: { code: sent } });
+    harness.socket().drop(code);
+    expect(ended.channel.readyState).toBe(state);
+    expect(active.channel.readyState).toBe(state);
+  });
+
+  it('closes open DataChannels when reauthentication is rejected as terminal, not as superseded', async () => {
+    for (const [code, state] of [
+      ['device_revoked', 'closed'],
+      ['superseded', 'open'],
+    ] as const) {
+      const harness = await connected();
+      const { channel } = await accepted(harness);
+      channel.open();
+      harness.socket().drop(1006);
+      await flush();
+      harness.reply('error', { code });
+      await flush();
+      expect(harness.client.state).toBe('disconnected');
+      expect(channel.readyState).toBe(state);
+    }
+  });
+
+  it('leaves open DataChannels to their sessions on close()', async () => {
+    const harness = await connected();
+    const { channel } = await accepted(harness);
+    channel.open();
+    harness.client.close();
+    expect(channel.readyState).toBe('open');
   });
 });
 

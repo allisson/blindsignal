@@ -26,3 +26,4 @@ export {
   type SessionState,
   type TerminationReason,
 } from './session.ts';
+export type { ChannelData, PeerConnectionFactory } from './webrtc/peer.ts';

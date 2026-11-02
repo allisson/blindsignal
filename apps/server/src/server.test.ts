@@ -7,6 +7,7 @@ import {
   type Presence,
   type SessionRequest,
 } from '@blindsignal/sdk';
+import { FakePeerConnection } from '@blindsignal/sdk/testing';
 import {
   InMemoryApplicationRepository,
   InMemoryDeviceRepository,
@@ -304,14 +305,20 @@ describe('SignalingServer with the SDK', () => {
   });
 
   function sdk(url: string, sub: string, device_id: string, namespaces = ['notes:a']) {
+    const peers: FakePeerConnection[] = [];
     const client = new BlindSignalClient({
       serverUrl: url,
       accessTokenProvider: () => mintDevToken({ app_id: 'notes', sub, device_id, namespaces }),
+      createPeerConnection: (configuration) => {
+        const pc = new FakePeerConnection(configuration);
+        peers.push(pc);
+        return pc as unknown as RTCPeerConnection;
+      },
     });
     sdks.push(client);
     const presence: Presence[] = [];
     client.on('presence', (p) => presence.push(p));
-    return { client, presence };
+    return { client, presence, peers };
   }
 
   it('authenticates, joins, sees presence, discovers, and leaves', async () => {
@@ -403,6 +410,24 @@ describe('SignalingServer with the SDK', () => {
       session.close();
       await expect(targetEnded).resolves.toEqual({ reason: 'closed_by_peer' });
       expect(ended).toEqual([{ reason: 'closed' }]);
+    });
+
+    it('relays the offer, the answer, and candidates between the two peers', async () => {
+      const { alice, bob, request } = await pair();
+      await request.accept();
+      const [offerer] = alice.peers;
+      const [answerer] = bob.peers;
+      await vi.waitFor(() =>
+        expect(answerer!.remoteDescription).toEqual({ type: 'offer', sdp: 'offer sdp' }),
+      );
+      await vi.waitFor(() =>
+        expect(offerer!.remoteDescription).toEqual({ type: 'answer', sdp: 'answer sdp' }),
+      );
+      const candidate = { candidate: 'candidate:1 1 udp 1 192.0.2.1 9 typ host', sdpMid: '0' };
+      offerer!.gather(candidate);
+      answerer!.gather({ ...candidate, sdpMid: '1' });
+      await vi.waitFor(() => expect(answerer!.candidates).toEqual([candidate]));
+      await vi.waitFor(() => expect(offerer!.candidates).toEqual([{ ...candidate, sdpMid: '1' }]));
     });
 
     it('reports a rejection to the requester', async () => {

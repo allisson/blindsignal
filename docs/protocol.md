@@ -291,5 +291,9 @@ configurable default.
   after the backend removed it from the token). Every server-side session is treated as ended
   (ADR 0004); established DataChannels are not touched, and the application creates new sessions
   as it needs them.
+- **Session end and DataChannels.** A session ended by `closed_by_peer`, `peer_revoked`,
+  `namespace_unauthorized`, `timeout`, rejection, or the application closes its DataChannel. One
+  ended only because a signaling path dropped (`peer_disconnected`, or this client's own
+  reconnect) keeps a DataChannel that is already open, and closes one still negotiating.
 - **Hosting time limits.** A connection the platform or the server closes for exceeding a hosting
   time limit reconnects like any other abnormal or retryable closure.

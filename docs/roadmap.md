@@ -230,18 +230,18 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement namespace join and presence.
 - [x] Implement discovery API.
 - [x] Implement session API.
-- [ ] Implement RTCPeerConnection lifecycle.
-- [ ] Implement SDP negotiation.
-- [ ] Implement ICE candidate exchange.
-- [ ] Add a configurable STUN server list, and merge TURN servers and temporary credentials received through `rtc.ice_config`, without requiring a deployed TURN service (spec §12.3).
+- [x] Implement RTCPeerConnection lifecycle.
+- [x] Implement SDP negotiation.
+- [x] Implement ICE candidate exchange.
+- [x] Add a configurable STUN server list, and merge TURN servers and temporary credentials received through `rtc.ice_config`, without requiring a deployed TURN service (spec §12.3).
 - [ ] Implement ICE restart on connection failure (spec §12.1).
-- [ ] Implement DataChannel creation and lifecycle.
+- [x] Implement DataChannel creation and lifecycle.
 - [x] Expose connection state.
 - [ ] Expose direct/relay/unknown connection type.
 - [x] Implement heartbeats and dead-connection detection with `connection.ping` and `connection.pong` (spec §15).
 - [x] Implement reconnect with exponential backoff and jitter, stopping on terminal authentication errors and not reconnecting automatically when superseded (spec §8.3).
 - [x] After reconnecting, rejoin namespaces and treat every server-side session as ended (spec §15, `docs/adr/0004-sessions-bound-to-connections.md`).
-- [ ] Implement session cleanup and error handling, closing all sessions when reauthentication is rejected because the application is suspended or revoked or the device is revoked (spec §6.4).
+- [x] Implement session cleanup and error handling, closing all sessions when reauthentication is rejected because the application is suspended or revoked or the device is revoked (spec §6.4).
 - [ ] Add browser integration tests.
 
 ### Deliverables
