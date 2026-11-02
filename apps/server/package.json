@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@blindsignal/dev-issuer": "workspace:*",
+    "@blindsignal/sdk": "workspace:*",
     "@types/ws": "^8.18.2"
   }
 }

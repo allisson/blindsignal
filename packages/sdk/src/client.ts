@@ -37,9 +37,17 @@ export interface Identity {
 /** `connecting` covers the first attempt and every reconnect, backoff waits included. */
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected';
 
+export type Presence = Payload<'presence.changed'>;
+
+export type Device = Payload<'discovery.result'>['devices'][number];
+
 export interface ClientEvents extends Record<string, unknown> {
   /** `error` says why the client stopped: a terminal or superseded code (docs/protocol.md §9). */
   state: { state: ConnectionState; error?: BlindSignalError['code'] };
+  /** Another device appeared in or left a joined namespace. */
+  presence: Presence;
+  /** A namespace could not be joined again after a reconnect, and is no longer joined. */
+  rejoinFailed: { namespace: string; error: BlindSignalError['code'] };
 }
 
 type IceConfig = Payload<'rtc.ice_config'>;
@@ -65,6 +73,8 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   #identity: Identity | undefined;
   #signaling: Signaling | undefined;
   #iceConfig: IceConfig | undefined;
+  /** Namespaces the application joined and has not left, joined again after a reconnect. */
+  readonly #namespaces = new Set<string>();
   /** Bumped by close(), so an attempt in flight discards its result. */
   #generation = 0;
   #attempts = 0;
@@ -111,12 +121,34 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
     return settled;
   }
 
+  /** Joins a namespace: presence there, its `presence` events, and discovery. */
+  async join(namespace: string): Promise<void> {
+    await this.#current().request('namespace.join', { namespace });
+    this.#namespaces.add(namespace);
+  }
+
+  async leave(namespace: string): Promise<void> {
+    this.#namespaces.delete(namespace);
+    await this.#signaling?.request('namespace.leave', { namespace });
+  }
+
+  /** The other devices present in a joined namespace. */
+  async discover(namespace: string): Promise<Device[]> {
+    const result = await this.#current().request('discovery.request', { namespace });
+    return result.payload.devices;
+  }
+
   /** Closes the connection and stops reconnecting. */
   close(): void {
     this.#generation++;
     clearTimeout(this.#reconnectTimer);
     this.#teardown();
     if (this.#state !== 'disconnected') this.#setState('disconnected');
+  }
+
+  #current(): Signaling {
+    if (this.#signaling === undefined) throw new BlindSignalError('connection_closed');
+    return this.#signaling;
   }
 
   #setState(state: ConnectionState, error?: BlindSignalError['code']): void {
@@ -138,6 +170,7 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
       if (generation !== this.#generation) return;
       opened.on('message', (message) => {
         if (message.type === 'rtc.ice_config') this.#iceConfig = message.payload;
+        else if (message.type === 'presence.changed') this.emit('presence', message.payload);
       });
       opened.on('close', ({ code, error }) => this.#lost(opened, code, error));
       const result = await opened.request('auth.authenticate', { token });
@@ -148,6 +181,9 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
       this.#connectedAt = Date.now();
       this.#scheduleRefresh(result.payload.expiresInMs);
       this.#heartbeat(opened);
+      await Promise.all([...this.#namespaces].map((namespace) => this.#rejoin(opened, namespace)));
+      // Dropped or closed while rejoining: #lost or close() already moved on.
+      if (this.#signaling !== opened) return;
       this.#setState('connected');
     } catch (error) {
       if (generation !== this.#generation) return;
@@ -157,6 +193,17 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
     } finally {
       // An attempt that did not become the connection never keeps its socket.
       signaling?.close();
+    }
+  }
+
+  async #rejoin(signaling: Signaling, namespace: string): Promise<void> {
+    try {
+      await signaling.request('namespace.join', { namespace });
+    } catch (error) {
+      const code = (error as BlindSignalError).code;
+      if (code === 'connection_closed') return;
+      this.#namespaces.delete(namespace);
+      this.emit('rejoinFailed', { namespace, error: code });
     }
   }
 

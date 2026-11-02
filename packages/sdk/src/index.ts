@@ -11,7 +11,9 @@ export {
   type BlindSignalClientOptions,
   type ClientEvents,
   type ConnectionState,
+  type Device,
   type HeartbeatOptions,
   type Identity,
+  type Presence,
 } from './client.ts';
 export type { BackoffOptions } from './backoff.ts';

@@ -227,6 +227,9 @@ importers:
       '@blindsignal/dev-issuer':
         specifier: workspace:*
         version: link:../../packages/dev-issuer
+      '@blindsignal/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@types/ws':
         specifier: ^8.18.2
         version: 8.18.2
