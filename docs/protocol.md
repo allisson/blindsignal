@@ -24,6 +24,23 @@ payload: application data travels only through WebRTC DataChannels. Administrati
 The SDK never sends the access token anywhere but the `auth.authenticate` and `auth.refresh`
 payloads (spec §16).
 
+Receivers drop unknown keys from the envelope and the payload. A message is at most the
+configured maximum size in UTF-8 bytes; that setting cannot exceed 64 KiB, which is also its
+default.
+
+Identifier formats:
+
+| Identifier | Format |
+|---|---|
+| `app_id` | `^[a-z0-9][a-z0-9_-]{0,63}$` |
+| Namespace | `<app_id>:<scope>`; the scope is 1–128 visible ASCII characters (`0x21`–`0x7E`), no spaces. |
+| `userId`, `deviceId` | Opaque string, 1–256 characters. |
+| `sessionId` | UUID. |
+| `requestId` | Opaque string, 1–64 characters. |
+
+The `protocol` package (`packages/protocol`) implements these schemas, the message catalog in §4,
+and the error catalog in §9; server and SDK parse frames with it.
+
 ## 2. Versioning
 
 - `version` is a single integer major version. This document defines version `1`.
