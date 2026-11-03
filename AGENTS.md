@@ -37,7 +37,9 @@ bounded queues and backpressure (ADR 0013), the maximum session duration (ADR 00
 per-application usage metrics (ADR 0015), and abuse alerts with operator-driven suspension
 (ADR 0016). Phase 8 (TURN support) is complete: the server issues TURN credentials (ADR 0017),
 browsers relay through a test Coturn, the SDK closes a session that never connects (ADR 0018), and
-`docs/turn-operations.md` documents operating Coturn; see the roadmap's "After the MVP". The workspace uses the toolchain in
+`docs/turn-operations.md` documents operating Coturn; see the roadmap's "After the MVP". Phase 9
+has started: `adapters/storage/postgresql` implements the storage contract (ADR 0020), not yet
+wired into the server. The workspace uses the toolchain in
 `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
 `jose`, `ws`, Vitest, Playwright), extended for Phase 9 by `docs/adr/0019-persistence-dependencies.md`
 (`pg`, `redis`, Valkey). Do not add a tool outside those ADRs without a new ADR.
@@ -56,12 +58,15 @@ pnpm test             # Vitest across all packages
 pnpm test:coverage    # Vitest with V8 coverage and the floors below
 pnpm test:browser     # Playwright, Chromium and Firefox, against examples/browser-demo
 BLINDSIGNAL_TEST_TURN=1 pnpm test:browser  # also the relay tests, with the compose.yaml Coturn (Docker)
+BLINDSIGNAL_TEST_POSTGRES_URL=<url> pnpm test  # also the PostgreSQL adapter, with the compose.yaml PostgreSQL
+BLINDSIGNAL_DATABASE_URL=<url> pnpm --filter @blindsignal/storage-postgresql migrate  # apply migrations
 pnpm format:check     # Prettier (pnpm format to fix)
 pnpm build            # tsc in every package
 ```
 
 CI (`.github/workflows/ci.yml`) runs format check, lint, typecheck, and tests with coverage on
-every pull request, and the browser tests in a job of their own.
+every pull request, and the browser tests and the adapters against their services in jobs of
+their own.
 
 ## Decisions that block implementation
 

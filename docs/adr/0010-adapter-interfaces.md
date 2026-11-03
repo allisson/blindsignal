@@ -30,7 +30,8 @@ interface StorageAdapter {
 - **Device records expire** after a configurable inactivity period since the last authentication,
   30 days by default. The device-count quota counts only live records, so a user minting new
   `device_id`s cannot exhaust it permanently. Revocations stay in the registry file (ADR 0005),
-  never in device records, so expiry never forgets one.
+  never in device records, so expiry never forgets one. `deleteExpired` deletes every expired
+  record, for the schedule of ADR 0012 (ADR 0020).
 
 ## CoordinationAdapter
 

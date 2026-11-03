@@ -1,0 +1,19 @@
+{
+  "name": "@blindsignal/storage-postgresql",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "migrate": "node src/migrate-command.ts"
+  },
+  "dependencies": {
+    "@blindsignal/core": "workspace:*",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
+  }
+}
