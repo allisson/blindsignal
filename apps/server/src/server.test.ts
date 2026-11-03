@@ -16,7 +16,7 @@ import {
 } from '@blindsignal/storage-memory';
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
-import { BlockList } from 'node:net';
+import { BlockList, connect, createServer, type Socket } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { loadConfig, type PreAuthentication } from './config.ts';
@@ -453,6 +453,7 @@ describe('SignalingServer with the SDK', () => {
     const client = new BlindSignalClient({
       serverUrl: url,
       accessTokenProvider: () => mintDevToken({ app_id: 'notes', sub, device_id, namespaces }),
+      backoff: { baseMs: 20, maxMs: 100 },
       createPeerConnection: (configuration) => {
         const pc = new FakePeerConnection(configuration);
         peers.push(pc);
@@ -614,15 +615,137 @@ describe('SignalingServer with the SDK', () => {
       await Promise.all(opened.splice(0).map((redis) => redis.end()));
     });
 
-    async function instance(prefix: string) {
+    async function instance(prefix: string, options: Options = {}) {
       const redis = await openRedisCoordination({
         url: redisUrl as string,
         prefix,
         onError: () => {},
       });
       opened.push(redis);
-      return start({ coordination: redis.coordination });
+      return { ...(await start({ ...options, coordination: redis.coordination })), redis };
     }
+
+    /**
+     * Stands for a load balancer: the client keeps one URL, and each connection reaches whichever
+     * instance `target` names when it opens. `cut` drops every connection, as a failing network or
+     * a stopped instance would.
+     */
+    async function balancer(first: string) {
+      let target = new URL(first);
+      const sockets = new Set<Socket>();
+      const proxy = createServer((downstream) => {
+        const upstream = connect(Number(target.port), target.hostname);
+        for (const socket of [downstream, upstream]) {
+          sockets.add(socket);
+          socket.on('close', () => sockets.delete(socket));
+          socket.on('error', () => {});
+        }
+        downstream.pipe(upstream).pipe(downstream);
+        downstream.on('close', () => upstream.destroy());
+        upstream.on('close', () => downstream.destroy());
+      });
+      await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve));
+      const { port } = proxy.address() as { port: number };
+      const cut = () => sockets.forEach((socket) => socket.destroy());
+      return {
+        url: `ws://127.0.0.1:${port}/`,
+        route: (url: string) => (target = new URL(url)),
+        cut,
+        close: () => {
+          const closed = new Promise<void>((resolve) => proxy.close(() => resolve()));
+          cut();
+          return closed;
+        },
+      };
+    }
+
+    /** Alice on `one` through the balancer, Bob on `two`, in an established session. */
+    async function establish(one: { url: string }, two: { url: string }) {
+      const lb = await balancer(one.url);
+      const alice = sdk(lb.url, 'alice', 'laptop');
+      const bob = sdk(two.url, 'bob', 'phone');
+      const requests: SessionRequest[] = [];
+      bob.client.on('sessionRequest', (r) => requests.push(r));
+      for (const { client } of [alice, bob]) {
+        await client.connect();
+        await client.join('notes:a');
+      }
+      const peer = { namespace: 'notes:a', userId: 'bob', deviceId: 'phone' };
+      await vi.waitFor(() => expect(alice.presence).toEqual([{ ...peer, present: true }]));
+      const session = await alice.client.createSession(peer);
+      const request = await vi.waitFor(() => {
+        expect(requests).toHaveLength(1);
+        return requests[0]!;
+      });
+      const accepted = new Promise((resolve) => session.on('accepted', resolve));
+      const target = await request.accept();
+      await accepted;
+      return { lb, alice, bob, session, target, requests };
+    }
+
+    /** Alice, back on `two`, sees Bob again and opens a new session with him. */
+    async function recovered({ alice, requests }: Awaited<ReturnType<typeof establish>>) {
+      const peer = { namespace: 'notes:a', userId: 'bob', deviceId: 'phone' };
+      await vi.waitFor(() => expect(alice.client.state).toBe('connected'));
+      expect(await alice.client.discover('notes:a')).toEqual([
+        { userId: 'bob', deviceId: 'phone' },
+      ]);
+      const again = await alice.client.createSession(peer);
+      const request = await vi.waitFor(() => {
+        expect(requests).toHaveLength(2);
+        return requests[1]!;
+      });
+      const accepted = new Promise((resolve) => again.on('accepted', resolve));
+      await request.accept();
+      await accepted;
+    }
+
+    it('recovers a client whose instance drains onto another instance', async () => {
+      const prefix = `test:${randomUUID()}:`;
+      const [one, two] = await Promise.all([instance(prefix), instance(prefix)]);
+      const established = await establish(one, two);
+      const { lb, alice, bob, session, target } = established;
+      const ended = new Promise((resolve) => session.on('ended', resolve));
+      const targetEnded = new Promise((resolve) => target.on('ended', resolve));
+
+      lb.route(two.url);
+      await one.server.drain();
+      await expect(targetEnded).resolves.toEqual({ reason: 'peer_disconnected' });
+      await ended;
+      await recovered(established);
+      const alicePresent = { namespace: 'notes:a', userId: 'alice', deviceId: 'laptop' };
+      await vi.waitFor(() =>
+        expect(bob.presence).toEqual([
+          { ...alicePresent, present: false },
+          { ...alicePresent, present: true },
+        ]),
+      );
+      expect(alice.client.state).toBe('connected');
+      await lb.close();
+    });
+
+    it('recovers a client whose instance fails without releasing anything', async () => {
+      const prefix = `test:${randomUUID()}:`;
+      // Bob's instance checks his session's peer on every heartbeat (ADR 0026).
+      const [one, two] = await Promise.all([
+        instance(prefix),
+        instance(prefix, { heartbeatIntervalMs: 100 }),
+      ]);
+      const established = await establish(one, two);
+      const { lb, session, target } = established;
+      const ended = new Promise((resolve) => session.on('ended', resolve));
+      const targetEnded = new Promise((resolve) => target.on('ended', resolve));
+
+      // The failed instance loses Redis first, so it cannot release its claim, presence, or sessions.
+      opened.splice(opened.indexOf(one.redis), 1);
+      await one.redis.end();
+      lb.route(two.url);
+      lb.cut();
+      await ended;
+      await recovered(established);
+      await expect(targetEnded).resolves.toEqual({ reason: 'peer_disconnected' });
+      await lb.close();
+    });
 
     it('discovers, connects, signals, and closes devices on different instances', async () => {
       const prefix = `test:${randomUUID()}:`;

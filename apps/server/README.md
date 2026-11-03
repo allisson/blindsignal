@@ -120,7 +120,10 @@ deployment behind a load balancer: devices on different instances discover each 
 sessions, and signal (ADR 0023). Redis runs standalone or with Sentinel, not as a Cluster
 (ADR 0022). With Redis down, operations fail with `server_error` and clients reconnect with
 backoff. A `SIGHUP` to one instance reaches the others through Redis, or at their next sync when
-Redis was down (ADR 0024); signal one instance, not every one.
+Redis was down (ADR 0024); signal one instance, not every one. When an instance fails, its
+clients reconnect on the others, and their peers' sessions end within one heartbeat; set
+`BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS` so a session whose peer never returns ends too
+(ADR 0026).
 
 ## Signals
 

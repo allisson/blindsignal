@@ -58,7 +58,7 @@ reloads between instances.
 
 - A session whose requester's instance stops ends on the target's side at its negotiation timeout
   or maximum duration; without a maximum duration, an active one lasts until the target's
-  connection closes.
+  connection closes. ADR 0026 ends it sooner once the requester's device reconnects.
 - Sessions are counted only by the requester's instance, so the per-instance gauges sum to the
   deployment's total.
 - A registry reload reaches the other instances through ADR 0024.

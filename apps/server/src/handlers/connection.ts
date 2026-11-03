@@ -223,7 +223,10 @@ export class Connection {
     this.#closed = true;
     clearTimeout(this.#expiryTimer);
     clearTimeout(this.#deadline);
-    return (this.#queue = this.#queue.then(() => this.#release()));
+    // What a failure leaves expires with its lease, or the next claim replaces it (ADR 0026).
+    return (this.#queue = this.#queue
+      .then(() => this.#release())
+      .catch((error: unknown) => this.#failed(error)));
   }
 
   /**
@@ -247,7 +250,8 @@ export class Connection {
   /**
    * The transport saw the client alive: renews the presence leases (docs/protocol.md §8) and the
    * quota slots of the connection and its sessions (ADR 0022). A slot that expired meanwhile and
-   * was taken is not renewed: the quota counts the newer holder.
+   * was taken is not renewed: the quota counts the newer holder. A session whose peer's connection
+   * no longer holds its device's claim ends, as when the peer's instance fails (ADR 0026).
    */
   heartbeat(): Promise<void> {
     return this.#enqueue(async () => {
@@ -255,6 +259,11 @@ export class Connection {
       for (const namespace of this.#joined.keys()) await this.#acquirePresence(namespace);
       await this.#acquireConnectionSlot();
       for (const session of this.#sessions.all()) {
+        const peer = this.#requested(session) ? session.target : session.requester;
+        if ((await this.#deps.coordination.connectionOf(peer.device)) !== peer.connectionId) {
+          await this.#terminate(session, 'peer_disconnected', true);
+          continue;
+        }
         const slots = sessionSlots(
           session.requester.device,
           session.target.device,

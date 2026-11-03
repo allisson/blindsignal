@@ -717,6 +717,25 @@ describe('Connection', () => {
       expect(JSON.stringify(logs)).not.toContain('10.0.0.5');
     });
 
+    it('logs a release that coordination fails, instead of rejecting (ADR 0026)', async () => {
+      const { connect, coordination, logs } = await setup();
+      const client = connect();
+      await client.authenticate();
+      const failure = Object.assign(new Error('The client is closed'), {
+        name: 'ClientClosedError',
+      });
+      vi.spyOn(coordination, 'releaseDeviceConnection').mockRejectedValue(failure);
+      await expect(client.connection.closed()).resolves.toBeUndefined();
+      expect(logs).toContainEqual(
+        expect.objectContaining({
+          level: 'error',
+          event: 'connection.failed',
+          reason: 'ClientClosedError',
+        }),
+      );
+      expect(client.closes).toEqual([]);
+    });
+
     it("takes the application's device quota over the server's", async () => {
       const { connect } = await setup([{ ...devApplication('notes'), quotas: { devices: 1 } }]);
       await connect().authenticate();
@@ -1365,6 +1384,18 @@ describe('Connection', () => {
         expect(carol.last()?.type).toBe('session.created');
       });
 
+      it('frees the slots of a session a heartbeat ends for a lost peer (ADR 0026)', async () => {
+        const { connect, alice, coordination } = await active(quotas({ sessions: 1 }));
+        const carol = await member(connect, carolClaims);
+        await coordination.claimDeviceConnection(
+          { appId: 'notes', userId: 'u2', deviceId: 'd2' },
+          'elsewhere',
+        );
+        await alice.connection.heartbeat();
+        await carol.request('session.create', to('u1', 'd1'));
+        expect(carol.last()?.type).toBe('session.created');
+      });
+
       it('frees the slots of the sessions of a connection that closes', async () => {
         const { connect, alice, bob } = await pair(quotas({ sessions: 1 }));
         const carol = await member(connect, carolClaims);
@@ -1687,6 +1718,37 @@ describe('Connection', () => {
       await connect().authenticate({ namespaces: ['notes:a'] });
       await settle();
       expect(sessionEvents(bob)).toEqual([terminated(sessionId, 'peer_disconnected')]);
+    });
+
+    it.each(['alice', 'bob'] as const)(
+      "ends %s's session on a heartbeat once the peer's claim is gone or taken (ADR 0026)",
+      async (who) => {
+        const context = await active();
+        const [self, peer] =
+          who === 'alice' ? (['alice', 'bob'] as const) : (['bob', 'alice'] as const);
+        const claims = peer === 'alice' ? d1 : bobClaims;
+        await context[self].connection.heartbeat();
+        expect(sessionEvents(context[self])).toEqual([]);
+
+        // Stands for the peer's instance failing, and the device reconnecting on another one.
+        const device = { appId: 'notes', userId: claims.sub, deviceId: claims.device_id };
+        await context.coordination.claimDeviceConnection(device, 'elsewhere');
+        await context[self].connection.heartbeat();
+        expect(sessionEvents(context[self])).toEqual([
+          terminated(context.sessionId, 'peer_disconnected'),
+        ]);
+        expect(context[self].closes).toEqual([]);
+      },
+    );
+
+    it("ends a session on a heartbeat once the peer's claim is released", async () => {
+      const { alice, bob, coordination, sessionId } = await active();
+      await coordination.releaseDeviceConnection(
+        { appId: 'notes', userId: 'u2', deviceId: bobClaims.device_id },
+        bob.connection.id,
+      );
+      await alice.connection.heartbeat();
+      expect(sessionEvents(alice)).toEqual([terminated(sessionId, 'peer_disconnected')]);
     });
 
     it.each(['alice', 'bob'] as const)(
