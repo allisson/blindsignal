@@ -31,12 +31,13 @@ import {
   type Registry,
 } from './domain/registry.ts';
 import type { AllowedOrigins } from './domain/origin.ts';
-import { GOING_AWAY, SignalingServer } from './server.ts';
+import { connectionLifetime, GOING_AWAY, SignalingServer } from './server.ts';
 import { Metrics } from './telemetry.ts';
 
 interface Options {
   readonly allowedOrigins?: AllowedOrigins;
   readonly heartbeatIntervalMs?: number;
+  readonly maxConnectionMs?: number;
   readonly presenceLeaseMs?: number;
   readonly maxMessageBytes?: number;
   readonly trustedProxies?: BlockList;
@@ -73,6 +74,7 @@ async function start(options: Options = {}) {
       header: 'x-forwarded-for',
     },
     heartbeatIntervalMs: options.heartbeatIntervalMs ?? 60_000,
+    maxConnectionMs: options.maxConnectionMs,
     preAuthentication,
     coordination,
     connection: {
@@ -441,6 +443,55 @@ describe('SignalingServer', () => {
   });
 });
 
+describe('connectionLifetime', () => {
+  it('spreads closures between 90% and 100% of the maximum lifetime (ADR 0029)', () => {
+    expect(connectionLifetime(1_000, () => 0)).toBe(900);
+    expect(connectionLifetime(1_000, () => 0.5)).toBe(950);
+    expect(connectionLifetime(1_000, () => 1)).toBe(1_000);
+  });
+});
+
+describe('SignalingServer with a maximum connection lifetime', () => {
+  it('closes a connection with 1001 within its lifetime and releases its presence', async () => {
+    const { client, coordination, logs } = await start({ maxConnectionMs: 300 });
+    const opened = Date.now();
+    const alice = await client();
+    await alice.authenticate({ sub: 'u1', device_id: 'd1', namespaces: ['notes:a'] });
+    alice.send('namespace.join', { namespace: 'notes:a' });
+    await alice.next('ack');
+    expect(await alice.closed).toBe(GOING_AWAY);
+    const elapsed = Date.now() - opened;
+    expect(elapsed).toBeGreaterThanOrEqual(260);
+    await vi.waitFor(async () => expect(await coordination.listPresence('notes:a')).toEqual([]));
+    expect(logs).toContainEqual(
+      expect.objectContaining({ event: 'connection.closed', code: 1001 }),
+    );
+  });
+
+  it('stops the lifetime timer of a connection that closes first', async () => {
+    const { client, server } = await start({ maxConnectionMs: 600_000 });
+    const timers = () => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
+    const before = timers();
+    const alice = await client();
+    expect(timers()).toBeGreaterThan(before);
+    alice.ws.close();
+    await alice.closed;
+    await vi.waitFor(() => expect(server.connections).toBe(0));
+    await vi.waitFor(() => expect(timers()).toBe(before));
+  });
+
+  it('keeps a connection open with no maximum lifetime', async () => {
+    const { client } = await start({ maxConnectionMs: 0 });
+    const alice = await client();
+    const closed = await Promise.race([
+      alice.closed,
+      new Promise<'open'>((resolve) => setTimeout(() => resolve('open'), 100)),
+    ]);
+    expect(closed).toBe('open');
+    alice.ws.close();
+  });
+});
+
 describe('SignalingServer with the SDK', () => {
   const sdks: BlindSignalClient[] = [];
 
@@ -487,6 +538,27 @@ describe('SignalingServer with the SDK', () => {
       expect(alice.presence).toEqual([bobPresent, { ...bobPresent, present: false }]),
     );
     expect(await alice.client.discover('notes:a')).toEqual([]);
+  });
+
+  it('reconnects and joins again once the connection reaches its maximum lifetime', async () => {
+    const { url, logs } = await start({ maxConnectionMs: 300 });
+    const alice = sdk(url, 'alice', 'laptop');
+    const bob = sdk(url, 'bob', 'phone');
+    await alice.client.connect();
+    await alice.client.join('notes:a');
+    await bob.client.connect();
+    await bob.client.join('notes:a');
+    await vi.waitFor(() => {
+      expect(logs.filter((l) => l.event === 'connection.closed' && l.code === 1001)).not.toEqual(
+        [],
+      );
+      expect(logs.filter((l) => l.event === 'connection.authenticated').length).toBeGreaterThan(2);
+    });
+    await vi.waitFor(async () =>
+      expect(await alice.client.discover('notes:a')).toEqual([
+        { userId: 'bob', deviceId: 'phone' },
+      ]),
+    );
   });
 
   it('rejects an unauthorized join and a discovery outside a joined namespace', async () => {

@@ -13,6 +13,8 @@ export interface SignalingServerOptions {
   /** Which forwarding headers to trust when deriving the client IP for logs (spec §8.1). */
   readonly proxyTrust: ProxyTrust;
   readonly heartbeatIntervalMs: number;
+  /** Closes each connection with 1001 before this lifetime ends; 0 or absent for none (ADR 0029). */
+  readonly maxConnectionMs?: number;
   /** Checked at the upgrade; the authentication deadline is the connection's. */
   readonly preAuthentication: Omit<PreAuthentication, 'authenticationTimeoutMs'>;
   readonly coordination: Pick<CoordinationAdapter, 'consumeRateLimit'>;
@@ -21,6 +23,14 @@ export interface SignalingServerOptions {
 
 /** Close code for a server going away (RFC 6455), sent to every connection on shutdown. */
 export const GOING_AWAY = 1001;
+
+/**
+ * When a connection with a maximum lifetime closes: between 90% and 100% of it, so connections
+ * opened together do not all reconnect together (ADR 0029).
+ */
+export function connectionLifetime(maxMs: number, random: () => number = Math.random): number {
+  return 0.9 * maxMs + 0.1 * maxMs * random();
+}
 
 /**
  * The WebSocket transport on `node:http` (ADR 0001): the `Origin` check at the upgrade, ping
@@ -190,6 +200,11 @@ export class SignalingServer {
     logger.log('info', 'connection.opened', { connectionId: connection.id, ip });
     this.#connections.add(connection);
     this.#alive.add(ws);
+    const { maxConnectionMs = 0 } = this.#options;
+    const expiry =
+      maxConnectionMs > 0
+        ? setTimeout(() => ws.close(GOING_AWAY), connectionLifetime(maxConnectionMs))
+        : undefined;
     // Protocol errors (oversized frame, invalid UTF-8) close the socket; 'close' releases.
     ws.on('error', () => {});
     // A binary frame is malformed (docs/protocol.md §9): the empty text fails as one.
@@ -201,6 +216,7 @@ export class SignalingServer {
       void connection.heartbeat();
     });
     ws.on('close', (code) => {
+      clearTimeout(expiry);
       this.#connections.delete(connection);
       logger.log('info', 'connection.closed', {
         connectionId: connection.id,
