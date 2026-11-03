@@ -57,6 +57,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_DATABASE_POOL_SIZE` | `10` | Connections in the PostgreSQL pool. |
 | `BLINDSIGNAL_REDIS_URL` | unset | A `redis://` or `rediss://` URL: presence, sessions, quotas, rate limits, and `jti` claims are shared by every instance through Redis or Valkey. Requires `BLINDSIGNAL_DATABASE_URL`. Unset keeps them in memory, for one instance (ADR 0023). |
 | `BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS` | `60` | With `BLINDSIGNAL_REDIS_URL`, how often each instance rereads the stored registry, in case it missed another instance's reload (ADR 0024). |
+| `BLINDSIGNAL_DEPENDENCY_PROBE_TIMEOUT_SECONDS` | `2` | How long a scrape of `/metrics` waits for each dependency's probe before reporting it down (ADR 0028). |
 | `BLINDSIGNAL_MAX_MESSAGE_BYTES` | `65536` | Maximum message size in UTF-8 bytes, at most `65536` (docs/protocol.md §1). |
 | `BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS` | `10` | A connection not authenticated this long after it opened is closed with `1008`. |
 | `BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP` | `20` | Concurrent unauthenticated connections per client IP; more get HTTP `429` at the upgrade. |
@@ -148,6 +149,12 @@ SQLSTATE or name), `devices.expired`, and `devices.sweep_failed` (ADR 0021); coo
 format: messages by type, authentications by result, errors by code, sessions created and
 terminated, registry reloads, connections closed by backpressure, open connections, and sessions
 (counted by the instance of the connection that requested each, ADR 0023).
+
+Each scrape also probes PostgreSQL and Redis, when configured, and reports
+`blindsignal_dependency_up{dependency="postgresql"|"redis"}`: 1 when the probe answered within
+`BLINDSIGNAL_DEPENDENCY_PROBE_TIMEOUT_SECONDS`, 0 otherwise. Alert on it: `/readyz` never depends
+on PostgreSQL or Redis, so an outage keeps every instance in the load balancer (ADR 0028).
+`/healthz` is liveness, and `/readyz` fails only while the server drains.
 The `blindsignal_application_*` series break connections, sessions, messages, sessions created,
 and errors down by application (`app_id`), once a token is verified
 (`docs/adr/0015-application-usage-metrics.md`).

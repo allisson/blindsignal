@@ -469,7 +469,8 @@ Operating TURN is not required to complete the initial local MVP.
 
 - [ ] Finalize production Docker image.
 - [ ] Extend the Phase 3 Docker Compose setup for self-hosted deployment.
-- [ ] Implement production health and readiness checks.
+- [x] Implement production health and readiness checks: liveness, readiness, and dependency
+  probes on `/metrics` (ADR 0028).
 - [ ] Configure graceful shutdown.
 - [ ] Define WebSocket connection limits.
 - [ ] Define reconnect behavior for hosting request timeouts.

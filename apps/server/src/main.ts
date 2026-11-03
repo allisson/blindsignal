@@ -21,7 +21,7 @@ import {
 import { sweepDevices } from './domain/retention.ts';
 import { AbuseMonitor } from './domain/abuse.ts';
 import { SignalingServer } from './server.ts';
-import { jsonLogger, Metrics, serveMetrics } from './telemetry.ts';
+import { dependencyProbe, jsonLogger, Metrics, serveMetrics } from './telemetry.ts';
 
 const logger = jsonLogger();
 
@@ -52,6 +52,8 @@ async function main(): Promise<void> {
   const applications = new InMemoryApplicationRepository();
   let storage: StorageAdapter = { applications, devices: new InMemoryDeviceRepository() };
   let closeStorage = () => Promise.resolve();
+  // Probed on every scrape of /metrics, never for readiness (ADR 0028).
+  const dependencies: Record<string, () => Promise<void>> = {};
   if (config.database !== undefined) {
     const postgres = openPostgreSQLStorage({
       ...config.database,
@@ -60,6 +62,7 @@ async function main(): Promise<void> {
     await postgres.checkSchema();
     storage = postgres.storage;
     closeStorage = () => postgres.end();
+    dependencies.postgresql = () => postgres.ping();
   }
   logger.log('info', 'storage.ready', {
     storage: config.database === undefined ? 'memory' : 'postgresql',
@@ -86,6 +89,7 @@ async function main(): Promise<void> {
     });
     coordination = redis.coordination;
     closeCoordination = () => redis.end();
+    dependencies.redis = () => redis.ping();
   }
   logger.log('info', 'coordination.ready', {
     coordination: config.redis === undefined ? 'memory' : 'redis',
@@ -135,7 +139,12 @@ async function main(): Promise<void> {
     () => server.sessionsByApplication(),
   );
   const port = await server.listen(config.port);
-  const admin = await serveMetrics(metrics, config.adminPort, config.adminHost);
+  const probe = dependencyProbe(dependencies, config.dependencyProbeTimeoutMs);
+  const admin = await serveMetrics(
+    { render: async () => metrics.render() + (await probe()) },
+    config.adminPort,
+    config.adminHost,
+  );
   logger.log('info', 'server.listening', { port, adminPort: admin.port });
 
   const stopSweep = sweepDevices(
