@@ -18,7 +18,11 @@ const empty = z.object({});
 const token = z.object({ token: z.string().min(1), proof: z.string().min(1).optional() });
 const namespace = z.object({ namespace: namespaceId });
 const session = z.object({ sessionId });
+const pairing = z.object({ pairingId: sessionId });
 const device = { namespace: namespaceId, userId, deviceId };
+
+// Why a pairing request ended without an answer for this device (ADR 0042).
+export const pairingEndReasons = ['answered', 'timeout', 'requester_gone'] as const;
 
 export const terminationReasons = [
   'closed_by_peer',
@@ -59,6 +63,28 @@ export const messages = {
   'session.terminated': {
     direction: 'server',
     payload: z.object({ sessionId, reason: z.enum(terminationReasons) }),
+  },
+  'pairing.create': { direction: 'client', payload: namespace, reply: 'pairing.created' },
+  'pairing.created': { direction: 'server', payload: pairing },
+  'pairing.request': {
+    direction: 'server',
+    payload: z.object({ pairingId: sessionId, ...device }),
+  },
+  // `approval` is a JWT the approving device's key signs (ADR 0042).
+  'pairing.approve': {
+    direction: 'client',
+    payload: z.object({ pairingId: sessionId, approval: z.string().min(1) }),
+    reply: 'ack',
+  },
+  'pairing.reject': { direction: 'client', payload: pairing, reply: 'ack' },
+  'pairing.approved': {
+    direction: 'server',
+    payload: z.object({ pairingId: sessionId, approval: z.string().min(1) }),
+  },
+  'pairing.rejected': { direction: 'server', payload: pairing },
+  'pairing.ended': {
+    direction: 'server',
+    payload: z.object({ pairingId: sessionId, reason: z.enum(pairingEndReasons) }),
   },
   'rtc.offer': { direction: 'relay', payload: z.object({ sessionId, sdp: z.string() }) },
   'rtc.answer': { direction: 'relay', payload: z.object({ sessionId, sdp: z.string() }) },

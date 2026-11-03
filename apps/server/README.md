@@ -96,12 +96,13 @@ them (spec §8.2). A rate limit is `rate,burst`: tokens added per second, and th
 | `BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS` | `0` (no limit) | `quotas.sessionDurationSeconds` |
 | `BLINDSIGNAL_RATE_LIMIT_DISCOVERY` | `2,10` | `rateLimits.discovery` |
 | `BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE` | `2,10` | `rateLimits.session_create` |
+| `BLINDSIGNAL_RATE_LIMIT_PAIRING` | `0.1,3` | `rateLimits.pairing` |
 | `BLINDSIGNAL_RATE_LIMIT_SIGNALING` | `50,100` | `rateLimits.signaling` |
 | `BLINDSIGNAL_RATE_LIMIT_RTC` | `10,30` | `rateLimits.rtc` |
 | `BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE` | `20,50` | `rateLimits.rtc_ice_candidate` |
 
-Every quota and rate limit is enforced. Signaling, discovery, and session creation are counted per
-connection, and `rtc.*` per session; every frame takes a signaling token, malformed ones and those
+Every quota and rate limit is enforced. Signaling, discovery, session creation, and
+`pairing.create` are counted per connection, and `rtc.*` per session; every frame takes a signaling token, malformed ones and those
 sent before authentication too, under the server default until the application is known. A
 message above a limit gets `rate_limited` with `retryAfterMs` and is dropped; the connection stays
 open. A connection reads its application's limits at `auth.authenticate` and each `auth.refresh`,
@@ -166,7 +167,7 @@ With `OTEL_EXPORTER_OTLP_ENDPOINT` set they are also pushed over OTLP/HTTP, with
 `blindsignal` and a `service.instance.id` per process; a failed push logs
 `telemetry.export_failed`, and on `SIGTERM` the server pushes once more within the shutdown's
 deadline. The series: messages by type, authentications by result, errors by code, sessions created and
-terminated, registry reloads, connections closed by backpressure, open connections, and sessions
+terminated, pairings by result, registry reloads, connections closed by backpressure, open connections, and sessions
 (counted by the instance of the connection that requested each, ADR 0023), and device records
 deleted by the retention sweep (`blindsignal_devices_expired_total`).
 
@@ -210,6 +211,7 @@ Spec §18's initial metrics, and where each one is:
 | Rate-limit events, quota consumption | `blindsignal_application_errors_total{code="rate_limited"\|"quota_exceeded"}`, `blindsignal_abuse_alerts_total` |
 | Presence registration and expiration | `blindsignal_messages_total{type="namespace.join"\|"namespace.leave"}`; a lease that expires is not counted, and `blindsignal_devices_expired_total` counts device records |
 | Session creation and failure | `blindsignal_sessions_created_total`, `blindsignal_sessions_terminated_total{reason}`, and the time to acceptance in `blindsignal_session_acceptance_seconds` |
+| Pairing | `blindsignal_pairings_total{result}`: `approved`, `rejected`, or `timeout`, counted by the requester's instance (ADR 0042) |
 | Signaling message counts and errors | `blindsignal_messages_total{type}`, `blindsignal_errors_total{code}` |
 | Reconnection frequency | `blindsignal_authentications_total`, against `blindsignal_connections` |
 | WebRTC negotiation success/failure, direct versus relay, ICE connection duration | Not here: they happen between the browsers. The SDK reports each session's connection type to the application (`packages/sdk`); relay traffic is on the TURN server |

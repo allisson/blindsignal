@@ -186,7 +186,12 @@ async function deviceKey() {
       .sign(privateKey);
     return { token, proof };
   };
-  return { cnf, payload };
+  /** Signs a pairing approval with the key (ADR 0042); `header` overrides the protected header. */
+  const approve = (claims: object, header: object = {}) =>
+    new SignJWT({ exp: Math.floor(Date.now() / 1000) + 300, ...claims })
+      .setProtectedHeader({ alg: 'ES256', typ: 'blindsignal-pairing+jwt', jwk, ...header })
+      .sign(privateKey);
+  return { cnf, payload, approve };
 }
 
 describe('Connection', () => {
@@ -2346,5 +2351,312 @@ describe('Connection', () => {
     expect(coordination.subscribedTopics).toBe(0);
     const device = { appId: 'notes', userId: 'u1', deviceId: 'd1' };
     expect(await coordination.claimDeviceConnection(device, 'probe')).toBeUndefined();
+  });
+});
+
+describe('pairing (ADR 0042)', () => {
+  const NS = 'notes:ws';
+  const settle = () => vi.advanceTimersByTimeAsync(0);
+  type Key = Awaited<ReturnType<typeof deviceKey>>;
+  type Client = ReturnType<Connect>;
+
+  /** A device of user u1 authenticated with a token bound to `key`, joined where it may be. */
+  async function bound(connect: Connect, key: Key | undefined, claims: object) {
+    const client = connect();
+    client.connection.challenge();
+    if (key === undefined) await client.authenticate(claims);
+    else await client.request('auth.authenticate', await key.payload(client, claims));
+    for (const namespace of (claims as { namespaces?: string[] }).namespaces ?? []) {
+      await client.request('namespace.join', { namespace });
+    }
+    return client;
+  }
+
+  const of = <T extends ServerMessage['type']>(client: Client, type: T) =>
+    client.sent.filter((message): message is ServerMessage & { type: T } => message.type === type);
+
+  /** The new device d2, the approver d1 and, with `others`, d3, all of user u1. */
+  async function devices(entries?: object[], approverClaims: object = {}) {
+    const context = await setup(entries);
+    const keys = { d1: await deviceKey(), d2: await deviceKey(), d3: await deviceKey() };
+    const approver = await bound(context.connect, keys.d1, { namespaces: [NS], ...approverClaims });
+    const other = await bound(context.connect, keys.d3, { device_id: 'd3', namespaces: [NS] });
+    const requester = await bound(context.connect, keys.d2, { device_id: 'd2', pairing: [NS] });
+    return { ...context, keys, approver, other, requester };
+  }
+
+  async function request(requester: Client) {
+    await requester.request('pairing.create', { namespace: NS });
+    await settle();
+    const created = requester.last();
+    if (created?.type !== 'pairing.created') throw new Error(`no pairing: ${created?.type}`);
+    return created.payload.pairingId;
+  }
+
+  /** The claims an approval of `pairingId` for d2 carries. */
+  const approvalOf = (pairingId: string, keys: { d2: Key }) => ({
+    pairing_id: pairingId,
+    namespace: NS,
+    sub: 'u1',
+    device_id: 'd2',
+    jkt: keys.d2.cnf.jkt,
+  });
+
+  it("asks the user's devices, and relays the first approval to the requester", async () => {
+    const { approver, other, requester, keys, metrics, logs } = await devices();
+    const pairingId = await request(requester);
+    const asked = { pairingId, namespace: NS, userId: 'u1', deviceId: 'd2' };
+    for (const client of [approver, other]) {
+      expect(of(client, 'pairing.request').map((m) => m.payload)).toEqual([asked]);
+    }
+    const approval = await keys.d1.approve(approvalOf(pairingId, keys));
+    await approver.request('pairing.approve', { pairingId, approval });
+    await settle();
+    expect(approver.last()?.type).toBe('ack');
+    expect(requester.last()).toEqual({
+      version: 1,
+      type: 'pairing.approved',
+      payload: { pairingId, approval },
+    });
+    expect(of(other, 'pairing.ended').map((m) => m.payload)).toEqual([
+      { pairingId, reason: 'answered' },
+    ]);
+    // Answered already: a second answer finds nothing.
+    await other.request('pairing.reject', { pairingId });
+    expect(other.errors()).toEqual(['pairing_unavailable']);
+    expect(await metrics.render()).toContain('blindsignal_pairings_total{result="approved"} 1\n');
+    await vi.advanceTimersByTimeAsync(NEGOTIATION_MS);
+    expect(of(approver, 'pairing.ended')).toEqual([]);
+    expect(of(requester, 'pairing.ended')).toEqual([]);
+    const audit = logs.filter((log) =>
+      String((log as { event: string }).event).startsWith('pairing.'),
+    );
+    expect(audit).toEqual([
+      { level: 'info', event: 'pairing.requested', appId: 'notes', pairingId },
+      { level: 'info', event: 'pairing.approved', appId: 'notes', pairingId },
+    ]);
+  });
+
+  it('relays only the first of two answers that cross', async () => {
+    const { approver, other, requester, keys } = await devices();
+    const pairingId = await request(requester);
+    const approval = await keys.d1.approve(approvalOf(pairingId, keys));
+    // Both answers leave before either reaches the requester.
+    await Promise.all([
+      approver.request('pairing.approve', { pairingId, approval }),
+      other.request('pairing.reject', { pairingId }),
+    ]);
+    await settle();
+    expect([...approver.errors(), ...other.errors(), ...requester.errors()]).toEqual([]);
+    // The rejection, checked with no signature, arrives first.
+    expect(of(requester, 'pairing.rejected')).toHaveLength(1);
+    expect(of(requester, 'pairing.approved')).toEqual([]);
+  });
+
+  it('relays a rejection, and ends the request for the other devices', async () => {
+    const { approver, other, requester, metrics } = await devices(undefined, {
+      permissions: { [NS]: ['pairing.approve'] },
+    });
+    const pairingId = await request(requester);
+    expect(of(approver, 'pairing.request')).toHaveLength(1);
+    await other.request('pairing.reject', { pairingId });
+    await settle();
+    expect(requester.last()).toEqual({
+      version: 1,
+      type: 'pairing.rejected',
+      payload: { pairingId },
+    });
+    expect(of(approver, 'pairing.ended').map((m) => m.payload.reason)).toEqual(['answered']);
+    expect(await metrics.render()).toContain('blindsignal_pairings_total{result="rejected"} 1\n');
+  });
+
+  it.each([
+    ['another type', {}, { typ: 'blindsignal-pop+jwt' }],
+    ['another pairing', { pairing_id: '0b6c1a52-6f0c-4c1e-9f3a-2d7e8c4b5a61' }, {}],
+    ['another namespace', { namespace: 'notes:other' }, {}],
+    ['another user', { sub: 'u2' }, {}],
+    ['another device', { device_id: 'd9' }, {}],
+    ['another key to bind', { jkt: 'not-the-requester-key' }, {}],
+  ])('refuses an approval naming %s, and keeps the request', async (_, claims, header) => {
+    const { approver, requester, keys } = await devices();
+    const pairingId = await request(requester);
+    const wrong = await keys.d1.approve({ ...approvalOf(pairingId, keys), ...claims }, header);
+    await approver.request('pairing.approve', { pairingId, approval: wrong });
+    await settle();
+    expect(approver.errors()).toEqual(['invalid_message']);
+    expect(of(requester, 'pairing.approved')).toEqual([]);
+    const approval = await keys.d1.approve(approvalOf(pairingId, keys));
+    await approver.request('pairing.approve', { pairingId, approval });
+    await settle();
+    expect(of(requester, 'pairing.approved')).toHaveLength(1);
+  });
+
+  it('refuses an approval signed by another key or algorithm, expired, or without exp', async () => {
+    const { approver, requester, keys } = await devices();
+    const pairingId = await request(requester);
+    const claims = approvalOf(pairingId, keys);
+    const past = Math.floor(Date.now() / 1000) - 120;
+    const symmetric = await new SignJWT(claims)
+      .setProtectedHeader({ alg: 'HS256', typ: 'blindsignal-pairing+jwt' })
+      .setExpirationTime('5m')
+      .sign(new Uint8Array(32));
+    for (const approval of [
+      await keys.d3.approve(claims),
+      await keys.d1.approve({ ...claims, exp: past }),
+      await keys.d1.approve({ ...claims, exp: undefined }),
+      symmetric,
+      'not-a-jwt',
+    ]) {
+      await approver.request('pairing.approve', { pairingId, approval });
+    }
+    expect(approver.errors()).toEqual(Array(5).fill('invalid_message'));
+  });
+
+  it.each([
+    ['no pairing claim', {}],
+    ['a pairing claim for another namespace', { pairing: ['notes:other'] }],
+  ])('refuses pairing.create with %s', async (_, claims) => {
+    const context = await setup();
+    await bound(context.connect, await deviceKey(), { namespaces: [NS] });
+    const requester = await bound(context.connect, await deviceKey(), {
+      device_id: 'd2',
+      ...claims,
+    });
+    await requester.request('pairing.create', { namespace: NS });
+    expect(requester.errors()).toEqual(['not_authorized']);
+  });
+
+  it('refuses pairing.create from a device whose token is not bound to a key', async () => {
+    const context = await setup();
+    await bound(context.connect, await deviceKey(), { namespaces: [NS] });
+    const requester = await bound(context.connect, undefined, { device_id: 'd2', pairing: [NS] });
+    await requester.request('pairing.create', { namespace: NS });
+    expect(requester.errors()).toEqual(['not_authorized']);
+  });
+
+  it("answers peer_unavailable when none of the user's other devices is present", async () => {
+    const context = await setup();
+    await bound(context.connect, await deviceKey(), { sub: 'u2', namespaces: [NS] });
+    const requester = await bound(context.connect, await deviceKey(), {
+      device_id: 'd2',
+      namespaces: [NS],
+      pairing: [NS],
+    });
+    await requester.request('pairing.create', { namespace: NS });
+    expect(requester.errors()).toEqual(['peer_unavailable']);
+  });
+
+  it('reaches no device without pairing.approve or a key, and times out', async () => {
+    const context = await setup();
+    const keys = [await deviceKey(), await deviceKey()];
+    const unpermitted = await bound(context.connect, keys[0], {
+      namespaces: [NS],
+      permissions: { [NS]: ['session.create', 'session.accept'] },
+    });
+    const unbound = await bound(context.connect, undefined, { device_id: 'd3', namespaces: [NS] });
+    const requester = await bound(context.connect, keys[1], { device_id: 'd2', pairing: [NS] });
+    const pairingId = await request(requester);
+    for (const client of [unpermitted, unbound]) expect(of(client, 'pairing.request')).toEqual([]);
+    await vi.advanceTimersByTimeAsync(NEGOTIATION_MS - 1);
+    expect(of(requester, 'pairing.ended')).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(requester.last()).toEqual({
+      version: 1,
+      type: 'pairing.ended',
+      payload: { pairingId, reason: 'timeout' },
+    });
+    for (const client of [unpermitted, unbound]) expect(of(client, 'pairing.ended')).toEqual([]);
+    expect(await context.metrics.render()).toContain(
+      'blindsignal_pairings_total{result="timeout"} 1\n',
+    );
+    expect(context.logs).toContainEqual({
+      level: 'info',
+      event: 'pairing.expired',
+      appId: 'notes',
+      pairingId,
+    });
+  });
+
+  it('tells the asked devices once when the request times out, and refuses a late answer', async () => {
+    const { approver, other, requester } = await devices();
+    const pairingId = await request(requester);
+    await vi.advanceTimersByTimeAsync(NEGOTIATION_MS);
+    for (const client of [approver, other, requester]) {
+      expect(of(client, 'pairing.ended').map((m) => m.payload)).toEqual([
+        { pairingId, reason: 'timeout' },
+      ]);
+    }
+    await approver.request('pairing.reject', { pairingId });
+    expect(approver.errors()).toEqual(['pairing_unavailable']);
+    expect(of(requester, 'pairing.rejected')).toEqual([]);
+  });
+
+  it("ends an asked device's request on its own when the requester's timeout never comes", async () => {
+    const { approver, requester, coordination } = await devices();
+    const pairingId = await request(requester);
+    // The requester's instance is gone: its events no longer arrive.
+    vi.spyOn(coordination, 'publish').mockResolvedValue();
+    await vi.advanceTimersByTimeAsync(NEGOTIATION_MS);
+    expect(of(approver, 'pairing.ended').map((m) => m.payload)).toEqual([
+      { pairingId, reason: 'timeout' },
+    ]);
+  });
+
+  it('ends the request for the asked devices when the requester leaves', async () => {
+    const { approver, other, requester } = await devices();
+    const pairingId = await request(requester);
+    await requester.connection.closed();
+    await settle();
+    for (const client of [approver, other]) {
+      expect(of(client, 'pairing.ended').map((m) => m.payload)).toEqual([
+        { pairingId, reason: 'requester_gone' },
+      ]);
+    }
+    await vi.advanceTimersByTimeAsync(NEGOTIATION_MS);
+    expect(of(approver, 'pairing.ended')).toHaveLength(1);
+  });
+
+  it('refuses an unknown pairing, and an approval after a refresh withdrew the permission', async () => {
+    const { approver, requester, keys } = await devices();
+    await approver.request('pairing.approve', {
+      pairingId: '0b6c1a52-6f0c-4c1e-9f3a-2d7e8c4b5a61',
+      approval: 'x',
+    });
+    expect(approver.errors()).toEqual(['pairing_unavailable']);
+    const pairingId = await request(requester);
+    await approver.request(
+      'auth.refresh',
+      await keys.d1.payload(approver, {
+        namespaces: [NS],
+        permissions: { [NS]: ['session.create'] },
+      }),
+    );
+    const approval = await keys.d1.approve(approvalOf(pairingId, keys));
+    await approver.request('pairing.approve', { pairingId, approval });
+    expect(approver.errors()).toEqual(['pairing_unavailable', 'not_authorized']);
+    // A rejection needs no permission.
+    await approver.request('pairing.reject', { pairingId });
+    await settle();
+    expect(of(requester, 'pairing.rejected')).toHaveLength(1);
+  });
+
+  it('rate-limits pairing.create per connection', async () => {
+    const { requester } = await devices(limited({ pairing: ONE_PER_SECOND }));
+    await request(requester);
+    await requester.request('pairing.create', { namespace: NS });
+    expect(requester.last()).toEqual(rateLimited('r3'));
+  });
+
+  it.each([
+    ['another application', { pairing: ['chat:ws'] }],
+    [
+      'more namespaces than allowed',
+      { pairing: Array.from({ length: 101 }, (_, i) => `notes:${i}`) },
+    ],
+  ])('rejects a token whose pairing claim names %s', async (_, claims) => {
+    const { connect } = await setup();
+    const client = connect();
+    await client.authenticate(claims);
+    expect(client.errors()).toEqual(['invalid_token']);
   });
 });

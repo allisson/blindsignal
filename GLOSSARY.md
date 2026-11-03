@@ -55,6 +55,10 @@ _Avoid_: online status
 A signaling-coordinated relationship between exactly two devices in one namespace, from creation until it closes or is terminated.
 _Avoid_: call, room, peer connection
 
+**Pairing**:
+A device's approval, signed by one of the user's devices already in a namespace, of a new device joining it; the application's backend grants the namespace.
+_Avoid_: enrollment (the device's first authentication), invite (another user)
+
 **Participant**:
 One of the two devices of an accepted session.
 _Avoid_: peer (reserved for the remote end of a DataChannel)

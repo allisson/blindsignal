@@ -55,7 +55,8 @@ Header: `{ "alg": "EdDSA" | "ES256", "kid": "<key id>" }`.
 | `exp`        | `iat` plus the lifetime; at most `iat` + 600 seconds.                                    |
 | `jti`        | A new random value for every token, such as a UUID.                                      |
 | `namespaces` | An array, possibly empty, of at most 100 namespace IDs the device may join.             |
-| `permissions` | Optional. Narrows the session permissions per namespace; see [Session permissions](#session-permissions). |
+| `permissions` | Optional. Narrows the session and pairing permissions per namespace; see [Session permissions](#session-permissions). |
+| `pairing`    | Optional. Namespace IDs the device may ask to be paired into; see [Pairing](#pairing). |
 | `cnf`        | Optional. `{ "jkt": "<thumbprint>" }` binds the token to a device key; see [Proof of possession](#proof-of-possession). |
 | `nbf`        | Optional. Omit it or set it to `iat`.                                                    |
 
@@ -118,6 +119,8 @@ Other claims are ignored. Example:
   whole token.
 - A request to a device without `session.accept` reaches the requester as `session.rejected`.
   Withdrawing a permission takes effect at the next refresh and ends no session already open.
+- A third permission, `pairing.approve`, lets a device approve its user's new devices; an unlisted
+  namespace grants it too. See [Pairing](#pairing).
 
 ### Proof of possession
 
@@ -138,6 +141,26 @@ thumbprint (`docs/adr/0041-proof-of-possession.md`): a stolen token alone is use
 With the SDK, `DeviceKey.load()` gives the device's key and `deviceKey.thumbprint` the value to
 send the backend; passed as `deviceKey`, the client signs every proof (`packages/sdk/README.md`).
 Other clients send the proof themselves (`docs/protocol.md` §5).
+
+### Pairing
+
+A device the user adds can ask the user's devices already in a namespace to approve it, and bring
+you the approval (`docs/adr/0042-pairing.md`, `docs/protocol.md` §7a). Nothing is granted until
+you issue a token with the namespace.
+
+- Give the new device a token with the namespace in `pairing`, not in `namespaces`, bound to its
+  key with `cnf.jkt`. The approving devices need bound tokens too.
+- The device brings back the approval: a JWT with header `typ` `blindsignal-pairing+jwt` and `jwk`,
+  and claims `pairing_id`, `namespace`, `sub`, `device_id`, `jkt`, and `exp`. Before granting:
+  - verify its signature with `jwk`, allowing only `ES256` and `EdDSA`;
+  - check that the thumbprint of `jwk` (RFC 7638, SHA-256) is the key you bound to one of the
+    user's devices that may approve in that namespace;
+  - check that `sub`, `device_id`, and `jkt` are the new device's, under the same user's session,
+    that `namespace` is the one it asked for, and that `exp` has not passed; refuse an `exp`
+    further out than a few minutes;
+  - accept each `pairing_id` once.
+- Then record the pairing, and issue the new device's tokens with the namespace in `namespaces`.
+  To revoke it, leave the namespace out of its next token, or revoke the device.
 
 ## Token endpoint
 

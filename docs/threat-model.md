@@ -52,6 +52,7 @@ Application payloads are not an asset of the server: they never reach it (spec �
 | Token leaked through URLs or logs | Token only in the `auth.*` payload after the socket opens; never logged | spec §16 |
 | A user takes over another user's device | Device identified by `(app_id, sub, device_id)`; `auth.refresh` cannot change identity | ADR 0006 |
 | A stolen token used from another machine | For tokens bound with `cnf.jkt`: a proof signed by the device key, for the connection's nonce and that token; the key is non-extractable | ADR 0041 |
+| A new device paired without the user's approval | The approval is signed by a device key the backend bound, names the new device's key, and reaches only the user's own devices; the server and the backend both check it | ADR 0042 |
 | Access to another application's namespaces | Namespace IDs carry the `<app_id>:` prefix; a foreign prefix rejects the token | ADR 0007 |
 | Enumeration of namespaces, devices, or their load | Uniform `not_authorized` and `peer_unavailable` | protocol §6, §7, ADR 0011 |
 | Unsolicited signaling to a device | `rtc.*` relayed only within a session the target accepted | protocol §7 |
@@ -143,5 +144,6 @@ Application payloads are not an asset of the server: they never reach it (spec �
 - A compromised server host, operator, or issuer signing key; their protection is the deployer's.
 - Cross-instance propagation of status changes, handled with distributed adapters (roadmap
   Phase 9).
-- Pairing, threat-modeled when designed (spec §7.4, roadmap Phase 5).
+- How the backend records pairings and checks approvals; `docs/token-issuance.md#pairing` states
+  what it must do.
 - How the backend binds a device to its key; `docs/token-issuance.md` states what it must do.

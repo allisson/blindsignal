@@ -44,7 +44,7 @@ This roadmap prioritizes a secure, working local P2P system before introducing m
 - [x] Decide the namespace authorization source for the MVP: token claims, stored policy, or both (spec §7.3) (token claims, `docs/adr/0007-namespace-authorization.md`).
 - [x] Decide session cardinality: one-to-one only or multi-party (spec §13) (`docs/adr/0003-one-to-one-sessions.md`).
 - [x] Decide the duplicate-connection policy for a device that connects again while already connected, together with the per-device concurrent connection limit, accounting for several browser tabs sharing one device identity (spec §13, §8.1, §8.3) (the newer replaces the older, `docs/adr/0008-duplicate-connections.md`).
-- [ ] Define pairing policy. *(Post-MVP: required before Phase 5 implements pairing; does not block the MVP.)*
+- [x] Define pairing policy (`docs/adr/0042-pairing.md`). *(Post-MVP.)*
 - [x] Define `StorageAdapter` (`docs/adr/0010-adapter-interfaces.md`).
 - [x] Define `CoordinationAdapter` (`docs/adr/0010-adapter-interfaces.md`).
 - [x] Define application and device quotas (`docs/adr/0011-quotas-and-rate-limits.md`).
@@ -273,12 +273,13 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Finalize namespace authorization. *(MVP)*
 - [x] Implement session authorization: `session.create` and `session.accept` per namespace from
   the token's `permissions` claim (ADR 0040).
-- [ ] Design and review pairing protocol.
-- [ ] Implement pairing approval policy.
+- [x] Design and review pairing protocol (ADR 0042). *(The server side is done; the SDK's is next.)*
+- [x] Implement pairing approval policy: the user's own devices, holding `pairing.approve` and a
+  device key, approve with a signed JWT (ADR 0042).
 - [x] Implement device revocation, including the control-plane operation (spec §5.6). *(MVP)*
 - [x] Propagate device revocation to the revoked device's active connections and sessions. *(MVP)*
 - [x] Notify remaining peers on revocation with `session.terminated` so the SDK closes established sessions (spec §6.4). *(MVP)*
-- [ ] Implement pairing attempt rate limits (spec §8.1).
+- [x] Implement pairing attempt rate limits (spec §8.1): the `pairing` bucket per connection.
 - [x] Add signaling message validation and abuse protection.
 - [x] Review token and credential handling.
 - [x] Define metadata retention.
@@ -645,4 +646,4 @@ credentials (ADR 0017), browsers relay through a test Coturn over UDP, TCP, and 
 a session that never connects (ADR 0018), and `docs/turn-operations.md` is the TURN operations
 guide. A cross-network test through a TURN server reachable from other networks is deferred, with
 no date (ADR 0017). Session authorization and proof-of-possession, post-MVP tasks of Phase 5, are done (ADR 0040,
-ADR 0041); pairing starts with an ADR and is not scheduled yet.
+ADR 0041); pairing is designed and served by the server (ADR 0042), with the SDK side next.

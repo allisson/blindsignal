@@ -34,7 +34,7 @@ describe('error catalog', () => {
   });
 
   it('classifies every code', () => {
-    expect(Object.keys(errorClasses)).toHaveLength(18);
+    expect(Object.keys(errorClasses)).toHaveLength(19);
   });
 });
 

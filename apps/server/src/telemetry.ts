@@ -67,6 +67,8 @@ const COUNTERS = {
   blindsignal_authentications_total: 'auth.authenticate outcomes: ok or the error code.',
   blindsignal_sessions_created_total: 'Sessions created.',
   blindsignal_sessions_terminated_total: 'Sessions terminated, by reason.',
+  blindsignal_pairings_total:
+    'Pairing requests that ended, by result: approved, rejected, or timeout.',
   blindsignal_registry_reloads_total: 'Registry reloads: ok or rejected.',
   blindsignal_overloaded_connections_total:
     'Connections closed with 1013, by the limit reached: queued_messages or buffered_bytes.',

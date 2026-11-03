@@ -162,6 +162,7 @@ const environment = z
     BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS: seconds.default(0),
     BLINDSIGNAL_RATE_LIMIT_DISCOVERY: rateLimit(2, 10),
     BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE: rateLimit(2, 10),
+    BLINDSIGNAL_RATE_LIMIT_PAIRING: rateLimit(0.1, 3),
     BLINDSIGNAL_RATE_LIMIT_SIGNALING: rateLimit(50, 100),
     BLINDSIGNAL_RATE_LIMIT_RTC: rateLimit(10, 30),
     BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE: rateLimit(20, 50),
@@ -362,6 +363,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
         rateLimits: {
           discovery: vars.BLINDSIGNAL_RATE_LIMIT_DISCOVERY,
           session_create: vars.BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE,
+          pairing: vars.BLINDSIGNAL_RATE_LIMIT_PAIRING,
           signaling: vars.BLINDSIGNAL_RATE_LIMIT_SIGNALING,
           rtc: vars.BLINDSIGNAL_RATE_LIMIT_RTC,
           rtc_ice_candidate: vars.BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE,

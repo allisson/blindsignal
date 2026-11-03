@@ -11,6 +11,7 @@ export const errorClasses = {
   not_joined: 'retryable',
   peer_unavailable: 'retryable',
   session_unavailable: 'retryable',
+  pairing_unavailable: 'retryable',
   rate_limited: 'retryable',
   quota_exceeded: 'retryable',
   invalid_token: 'retryable',
