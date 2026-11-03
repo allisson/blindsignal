@@ -53,7 +53,10 @@ the decisions behind them are in `docs/adr/0032-self-hosted-compose.md`.
 - **Registry changes:** edit `registry.json`, then
   `docker compose kill -s SIGHUP server`. The reload is all or nothing, and closes the connections
   of suspended, revoked, or removed applications (ADR 0005); `registry.reloaded` or
-  `registry.reload_rejected` in the logs tells which.
+  `registry.reload_rejected` in the logs tells which. `docs/application-lifecycle.md` covers
+  onboarding, suspension, and revocation.
+- **Secrets:** rotate the PostgreSQL password with `docs/secrets-and-keys.md`; editing
+  `POSTGRES_PASSWORD` in `.env` alone breaks the migration.
 - **Upgrades:** `git pull`, then `docker compose up -d --build --wait`. The migrations run before
   the new server starts; clients reconnect on their own after the old one closes their
   connections with `1001` (ADR 0031).

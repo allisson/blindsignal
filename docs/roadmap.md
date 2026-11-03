@@ -479,9 +479,10 @@ Operating TURN is not required to complete the initial local MVP.
   (ADR 0029).
 - [ ] Add OpenTelemetry instrumentation.
 - [ ] Extend the Phase 3 structured logs and metrics for production use.
-- [ ] Define secret and signing-key management.
-- [ ] Document application registration and onboarding.
-- [ ] Document key rotation and application revocation.
+- [x] Define secret and signing-key management: `docs/secrets-and-keys.md` (ADR 0034).
+- [x] Document application registration and onboarding: `docs/application-lifecycle.md`.
+- [x] Document key rotation and application revocation: `docs/secrets-and-keys.md` and
+  `docs/application-lifecycle.md`.
 - [ ] Document Cloud Run deployment.
 - [ ] Document VPS deployment.
 - [x] Document self-hosted deployment: `docs/self-hosted.md`.

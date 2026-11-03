@@ -111,6 +111,7 @@ Other claims are ignored. Example:
   expired, plus the skew.
 - **Static keys:** ask the operator to add the new key and reload the registry, switch signing,
   then remove the old key after the same wait.
+- **A leaked key:** remove it at once; `docs/secrets-and-keys.md` covers what follows.
 
 ## Rejections
 
