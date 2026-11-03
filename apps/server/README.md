@@ -74,6 +74,8 @@ names the variable, never its value.
 | `BLINDSIGNAL_MAX_BUFFERED_BYTES` | `1048576` | Bytes waiting in one connection's send buffer, at least `65536`; more close with `1013` (ADR 0013). |
 | `BLINDSIGNAL_ABUSE_ALERT_THRESHOLD` | `0` (off) | An application's `rate_limited` and `quota_exceeded` errors within one window that raise an abuse alert (ADR 0016). |
 | `BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS` | `60` | The abuse alert's window. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset (off) | An OTLP/HTTP endpoint, such as `http://collector:4318`: metrics are also pushed there (ADR 0038). `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, the full URL, turns it on too, and `OTEL_EXPORTER_OTLP_HEADERS` adds headers, such as a backend's credentials. |
+| `OTEL_METRIC_EXPORT_INTERVAL` | `60000` | Milliseconds between OTLP pushes. |
 
 The pre-authentication limits are keyed by the client IP (`BLINDSIGNAL_TRUSTED_PROXIES`) and apply
 to every application, which is not known yet (ADR 0011). The unauthenticated caps count this
@@ -157,8 +159,12 @@ client IP, is written. An uncaught exception or unhandled rejection logs `server
 `origin`, the error's name as `reason`, and its stack frames, never its message, then exits with
 `1` (ADR 0037).
 
-`GET /metrics` on the admin port serves process-local counters and gauges in the Prometheus text
-format: messages by type, authentications by result, errors by code, sessions created and
+Metrics go through the OpenTelemetry SDK (ADR 0038). `GET /metrics` on the admin port serves
+them, process-local, in the Prometheus text format; a counter appears once first incremented.
+With `OTEL_EXPORTER_OTLP_ENDPOINT` set they are also pushed over OTLP/HTTP, with `service.name`
+`blindsignal` and a `service.instance.id` per process; a failed push logs
+`telemetry.export_failed`, and on `SIGTERM` the server pushes once more within the shutdown's
+deadline. The series: messages by type, authentications by result, errors by code, sessions created and
 terminated, registry reloads, connections closed by backpressure, open connections, and sessions
 (counted by the instance of the connection that requested each, ADR 0023), and device records
 deleted by the retention sweep (`blindsignal_devices_expired_total`).
@@ -166,7 +172,12 @@ deleted by the retention sweep (`blindsignal_devices_expired_total`).
 It also reports the process (ADR 0037): `process_start_time_seconds`, which changes on every
 restart, `process_resident_memory_bytes`, `nodejs_heap_size_used_bytes`, and
 `nodejs_eventloop_delay_seconds{stat="p99"|"max"}`, the event loop's delay since the previous
-scrape. Each scrape resets the delay, so scrape each instance from one place.
+collection. Each scrape or push resets the delay, so read each instance from one place.
+
+Two histograms, in seconds (ADR 0038): `blindsignal_authentication_duration_seconds{result}`, from
+an `auth.authenticate`'s receipt to its reply, by the result `blindsignal_authentications_total`
+counts; and `blindsignal_session_acceptance_seconds`, from `session.create` to `session.accepted`,
+measured by the requester's connection.
 
 Each scrape also probes PostgreSQL and Redis, when configured, and reports
 `blindsignal_dependency_up{dependency="postgresql"|"redis"}`: 1 when the probe answered within
@@ -197,7 +208,7 @@ Spec §18's initial metrics, and where each one is:
 | Active connections and sessions per application | `blindsignal_application_connections`, `blindsignal_application_sessions` |
 | Rate-limit events, quota consumption | `blindsignal_application_errors_total{code="rate_limited"\|"quota_exceeded"}`, `blindsignal_abuse_alerts_total` |
 | Presence registration and expiration | `blindsignal_messages_total{type="namespace.join"\|"namespace.leave"}`; a lease that expires is not counted, and `blindsignal_devices_expired_total` counts device records |
-| Session creation and failure | `blindsignal_sessions_created_total`, `blindsignal_sessions_terminated_total{reason}` |
+| Session creation and failure | `blindsignal_sessions_created_total`, `blindsignal_sessions_terminated_total{reason}`, and the time to acceptance in `blindsignal_session_acceptance_seconds` |
 | Signaling message counts and errors | `blindsignal_messages_total{type}`, `blindsignal_errors_total{code}` |
 | Reconnection frequency | `blindsignal_authentications_total`, against `blindsignal_connections` |
 | WebRTC negotiation success/failure, direct versus relay, ICE connection duration | Not here: they happen between the browsers. The SDK reports each session's connection type to the application (`packages/sdk`); relay traffic is on the TURN server |

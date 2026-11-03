@@ -40,7 +40,7 @@ that the server cannot observe at all.
 - **The event loop delay over the process's lifetime.** Rejected: after hours a stall no longer
   moves the 99th percentile.
 - **Latency histograms for authentication and session creation.** Deferred to OpenTelemetry, which
-  brings its own histogram type.
+  brings its own histogram type; ADR 0038 adds them.
 
 ## Consequences
 

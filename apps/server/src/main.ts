@@ -26,6 +26,7 @@ import {
   jsonLogger,
   logCrash,
   Metrics,
+  OTLPExporter,
   serveMetrics,
   watchProcess,
 } from './telemetry.ts';
@@ -109,7 +110,11 @@ async function main(): Promise<void> {
   logger.log('info', 'coordination.ready', {
     coordination: config.redis === undefined ? 'memory' : 'redis',
   });
-  const metrics = new Metrics();
+  const metrics = new Metrics(
+    config.otlp === undefined
+      ? undefined
+      : { exporter: new OTLPExporter(logger), intervalMs: config.otlp.intervalMs },
+  );
   const server = new SignalingServer({
     allowedOrigins: config.allowedOrigins,
     proxyTrust: config.proxyTrust,
@@ -157,12 +162,13 @@ async function main(): Promise<void> {
   );
   const stopWatching = watchProcess(metrics);
   const port = await server.listen(config.port);
-  const probe = dependencyProbe(dependencies, config.dependencyProbeTimeoutMs);
-  const admin = await serveMetrics(
-    { render: async () => metrics.render() + (await probe()) },
-    config.adminPort,
-    config.adminHost,
+  metrics.labeledGauge(
+    'blindsignal_dependency_up',
+    'Whether the dependency answered a probe within the timeout: 1 or 0.',
+    'dependency',
+    dependencyProbe(dependencies, config.dependencyProbeTimeoutMs),
   );
+  const admin = await serveMetrics(metrics, config.adminPort, config.adminHost);
   logger.log('info', 'server.listening', { port, adminPort: admin.port });
 
   const stopSweep = sweepDevices(
@@ -220,7 +226,7 @@ async function main(): Promise<void> {
           reloading = reloading.then(sync);
         });
 
-  const shutdown = async () => {
+  const shutdown = async (deadline: number) => {
     logger.log('info', 'server.draining');
     await server.drain(config.shutdownDelayMs);
     await server.close();
@@ -230,15 +236,21 @@ async function main(): Promise<void> {
     await closeCoordination();
     await closeStorage();
     admin.server.close();
+    // The last push gets what is left of the deadline (ADR 0031), less a margin for the exit timer,
+    // so an OTLP endpoint that never answers costs the push, not the exit status (ADR 0038).
+    await metrics
+      .shutdown(Math.max(deadline - Date.now() - 100, 0))
+      .catch(() => logger.log('warn', 'telemetry.export_failed'));
   };
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, () => {
+      const deadline = Date.now() + config.shutdownTimeoutMs;
       // A client or an adapter that never finishes must not outlast the platform's grace period.
       setTimeout(() => {
         logger.log('error', 'server.shutdown_timeout');
         process.exit(1);
       }, config.shutdownTimeoutMs).unref();
-      void shutdown().finally(() => process.exit(0));
+      void shutdown(deadline).finally(() => process.exit(0));
     });
   }
 }

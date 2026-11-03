@@ -477,7 +477,8 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Define WebSocket connection limits: a connection cap per instance (ADR 0030).
 - [x] Define reconnect behavior for hosting request timeouts: a maximum connection lifetime
   (ADR 0029).
-- [ ] Add OpenTelemetry instrumentation.
+- [x] Add OpenTelemetry instrumentation: metrics through the SDK, `/metrics` unchanged, OTLP
+  export, and latency histograms (ADR 0038).
 - [x] Extend the Phase 3 structured logs and metrics for production use: a log level, crashes as
   JSON, and the process's gauges (ADR 0037).
 - [x] Define secret and signing-key management: `docs/secrets-and-keys.md` (ADR 0034).

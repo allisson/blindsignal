@@ -59,10 +59,13 @@ runs it on one host behind Caddy (ADR 0032), and CI runs the production image re
 before every merge (ADR 0033); `docs/secrets-and-keys.md` and `docs/application-lifecycle.md` are the
 operator's procedures (ADR 0034), and `docs/backup-and-recovery.md` the backups (ADR 0035); `docs/vps.md` adds a firewall and
 Coturn on the same host (ADR 0036); logs take a level, crashes are logged as JSON, and `/metrics`
-reports the process (ADR 0037). The workspace uses
+reports the process (ADR 0037); metrics go through OpenTelemetry, pushed over OTLP when an endpoint
+is set (ADR 0038). The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
-for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey). Do not add a tool outside those ADRs without a new ADR.
+for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
+by `docs/adr/0038-opentelemetry-metrics.md` (the OpenTelemetry metrics SDK and its exporters). Do
+not add a tool outside those ADRs without a new ADR.
 
 TypeScript stays on 6.0.x until `typescript-eslint` supports 7: type-aware linting is required.
 

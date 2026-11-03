@@ -168,6 +168,11 @@ const environment = z
     // Rejections of one application per window that raise an alert; 0 turns alerts off (ADR 0016).
     BLINDSIGNAL_ABUSE_ALERT_THRESHOLD: seconds.default(0),
     BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS: seconds.positive().default(60),
+    // OpenTelemetry's own variables (ADR 0038): either endpoint turns the OTLP export on, and the
+    // exporter reads them, with OTEL_EXPORTER_OTLP_HEADERS, itself.
+    OTEL_EXPORTER_OTLP_ENDPOINT: z.string().default(''),
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: z.string().default(''),
+    OTEL_METRIC_EXPORT_INTERVAL: z.coerce.number().int().positive().default(60_000),
   })
   .refine(
     (vars) => vars.BLINDSIGNAL_ENV === 'development' || vars.BLINDSIGNAL_ALLOWED_ORIGINS.length > 0,
@@ -254,6 +259,8 @@ export interface ServerConfig {
   readonly maxBufferedBytes: number;
   readonly limits: Limits;
   readonly abuseAlerts: AbuseAlertPolicy;
+  /** Absent when no OTLP endpoint is set: metrics are only scraped from `/metrics`. */
+  readonly otlp?: { readonly intervalMs: number };
 }
 
 /** Limits before authentication, when only the client IP is known (spec §8.1, §8.4). */
@@ -330,6 +337,9 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
             },
           }),
       ...(vars.BLINDSIGNAL_REDIS_URL === '' ? {} : { redis: { url: vars.BLINDSIGNAL_REDIS_URL } }),
+      ...(vars.OTEL_EXPORTER_OTLP_ENDPOINT === '' && vars.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT === ''
+        ? {}
+        : { otlp: { intervalMs: vars.OTEL_METRIC_EXPORT_INTERVAL } }),
       preAuthentication: {
         authenticationTimeoutMs: vars.BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS * 1000,
         maxUnauthenticatedPerIp: vars.BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP,
