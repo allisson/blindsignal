@@ -7,6 +7,7 @@ import type { AbuseAlertPolicy } from './domain/abuse.ts';
 import type { Limits } from './domain/limits.ts';
 import type { AllowedOrigins } from './domain/origin.ts';
 import type { TurnPolicy } from './domain/turn.ts';
+import { levels, type Level } from './telemetry.ts';
 
 const seconds = z.coerce.number().int().nonnegative();
 const port = z.coerce.number().int().min(0).max(65_535);
@@ -80,6 +81,8 @@ const environment = z
       .refine((value) => isIP(value) !== 0, 'must be an IP address')
       .default('127.0.0.1'),
     BLINDSIGNAL_REGISTRY_PATH: z.string().min(1),
+    // Events below it are not written (ADR 0037).
+    BLINDSIGNAL_LOG_LEVEL: z.enum(levels).default('info'),
     BLINDSIGNAL_ALLOWED_ORIGINS: z
       .string()
       .default('')
@@ -215,6 +218,7 @@ export interface ServerConfig {
   readonly adminPort: number;
   readonly adminHost: string;
   readonly registryPath: string;
+  readonly logLevel: Level;
   readonly allowedOrigins: AllowedOrigins;
   readonly proxyTrust: { readonly proxies: BlockList; readonly header: ForwardedHeader };
   readonly iceServers: readonly { readonly urls: readonly string[] }[];
@@ -284,6 +288,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       adminPort: vars.BLINDSIGNAL_ADMIN_PORT,
       adminHost: vars.BLINDSIGNAL_ADMIN_HOST,
       registryPath: vars.BLINDSIGNAL_REGISTRY_PATH,
+      logLevel: vars.BLINDSIGNAL_LOG_LEVEL,
       // Only development reaches here with an empty list; it allows every origin.
       allowedOrigins: origins.length === 0 || origins.includes('*') ? '*' : new Set(origins),
       proxyTrust: {

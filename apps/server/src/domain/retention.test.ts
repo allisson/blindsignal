@@ -12,10 +12,12 @@ describe('sweepDevices', () => {
       return next instanceof Error ? Promise.reject(next) : Promise.resolve(next as number);
     });
     const logs: object[] = [];
+    const counted: unknown[] = [];
     const stop = sweepDevices(
       { deleteExpired },
       { intervalMs: 1000, ttlMs: 500 },
       { log: (level, event, fields) => logs.push({ level, event, ...fields }) },
+      { count: (...args) => counted.push(args) },
     );
 
     await vi.advanceTimersByTimeAsync(999);
@@ -30,6 +32,7 @@ describe('sweepDevices', () => {
       { level: 'info', event: 'devices.expired', deleted: 2 },
       { level: 'warn', event: 'devices.sweep_failed' },
     ]);
+    expect(counted).toEqual([['blindsignal_devices_expired_total', {}, 2]]);
 
     stop();
     await vi.advanceTimersByTimeAsync(5000);
