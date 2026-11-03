@@ -7,7 +7,7 @@ import type {
   StorageAdapter,
 } from '@blindsignal/core';
 import pg, { type Pool, type PoolClient } from 'pg';
-import { loadMigrations, LOCK_CLASS, schemaVersion } from './migrate.ts';
+import { loadMigrations, LOCK_CLASS, LOCK_REGISTRY, schemaVersion } from './migrate.ts';
 
 export { loadMigrations, migrate, schemaVersion, type Migration } from './migrate.ts';
 
@@ -91,8 +91,21 @@ export class PostgreSQLApplicationRepository implements ApplicationRepository {
   }
 
   replaceAll(applications: readonly ApplicationRecord[]): Promise<void> {
+    return this.replaceWith(() => applications);
+  }
+
+  replaceWith(
+    next: (stored: readonly ApplicationRecord[]) => readonly ApplicationRecord[] | undefined,
+  ): Promise<void> {
     // One transaction: readers see the previous registry until it commits, never a partial one.
+    // Writers on every instance take turns under the lock, each reading what the previous stored.
     return transaction(this.#pool, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock($1, $2)', [LOCK_CLASS, LOCK_REGISTRY]);
+      const { rows } = await client.query<{ record: StoredApplication }>(
+        'SELECT record FROM applications',
+      );
+      const applications = next(rows.map((row) => hydrate(row.record)));
+      if (applications === undefined) return;
       await client.query('DELETE FROM applications');
       await client.query(
         `INSERT INTO applications (app_id, issuer, record)

@@ -17,9 +17,10 @@ device records are deleted.
 - **The registry file stays the source of truth; the database keeps the last registry accepted.**
   At startup and on every `SIGHUP` the server checks the file against the stored registry, which
   an earlier process or another instance wrote, together with every application this process saw
-  revoked, and stores the result before installing it. So `createdAt` and `updatedAt` survive
-  restarts, and revocation is terminal across restarts and instances: an instance whose file
-  reactivates an application stored as revoked does not start, and its reload is rejected. A
+  revoked, and stores the result before installing it, the check and the write in one turn of the
+  storage (ADR 0025). So `createdAt` and `updatedAt` survive restarts, and revocation is terminal
+  across restarts and instances: an instance whose file reactivates an application stored as
+  revoked does not start, and its reload is rejected. A
   revoked application removed from the file is remembered only by the process that saw it, as
   before (ADR 0005).
 - **Token verification reads a copy in the process,** installed with the registry, never the

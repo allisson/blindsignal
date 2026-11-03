@@ -58,6 +58,40 @@ export function describeStorageContract(name: string, create: () => Promise<Stor
       expect(await applications.getById('vault')).toBeUndefined();
       expect(await applications.getAll()).toEqual([]);
     });
+
+    it('replaces the registry with what a function returns for the stored one', async () => {
+      const { applications } = await create();
+      const notes = application('notes', 'https://notes.example');
+      const vault = application('vault', 'https://vault.example');
+      await applications.replaceAll([notes]);
+      const seen: (readonly ApplicationRecord[])[] = [];
+      await applications.replaceWith((stored) => {
+        seen.push(stored);
+        return [...stored, vault];
+      });
+      await applications.replaceWith((stored) => {
+        seen.push(stored);
+        return undefined;
+      });
+      expect(seen).toEqual([[notes], expect.arrayContaining([notes, vault])]);
+      expect(await applications.getById('vault')).toEqual(vault);
+      expect(await applications.getAll()).toHaveLength(2);
+    });
+
+    it('runs concurrent replacements in turn, each on what the previous stored', async () => {
+      const { applications } = await create();
+      const ids = ['a', 'b', 'c', 'd', 'e'];
+      await Promise.all(
+        ids.map((id) =>
+          applications.replaceWith((stored) => [
+            ...stored,
+            application(id, `https://${id}.example`),
+          ]),
+        ),
+      );
+      const stored = (await applications.getAll()).map((app) => app.appId).sort();
+      expect(stored).toEqual(ids);
+    });
   });
 
   describe(`${name}: devices`, () => {

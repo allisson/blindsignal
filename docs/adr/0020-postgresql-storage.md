@@ -14,7 +14,7 @@ or the database, is decided when the server is wired to it.
   back as `Date`s. The registry parser validates every field, so the database never queries inside
   the record, and a field added to the registry needs no migration. `replaceAll` deletes every row
   and inserts the new registry in one transaction: a reader sees the previous registry until it
-  commits, never a partial one.
+  commits, never a partial one. Writes take turns under an advisory lock (ADR 0025).
 - **`devices`:** one row per `(app_id, user_id, device_id)`, the primary key, with
   `first_seen_at` and `last_authenticated_at`. The time comes from the caller, as in the in-memory
   adapter, never from the database clock. A record is live while `last_authenticated_at` is less
@@ -28,8 +28,9 @@ or the database, is decided when the server is wired to it.
   and returns how many. Durable adapters delete expired device records on a schedule (ADR 0012);
   the server calls it, so the schedule is the server's configuration, not each adapter's timer.
   The in-memory adapter implements it too.
-- **Advisory locks** use the key `(0x42534947, n)`: `n = 0` for migrations, `hashtext(app_id)` for
-  device enrollment. A hash collision between two applications only makes them take turns.
+- **Advisory locks** use the key `(0x42534947, n)`: `n = 0` for migrations, `n = 1` for registry
+  writes (ADR 0025), `hashtext(app_id)` for device enrollment. A hash collision only makes two
+  operations take turns.
 - **Testing:** one contract suite in `@blindsignal/core/testing` runs against the in-memory
   adapter on every `pnpm test` and against PostgreSQL when `BLINDSIGNAL_TEST_POSTGRES_URL` is set,
   each test in a schema of its own; tests of the PostgreSQL adapter alone cover concurrency and the

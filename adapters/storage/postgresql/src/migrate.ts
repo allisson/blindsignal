@@ -1,9 +1,13 @@
 import { readdir, readFile } from 'node:fs/promises';
 import type { Pool } from 'pg';
 
-/** Advisory lock keys of this adapter: `[LOCK_CLASS, LOCK_MIGRATIONS]`, `[LOCK_CLASS, hash]`. */
+/**
+ * Advisory lock keys of this adapter: `[LOCK_CLASS, LOCK_MIGRATIONS]`, `[LOCK_CLASS, LOCK_REGISTRY]`,
+ * `[LOCK_CLASS, hash]`.
+ */
 export const LOCK_CLASS = 0x42534947;
 export const LOCK_MIGRATIONS = 0;
+export const LOCK_REGISTRY = 1;
 
 const directory = new URL('./migrations/', import.meta.url);
 

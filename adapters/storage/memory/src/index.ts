@@ -19,6 +19,13 @@ export class InMemoryApplicationRepository implements ApplicationRepository {
     return Promise.resolve();
   }
 
+  async replaceWith(
+    next: (stored: readonly ApplicationRecord[]) => readonly ApplicationRecord[] | undefined,
+  ): Promise<void> {
+    const applications = next([...this.#byId.values()]);
+    if (applications !== undefined) await this.replaceAll(applications);
+  }
+
   getById(appId: string): Promise<ApplicationRecord | undefined> {
     return Promise.resolve(this.#byId.get(appId));
   }

@@ -15,6 +15,7 @@ import {
   REGISTRY_CHANGED,
   REGISTRY_TOPIC,
   storedRegistry,
+  storeRegistry,
   syncRegistry,
   type Registry,
 } from './registry.ts';
@@ -309,5 +310,53 @@ describe('followRegistry', () => {
     await coordination.publish(REGISTRY_TOPIC, REGISTRY_CHANGED);
     await vi.advanceTimersByTimeAsync(5000);
     expect(sync).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('storeRegistry', () => {
+  const storage = async (...entries: object[]) => {
+    const applications = new InMemoryApplicationRepository();
+    await applications.replaceAll(load(file(...entries)).applications);
+    return applications;
+  };
+
+  it('stores the file checked against the stored registry', async () => {
+    const applications = await storage(app());
+    const vault = app({ appId: 'vault', issuer: 'https://vault.example' });
+    const result = await storeRegistry(file(app(), vault), applications, { now: t1 });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.registry.applications.map((a) => [a.appId, a.createdAt])).toEqual([
+      ['notes', t0],
+      ['vault', t1],
+    ]);
+    expect(await applications.getAll()).toEqual(result.registry.applications);
+  });
+
+  it('keeps the stored registry when the file reactivates a revoked application', async () => {
+    const applications = await storage(app({ status: 'revoked' }));
+    const before = await applications.getAll();
+    expect(await storeRegistry(file(app()), applications, { now: t1 })).toEqual({
+      ok: false,
+      error: 'notes: a revoked application cannot be reactivated',
+    });
+    expect(await applications.getAll()).toEqual(before);
+  });
+
+  it("adds the process's revoked applications, removed ones included", async () => {
+    const applications = await storage();
+    const current = load(file(app({ status: 'revoked' })));
+    expect(await storeRegistry(file(app()), applications, { now: t1, current })).toEqual({
+      ok: false,
+      error: 'notes: a revoked application cannot be reactivated',
+    });
+    expect(await applications.getAll()).toEqual([]);
+  });
+
+  it('passes development mode on', async () => {
+    const text = file(devApplication('notes'));
+    expect((await storeRegistry(text, await storage(), { now: t0 })).ok).toBe(false);
+    expect((await storeRegistry(text, await storage(), { now: t0, development: true })).ok).toBe(
+      true,
+    );
   });
 });

@@ -430,6 +430,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Finalize `StorageAdapter` (`getAll` and `deleteExpired`; the server uses PostgreSQL when `BLINDSIGNAL_DATABASE_URL` is set, `docs/adr/0021-durable-registry.md`).
 - [x] Implement PostgreSQL adapter (`adapters/storage/postgresql`, `docs/adr/0020-postgresql-storage.md`).
 - [x] Validate migrations and schema (the contract suite and the migration runner's tests, against the `compose.yaml` PostgreSQL in CI).
+- [x] Serialize registry writes across instances, so concurrent loads neither fail nor undo a revocation (`docs/adr/0025-registry-writes-take-turns.md`).
 - [ ] Evaluate Supabase as an optional managed PostgreSQL provider.
 - [x] Finalize `CoordinationAdapter` (slots as leases, events as JSON delivered at most once, `docs/adr/0022-redis-coordination.md`).
 - [x] Implement Redis-compatible coordination (`adapters/coordination/redis`, `docs/adr/0022-redis-coordination.md`).
