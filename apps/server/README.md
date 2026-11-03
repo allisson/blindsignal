@@ -121,4 +121,5 @@ it: set `status: "suspended"` in the registry and send `SIGHUP` (ADR 0005, ADR 0
 
 With TURN configured, `blindsignal_turn_credentials_issued_total{app_id}` counts the credentials
 sent in `rtc.ice_config`, one per authentication and `auth.refresh`. Relay traffic is measured by
-the TURN server's own metrics, not here (`docs/adr/0017-turn-credentials.md`).
+the TURN server's own metrics, not here (`docs/adr/0017-turn-credentials.md`); `docs/turn-operations.md`
+configures the TURN server.
