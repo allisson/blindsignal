@@ -41,7 +41,7 @@ Gaps, for a later run:
 ## Run 2 — 2026-11-03
 
 Closes run 1's gaps, with the same setup and new tunnel addresses. Browsers: Chrome
-156.0.8078.80 and Firefox on macOS (version not recorded), Chrome 156.0.8078.79 on Android.
+156.0.8078.80 and Firefox 159.0 on macOS, Chrome 156.0.8078.79 on Android.
 
 | ID | Device A | Device B | Signaling | DataChannel | Connection type | Notes |
 |---|---|---|---|---|---|---|
