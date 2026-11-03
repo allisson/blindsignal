@@ -623,3 +623,11 @@ These are later capabilities, not prerequisites for validating the core architec
 | P2 | Production observability and operations |
 | P3 | Reference application integrations |
 | P3 | Stable release |
+
+## After the MVP
+
+The MVP is complete: every capability in the MVP definition is delivered. Next come the post-MVP
+tasks of Phase 6 (session duration, bounded queues and backpressure, usage metrics, and
+abuse-triggered suspension), which build on ADR 0011 and Phase 3, and then Phase 8. The post-MVP tasks
+of Phase 5 (proof-of-possession, session authorization, and pairing) each start with an ADR and
+are not scheduled yet.
