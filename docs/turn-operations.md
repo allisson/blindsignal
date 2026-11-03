@@ -5,7 +5,8 @@ sessions connect wherever a direct path exists, and `rtc.ice_config` carries onl
 With it, browsers on networks that block direct paths relay through it. The relay sees only
 DTLS-encrypted traffic, never payloads (spec §12.3). This guide uses Coturn 4.18, the version the
 tests run. Its configuration has not run in a deployment yet: the tests use a Coturn on loopback,
-and the cross-network test is deferred (ADR 0017).
+and the cross-network test is deferred (ADR 0017). To run it on the signaling host, with
+`examples/self-hosted/`, see `docs/vps.md`.
 
 ## The shared secret
 

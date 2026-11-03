@@ -484,7 +484,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Document key rotation and application revocation: `docs/secrets-and-keys.md` and
   `docs/application-lifecycle.md`.
 - [ ] Document Cloud Run deployment.
-- [ ] Document VPS deployment.
+- [x] Document VPS deployment: `docs/vps.md` (ADR 0036).
 - [x] Document self-hosted deployment: `docs/self-hosted.md`.
 - [x] Document optional TURN deployment: `docs/turn-operations.md`.
 - [x] Define backup and recovery for durable metadata: `docs/backup-and-recovery.md`
