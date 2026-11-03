@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { InMemoryCoordinationAdapter } from '@blindsignal/coordination-memory';
+import { InMemoryApplicationRepository } from '@blindsignal/storage-memory';
 import {
   DEV_PUBLIC_JWK,
   devApplication,
@@ -8,8 +10,12 @@ import {
 import {
   DEV_ISSUER_ORIGIN,
   DEV_PUBLIC_KEY_X,
+  followRegistry,
   parseRegistry,
+  REGISTRY_CHANGED,
+  REGISTRY_TOPIC,
   storedRegistry,
+  syncRegistry,
   type Registry,
 } from './registry.ts';
 
@@ -263,5 +269,45 @@ describe('storedRegistry', () => {
     const previous = await storedRegistry(stored(), current);
     expect(previous.applications).toEqual([]);
     expect(error(file(app()), previous)).toBe('notes: a revoked application cannot be reactivated');
+  });
+});
+
+describe('syncRegistry', () => {
+  it("installs the stored registry in the process's copy, keeping what it saw revoked", async () => {
+    const stored = new InMemoryApplicationRepository();
+    const { applications } = load(file(app({ status: 'suspended' })));
+    await stored.replaceAll(applications);
+    const copy = new InMemoryApplicationRepository();
+    const current = load(file(app({ appId: 'vault', issuer: 'https://vault.example' })));
+    const synced = await syncRegistry(stored, copy, {
+      ...current,
+      revoked: new Set(['removed']),
+    });
+    expect(synced.applications).toEqual(applications);
+    expect(await copy.getAll()).toEqual(applications);
+    expect(synced.revoked).toEqual(new Set(['removed']));
+  });
+});
+
+describe('followRegistry', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('syncs on every registry event and every interval, until stopped', async () => {
+    vi.useFakeTimers();
+    const coordination = new InMemoryCoordinationAdapter();
+    const sync = vi.fn();
+    const stop = await followRegistry(coordination, 1000, sync);
+
+    await coordination.publish(REGISTRY_TOPIC, REGISTRY_CHANGED);
+    expect(sync).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(sync).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(sync).toHaveBeenCalledTimes(3);
+
+    await stop();
+    await coordination.publish(REGISTRY_TOPIC, REGISTRY_CHANGED);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(sync).toHaveBeenCalledTimes(3);
   });
 });

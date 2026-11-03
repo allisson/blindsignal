@@ -56,6 +56,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_DATABASE_URL` | unset | A `postgres://` URL: device records and the last accepted registry go to PostgreSQL, shared by every instance. Unset keeps them in memory, for one instance (ADR 0021). |
 | `BLINDSIGNAL_DATABASE_POOL_SIZE` | `10` | Connections in the PostgreSQL pool. |
 | `BLINDSIGNAL_REDIS_URL` | unset | A `redis://` or `rediss://` URL: presence, sessions, quotas, rate limits, and `jti` claims are shared by every instance through Redis or Valkey. Requires `BLINDSIGNAL_DATABASE_URL`. Unset keeps them in memory, for one instance (ADR 0023). |
+| `BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS` | `60` | With `BLINDSIGNAL_REDIS_URL`, how often each instance rereads the stored registry, in case it missed another instance's reload (ADR 0024). |
 | `BLINDSIGNAL_MAX_MESSAGE_BYTES` | `65536` | Maximum message size in UTF-8 bytes, at most `65536` (docs/protocol.md §1). |
 | `BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS` | `10` | A connection not authenticated this long after it opened is closed with `1008`. |
 | `BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP` | `20` | Concurrent unauthenticated connections per client IP; more get HTTP `429` at the upgrade. |
@@ -118,7 +119,8 @@ With `BLINDSIGNAL_DATABASE_URL` and `BLINDSIGNAL_REDIS_URL` set, any number of i
 deployment behind a load balancer: devices on different instances discover each other, open
 sessions, and signal (ADR 0023). Redis runs standalone or with Sentinel, not as a Cluster
 (ADR 0022). With Redis down, operations fail with `server_error` and clients reconnect with
-backoff. A `SIGHUP` reloads only the instance that receives it: signal every instance.
+backoff. A `SIGHUP` to one instance reaches the others through Redis, or at their next sync when
+Redis was down (ADR 0024); signal one instance, not every one.
 
 ## Signals
 
@@ -136,7 +138,8 @@ secrets, payloads, `sub`, or `device_id`. The server keeps no logs itself; keep 
 client IP (`connection.opened`) for at most 14 days (`docs/adr/0012-metadata-retention.md`).
 Storage logs `storage.ready`, `storage.connection_lost`, `connection.failed` (with the error's
 SQLSTATE or name), `devices.expired`, and `devices.sweep_failed` (ADR 0021); coordination logs
-`coordination.ready` and `coordination.connection_lost` (ADR 0023).
+`coordination.ready` and `coordination.connection_lost` (ADR 0023), and the registry logs
+`registry.publish_failed` and `registry.sync_failed` (ADR 0024).
 
 `GET /metrics` on the admin port serves process-local counters and gauges in the Prometheus text
 format: messages by type, authentications by result, errors by code, sessions created and

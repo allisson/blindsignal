@@ -22,7 +22,14 @@ import WebSocket from 'ws';
 import { loadConfig, type PreAuthentication } from './config.ts';
 import { AbuseMonitor } from './domain/abuse.ts';
 import { TokenVerifier } from './domain/auth.ts';
-import { parseRegistry } from './domain/registry.ts';
+import {
+  followRegistry,
+  parseRegistry,
+  REGISTRY_CHANGED,
+  REGISTRY_TOPIC,
+  syncRegistry,
+  type Registry,
+} from './domain/registry.ts';
 import type { AllowedOrigins } from './domain/origin.ts';
 import { GOING_AWAY, SignalingServer } from './server.ts';
 import { Metrics } from './telemetry.ts';
@@ -152,6 +159,7 @@ async function start(options: Options = {}) {
   return {
     server,
     coordination,
+    applications,
     client,
     refusal,
     refusedUpgrade,
@@ -673,6 +681,41 @@ describe('SignalingServer with the SDK', () => {
       const second = await two.client();
       await second.authenticate({ sub: 'alice', device_id: 'laptop', namespaces: ['notes:a'] });
       expect(await first.closed).toBe(4003);
+    });
+
+    it("applies another instance's reload: closes connections and refuses tokens", async () => {
+      const prefix = `test:${randomUUID()}:`;
+      const [one, two] = await Promise.all([instance(prefix), instance(prefix)]);
+      // Stands for PostgreSQL, where every instance stores the registry it installs (ADR 0021).
+      const stored = new InMemoryApplicationRepository();
+      const [notes] = await two.applications.getAll();
+      let registry: Registry = { applications: [notes!], revoked: new Set() };
+      const stop = await followRegistry(two.coordination, 60_000, () => {
+        void syncRegistry(stored, two.applications, registry).then((next) => {
+          registry = next;
+          return two.server.enforce(next.applications);
+        });
+      });
+      const alice = await two.client();
+      await alice.authenticate({ sub: 'alice', device_id: 'laptop', namespaces: ['notes:a'] });
+
+      await stored.replaceAll([{ ...notes!, status: 'suspended' }]);
+      await one.coordination.publish(REGISTRY_TOPIC, REGISTRY_CHANGED);
+      expect(await alice.next('error')).toMatchObject({
+        payload: { code: 'application_unavailable' },
+      });
+      expect(await alice.closed).toBe(4002);
+      const bob = await two.client();
+      bob.send('auth.authenticate', {
+        token: await mintDevToken(
+          { app_id: 'notes', sub: 'bob', device_id: 'phone', namespaces: ['notes:a'] },
+          { now: new Date() },
+        ),
+      });
+      expect(await bob.next('error')).toMatchObject({
+        payload: { code: 'application_unavailable' },
+      });
+      await stop();
     });
   });
 });

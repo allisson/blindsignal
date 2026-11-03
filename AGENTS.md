@@ -41,7 +41,8 @@ browsers relay through a test Coturn, the SDK closes a session that never connec
 has started: with `BLINDSIGNAL_DATABASE_URL` set, the server keeps device records and the last
 accepted registry in PostgreSQL (`adapters/storage/postgresql`, ADR 0020, ADR 0021), and
 with `BLINDSIGNAL_REDIS_URL` set too, instances share coordination through Redis or Valkey
-(`adapters/coordination/redis`, ADR 0022, ADR 0023). The workspace uses the toolchain in
+(`adapters/coordination/redis`, ADR 0022, ADR 0023), and a registry reload reaches every
+instance (ADR 0024). The workspace uses the toolchain in
 `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
 `jose`, `ws`, Vitest, Playwright), extended for Phase 9 by `docs/adr/0019-persistence-dependencies.md`
 (`pg`, `redis`, Valkey). Do not add a tool outside those ADRs without a new ADR.

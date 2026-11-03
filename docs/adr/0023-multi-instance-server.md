@@ -4,8 +4,8 @@
 
 ADR 0022 added a Redis-compatible `CoordinationAdapter`. This ADR wires the server to it, so
 several instances behind one load balancer serve one deployment: devices on different instances
-discover each other, open sessions, and exchange `rtc.*` messages. Propagating registry reloads
-between instances is a separate Phase 9 task (ADR 0021).
+discover each other, open sessions, and exchange `rtc.*` messages. ADR 0024 propagates registry
+reloads between instances.
 
 ## Rules
 
@@ -61,4 +61,4 @@ between instances is a separate Phase 9 task (ADR 0021).
   connection closes.
 - Sessions are counted only by the requester's instance, so the per-instance gauges sum to the
   deployment's total.
-- A registry reload reaches only the instance that received `SIGHUP` until reloads propagate.
+- A registry reload reaches the other instances through ADR 0024.
