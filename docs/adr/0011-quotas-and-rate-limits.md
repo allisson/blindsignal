@@ -45,7 +45,7 @@ Initial values are set through load testing (spec §8.2).
 | Signaling messages, every type | Connection |
 | `rtc.*` messages | Session |
 | `rtc.ice_candidate` | Session, in its own bucket |
-| Pairing attempts | Post-MVP, with pairing |
+| Pairing attempts | Connection (ADR 0042) |
 
 - **Token bucket:** each category has a configurable rate and burst. A message takes one token
   from every bucket that applies to it.

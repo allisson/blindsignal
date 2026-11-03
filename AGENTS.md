@@ -65,7 +65,9 @@ is set (ADR 0038); `docs/cloud-run.md` configures Cloud Run, not yet tested ther
 tasks, session authorization is done: the token's `permissions` claim narrows `session.create` and
 `session.accept` per namespace (ADR 0040), and proof-of-possession is done: a token bound to a
 device key with `cnf.jkt` needs a proof that the SDK's non-extractable `DeviceKey` signs
-(ADR 0041). The workspace uses
+(ADR 0041); pairing is served by the server: a new device asks its user's present devices, and
+one approves with a JWT its device key signs, for the backend to grant the namespace (ADR 0042),
+while the SDK does not ask or answer yet. The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
@@ -116,7 +118,8 @@ on them is written. Never assume an answer:
   Decided: `docs/adr/0006-token-profile-and-device-identity.md`.
 - When `rtc.ice_config` is sent beyond post-authentication (§11). Decided:
   `docs/adr/0009-ice-configuration.md`.
-- Pairing protocol (§7.4, post-MVP). Never invent custom cryptography.
+- Pairing protocol (§7.4, post-MVP). Never invent custom cryptography. Decided:
+  `docs/adr/0042-pairing.md`.
 
 ## Non-negotiable invariants
 

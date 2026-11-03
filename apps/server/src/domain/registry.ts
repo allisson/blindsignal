@@ -61,6 +61,7 @@ const applicationEntry = z
       .strictObject({
         discovery: rateLimitPolicy,
         session_create: rateLimitPolicy,
+        pairing: rateLimitPolicy,
         signaling: rateLimitPolicy,
         rtc: rateLimitPolicy,
         rtc_ice_candidate: rateLimitPolicy,

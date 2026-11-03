@@ -68,6 +68,7 @@ describe('loadConfig', () => {
         rateLimits: {
           discovery: { ratePerSecond: 2, burst: 10 },
           session_create: { ratePerSecond: 2, burst: 10 },
+          pairing: { ratePerSecond: 0.1, burst: 3 },
           signaling: { ratePerSecond: 50, burst: 100 },
           rtc: { ratePerSecond: 10, burst: 30 },
           rtc_ice_candidate: { ratePerSecond: 20, burst: 50 },
@@ -127,6 +128,7 @@ describe('loadConfig', () => {
       BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS: '3600',
       BLINDSIGNAL_RATE_LIMIT_DISCOVERY: '0.5,1',
       BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE: '1,2',
+      BLINDSIGNAL_RATE_LIMIT_PAIRING: '0.5,2',
       BLINDSIGNAL_RATE_LIMIT_SIGNALING: '30,60',
       BLINDSIGNAL_RATE_LIMIT_RTC: '5,15',
       BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE: '8,40',
@@ -185,6 +187,7 @@ describe('loadConfig', () => {
         rateLimits: {
           discovery: { ratePerSecond: 0.5, burst: 1 },
           session_create: { ratePerSecond: 1, burst: 2 },
+          pairing: { ratePerSecond: 0.5, burst: 2 },
           signaling: { ratePerSecond: 30, burst: 60 },
           rtc: { ratePerSecond: 5, burst: 15 },
           rtc_ice_candidate: { ratePerSecond: 8, burst: 40 },

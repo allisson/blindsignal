@@ -15,6 +15,7 @@ const defaults: Limits = {
   rateLimits: {
     discovery: policy(1, 2),
     session_create: policy(1, 3),
+    pairing: policy(1, 1),
     signaling: policy(10, 20),
     rtc: policy(5, 10),
     rtc_ice_candidate: policy(5, 15),

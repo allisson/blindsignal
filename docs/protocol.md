@@ -2,7 +2,7 @@
 
 **Status:** Draft, protocol version 1  
 **Reference:** `docs/spec.md` §11, §13; `docs/adr/0003-one-to-one-sessions.md`;
-`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`; `docs/adr/0009-ice-configuration.md`; `docs/adr/0011-quotas-and-rate-limits.md`; `docs/adr/0013-bounded-queues-and-backpressure.md`; `docs/adr/0014-maximum-session-duration.md`; `docs/adr/0041-proof-of-possession.md`
+`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`; `docs/adr/0009-ice-configuration.md`; `docs/adr/0011-quotas-and-rate-limits.md`; `docs/adr/0013-bounded-queues-and-backpressure.md`; `docs/adr/0014-maximum-session-duration.md`; `docs/adr/0041-proof-of-possession.md`; `docs/adr/0042-pairing.md`
 
 JSON text messages over one WebSocket per connection. The protocol carries no application
 payload: application data travels only through WebRTC DataChannels. Administrative operations
@@ -64,8 +64,9 @@ relayed messages (§6), which get a reply only on failure.
 | `auth.authenticate`, `auth.refresh` | `auth.result` |
 | `discovery.request` | `discovery.result` |
 | `session.create` | `session.created` |
+| `pairing.create` | `pairing.created` |
 | `connection.ping` | `connection.pong` |
-| `namespace.join`, `namespace.leave`, `session.accept`, `session.reject`, `session.close` | `ack` |
+| `namespace.join`, `namespace.leave`, `session.accept`, `session.reject`, `session.close`, `pairing.approve`, `pairing.reject` | `ack` |
 | `rtc.offer`, `rtc.answer`, `rtc.ice_candidate` | none |
 
 Any request may instead get `error`.
@@ -95,6 +96,14 @@ rebuilt by the server for the other session participant.
 | `session.rejected` | S→C | `{ sessionId }` | — |
 | `session.close` | C→S | `{ sessionId }` | `session.close` |
 | `session.terminated` | S→C | `{ sessionId, reason }` | — |
+| `pairing.create` | C→S | `{ namespace }` | the `pairing` claim |
+| `pairing.created` | S→C | `{ pairingId }` | — |
+| `pairing.request` | S→C | `{ pairingId, namespace, userId, deviceId }` | — |
+| `pairing.approve` | C→S | `{ pairingId, approval }` | `pairing.approve` |
+| `pairing.reject` | C→S | `{ pairingId }` | — |
+| `pairing.approved` | S→C | `{ pairingId, approval }` | — |
+| `pairing.rejected` | S→C | `{ pairingId }` | — |
+| `pairing.ended` | S→C | `{ pairingId, reason }` | — |
 | `rtc.offer` | Relay | `{ sessionId, sdp }` | `session.signal` |
 | `rtc.answer` | Relay | `{ sessionId, sdp }` | `session.signal` |
 | `rtc.ice_candidate` | Relay | `{ sessionId, candidate }` | `session.signal` |
@@ -110,8 +119,7 @@ identified by `userId` and `deviceId` together, never by `deviceId` alone (ADR 0
 empty when the server configures no ICE server. A TURN entry carries a credential minted for that
 message, valid until the expiry in its `username` (ADR 0017).
 `expiresInMs` is the time left until the token's `exp`, so the SDK can refresh before the server
-closes the connection without reading the token. Pairing
-messages are defined with the pairing protocol (spec §7.4, post-MVP).
+closes the connection without reading the token. `pairingId` is a UUID; pairing is §7a.
 
 The server rejects a message whose type it does not know or whose direction does not allow the
 sender, such as a client-sent `session.request` or `rtc.ice_config`.
@@ -218,6 +226,43 @@ application is closed (spec §5.5).
   parse or rewrite them.
 - ICE restart is a new `rtc.offer` within the same session; there is no `rtc.ice_restart` type.
 
+## 7a. Pairing
+
+A new device asks the user's other devices to approve it, and takes the approval to its backend,
+which issues tokens with the namespace (ADR 0042). The server grants nothing and stores nothing.
+
+1. The new device N, whose token lists the namespace in its `pairing` claim and is bound to a key
+   with `cnf.jkt`, sends `pairing.create { namespace }`. The server replies
+   `pairing.created { pairingId }`.
+2. Every other device of the same `userId` present in the namespace whose token is bound to a key
+   and grants `pairing.approve` there gets `pairing.request { pairingId, namespace, userId,
+   deviceId }` naming N.
+3. One of them, A, sends `pairing.approve { pairingId, approval }` or `pairing.reject
+   { pairingId }`, and gets `ack`. N gets `pairing.approved { pairingId, approval }` or
+   `pairing.rejected { pairingId }`; the other asked devices get `pairing.ended` reason
+   `answered`.
+
+- `approval` is a JWT signed by A's device key: header `typ` `blindsignal-pairing+jwt`, `alg`
+  `ES256` or `EdDSA`, and `jwk`; claims `pairing_id`, `namespace`, `sub` and `device_id` of N,
+  `jkt`, N's `cnf.jkt`, and `exp`. The server checks the signature with `jwk`, that its thumbprint
+  is A's `cnf.jkt`, and every claim; a failure gets `invalid_message` and leaves the request open.
+- `pairing.create` without the namespace in the `pairing` claim, or from an unbound token, gets
+  `not_authorized`; with no other device of the user present, `peer_unavailable`. It counts
+  toward the application's `pairing` rate limit.
+- `pairing.approve` from a device whose refresh withdrew `pairing.approve` gets `not_authorized`.
+  An answer to a pairing already answered, ended, or unknown gets `pairing_unavailable`.
+- A request lasts the negotiation timeout of §7: N and each asked device get `pairing.ended`
+  reason `timeout`. When N's connection closes, the asked devices get `pairing.ended` reason
+  `requester_gone`.
+
+`pairing.ended` reasons:
+
+| Reason | Cause |
+|---|---|
+| `answered` | Another asked device answered first. |
+| `timeout` | No answer within the negotiation timeout. |
+| `requester_gone` | The new device's connection closed. |
+
 ## 8. Heartbeat
 
 - The server detects dead connections with WebSocket ping frames, which browsers answer
@@ -265,15 +310,16 @@ Initial catalog:
 
 | Code | Class | Closes connection | When |
 |---|---|---|---|
-| `invalid_message` | retryable | no | Schema failure, unknown type, or wrong direction. Counts toward the rate limit. |
+| `invalid_message` | retryable | no | Schema failure, unknown type, or wrong direction, or a pairing approval that fails its checks (§7a). Counts toward the rate limit. |
 | `malformed_frame` | terminal | yes | Binary frame or invalid JSON. |
 | `message_too_large` | terminal | yes | Message above the configured maximum size. |
 | `unsupported_version` | terminal | yes | `version` not supported, or different from the connection's. |
 | `not_authenticated` | terminal | yes | Any message other than `auth.authenticate` before authentication. |
-| `not_authorized` | retryable | no | Namespace not authorized or nonexistent, or a session permission the token withholds (ADR 0040). |
+| `not_authorized` | retryable | no | Namespace not authorized or nonexistent, or a permission the token withholds (ADR 0040), including `pairing.create` outside the `pairing` claim or from an unbound token (ADR 0042). |
 | `not_joined` | retryable | no | `discovery.request` for a namespace not joined. |
-| `peer_unavailable` | retryable | no | `session.create` target not reachable (§7). |
+| `peer_unavailable` | retryable | no | `session.create` target not reachable (§7), or no device to ask for `pairing.create` (§7a). |
 | `session_unavailable` | retryable | no | Unknown session, wrong state, or sender not a participant. |
+| `pairing_unavailable` | retryable | no | Answer to a pairing request already answered, ended, or unknown (§7a). |
 | `rate_limited` | retryable | no | Rate limit exceeded; carries `retryAfterMs`. |
 | `quota_exceeded` | retryable | on `auth.authenticate` | Application connection or device-count quota on authentication; application or device session quota on `session.create`; joined-namespace quota on `namespace.join` (ADR 0011). |
 | `invalid_token` | retryable | on `auth.authenticate` | Bad signature, header, or claims (including a namespace without the application's prefix); lifetime above the maximum; future `iat`; `iat` before the server started (ADR 0006); replayed `jti`; unknown issuer or application; a `cnf` without a valid `proof`, or no `cnf` where the application requires one (ADR 0041). |

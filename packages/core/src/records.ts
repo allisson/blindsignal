@@ -38,7 +38,7 @@ export interface RateLimitPolicy {
 
 /** Rate-limit categories keyed after authentication, so an application can override them. */
 export type ApplicationRateLimit =
-  'discovery' | 'session_create' | 'signaling' | 'rtc' | 'rtc_ice_candidate';
+  'discovery' | 'session_create' | 'pairing' | 'signaling' | 'rtc' | 'rtc_ice_candidate';
 
 /** A registry entry (spec §5.1, ADR 0005). Limits it leaves out take the server defaults. */
 export interface ApplicationRecord {
@@ -64,8 +64,8 @@ export interface DeviceRecord extends DeviceIdentity {
   readonly lastAuthenticatedAt: Date;
 }
 
-/** Session permissions a token may restrict per namespace (ADR 0040). */
-export type SessionPermission = 'session.create' | 'session.accept';
+/** Permissions a token may restrict per namespace (ADR 0040, ADR 0042). */
+export type Permission = 'session.create' | 'session.accept' | 'pairing.approve';
 
 /** What an authenticated connection is, replaced whole on every successful `auth.refresh`. */
 export interface ConnectionContext extends DeviceIdentity {
@@ -75,7 +75,9 @@ export interface ConnectionContext extends DeviceIdentity {
    * The current token's `permissions` claim: a listed namespace grants only its permissions, an
    * unlisted one grants both (ADR 0040).
    */
-  readonly permissions?: Readonly<Record<string, readonly SessionPermission[]>>;
+  readonly permissions?: Readonly<Record<string, readonly Permission[]>>;
+  /** The current token's `pairing` claim: namespaces it may ask to be paired into (ADR 0042). */
+  readonly pairing?: readonly string[];
   /** The current token's `cnf.jkt`: the device key it is bound to, kept on refresh (ADR 0041). */
   readonly keyThumbprint?: string;
   readonly tokenExpiresAt: Date;

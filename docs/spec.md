@@ -379,6 +379,8 @@ Requirements:
 
 The cryptographic pairing protocol must be specified and reviewed before implementation. Do not invent a custom cryptographic protocol.
 
+A token's `pairing` claim lets a device ask its user's other devices, present in the namespace, to approve it; the approval is a JWT the approving device's key signs, binding the new device's key, which the server checks and the backend checks again before issuing tokens with the namespace. The server stores no pairing: the backend grants and revokes (`docs/adr/0042-pairing.md`).
+
 ## 8. Abuse prevention and resource protection
 
 Authentication alone is not sufficient to protect a deployed service.
@@ -491,7 +493,7 @@ Responsible for durable metadata:
 - Registered applications and trust configuration.
 - Device records.
 - Namespace metadata.
-- Pairing relationships.
+- Pairing relationships, kept by the application's backend rather than BlindSignal (`docs/adr/0042-pairing.md`).
 - Authorization policies.
 - Revocation state.
 - Quota configuration.
@@ -570,7 +572,7 @@ Initial message categories:
 | Namespace | `namespace.join`, `namespace.leave` |
 | Presence | `presence.changed` |
 | Discovery | `discovery.request`, `discovery.result` |
-| Pairing | `pairing.request`, `pairing.approve`, `pairing.reject` |
+| Pairing | `pairing.create`, `pairing.created`, `pairing.request`, `pairing.approve`, `pairing.reject`, `pairing.approved`, `pairing.rejected`, `pairing.ended` |
 | Session | `session.create`, `session.created`, `session.request`, `session.accept`, `session.reject`, `session.accepted`, `session.rejected`, `session.close`, `session.terminated` |
 | WebRTC | `rtc.offer`, `rtc.answer`, `rtc.ice_candidate` |
 | Configuration | `rtc.ice_config` |
@@ -913,6 +915,7 @@ client.on("sessionRequest", async (request) => {
 - Valid application-issued token acceptance.
 - Credential renewal with `auth.refresh` without reconnecting.
 - `auth.refresh` rejection when the new token's `app_id`, `sub`, or `device_id` differs from the connection's.
+- Pairing: a request reaches only the user's other present devices that may approve and hold a key; an approval for another pairing, namespace, device, or key, signed by another key, expired, or without `exp` is refused; the first answer wins; timeout and a requester that leaves end it for everyone (`docs/adr/0042-pairing.md`).
 - Proof-of-possession rejections: a bound token without a proof, or with a proof for another nonce, token, or key; an unbound token where the application requires binding; an `auth.refresh` that changes, adds, or drops `cnf.jkt` (`docs/adr/0041-proof-of-possession.md`).
 - A token naming another user's `device_id` identifying a different device, without affecting that user's connection or presence.
 - Token expiry on an open connection without `auth.refresh`, according to the token profile.

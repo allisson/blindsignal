@@ -44,8 +44,9 @@ const claims = z.object({
   jti: z.string().min(1),
   namespaces: z.array(namespaceId),
   permissions: z
-    .record(namespaceId, z.array(z.enum(['session.create', 'session.accept'])))
+    .record(namespaceId, z.array(z.enum(['session.create', 'session.accept', 'pairing.approve'])))
     .optional(),
+  pairing: z.array(namespaceId).optional(),
   cnf: z.object({ jkt: z.string().min(1) }).optional(),
 });
 
@@ -183,12 +184,15 @@ export class TokenVerifier {
     // 3. Claims against the application.
     const parsed = claims.safeParse(payload);
     if (!parsed.success) return fail('invalid_token');
-    const { sub, app_id, device_id, iat, exp, jti, namespaces, permissions, cnf } = parsed.data;
+    const { sub, app_id, device_id, iat, exp, jti, namespaces, permissions, pairing, cnf } =
+      parsed.data;
     const prefix = `${application.appId}:`;
     if (
       app_id !== application.appId ||
       namespaces.length > maxNamespaces ||
       !namespaces.every((namespace) => namespace.startsWith(prefix)) ||
+      (pairing ?? []).length > maxNamespaces ||
+      !(pairing ?? []).every((namespace) => namespace.startsWith(prefix)) ||
       // Permissions only narrow the token's own namespaces (ADR 0040).
       !Object.keys(permissions ?? {}).every((namespace) => namespaces.includes(namespace))
     ) {
@@ -234,6 +238,7 @@ export class TokenVerifier {
           deviceId: device_id,
           namespaces,
           ...(permissions === undefined ? {} : { permissions }),
+          ...(pairing === undefined ? {} : { pairing }),
           ...(cnf === undefined ? {} : { keyThumbprint: cnf.jkt }),
           tokenExpiresAt: new Date(exp * 1000),
         },

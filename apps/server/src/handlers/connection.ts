@@ -5,8 +5,8 @@ import type {
   CoordinationAdapter,
   DeviceIdentity,
   DeviceRepository,
+  Permission,
   RateLimitPolicy,
-  SessionPermission,
   Slot,
 } from '@blindsignal/core';
 import {
@@ -22,6 +22,7 @@ import {
 import type { AbuseMonitor } from '../domain/abuse.ts';
 import { unavailability, type TokenVerifier } from '../domain/auth.ts';
 import { applicationLimits, type Limits } from '../domain/limits.ts';
+import { approves, PendingPairings, type Pairing } from '../domain/pairings.ts';
 import { SessionRegistry, type Participant, type Session } from '../domain/sessions.ts';
 import { turnServer, type TurnPolicy } from '../domain/turn.ts';
 import type { Logger, Metrics } from '../telemetry.ts';
@@ -144,6 +145,16 @@ type SessionEvent =
       readonly sessionId: string;
       readonly reason: TerminationReason;
     };
+/** What the connections taking part in a pairing tell each other, on any instance (ADR 0042). */
+type PairingEvent =
+  | { readonly type: 'pairing.request'; readonly pairing: Pairing }
+  | { readonly type: 'pairing.approved'; readonly pairingId: string; readonly approval: string }
+  | { readonly type: 'pairing.rejected'; readonly pairingId: string }
+  | {
+      readonly type: 'pairing.ended';
+      readonly pairingId: string;
+      readonly reason: Payload<'pairing.ended'>['reason'];
+    };
 type SessionMessage = ClientMessage & {
   type: 'session.accept' | 'session.reject' | 'session.close';
 };
@@ -188,6 +199,10 @@ export class Connection {
   readonly #joined = new Map<string, () => Promise<void>>();
   /** This connection's copy of its sessions; the peer's connection keeps its own. */
   readonly #sessions = new SessionRegistry();
+  /** Pairings this connection requested, each with the connections asked to approve it. */
+  readonly #pairings = new PendingPairings<{ pairing: Pairing; approvers: readonly string[] }>();
+  /** Pairing requests this connection may answer. */
+  readonly #pairingRequests = new PendingPairings<Pairing>();
   /** What a proof of possession signs on this connection (ADR 0041). */
   readonly #nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url');
 
@@ -332,6 +347,14 @@ export class Connection {
       await this.#deps.coordination.releaseDeviceConnection(device, this.id);
     }
     for (const session of this.#sessions.all()) await this.#terminate(session, this.#endReason);
+    for (const { pairing, approvers } of this.#pairings.takeAll()) {
+      const ended = {
+        type: 'pairing.ended',
+        pairingId: pairing.id,
+        reason: 'requester_gone',
+      } as const;
+      for (const approver of approvers) await this.#notify(approver, ended);
+    }
     for (const namespace of [...this.#joined.keys()]) await this.#leave(namespace);
     const unsubscribe = this.#unsubscribe;
     this.#unsubscribe = undefined;
@@ -374,6 +397,11 @@ export class Connection {
       case 'session.reject':
       case 'session.close':
         return this.#answerSession(message);
+      case 'pairing.create':
+        return this.#createPairing(message);
+      case 'pairing.approve':
+      case 'pairing.reject':
+        return this.#answerPairing(message);
       case 'rtc.offer':
       case 'rtc.answer':
       case 'rtc.ice_candidate':
@@ -518,7 +546,7 @@ export class Connection {
   }
 
   /** The current token grants the session permission there: all of them unless it lists some. */
-  #permits(namespace: string, permission: SessionPermission): boolean {
+  #permits(namespace: string, permission: Permission): boolean {
     const listed = (this.#context as ConnectionContext).permissions?.[namespace];
     return this.#authorized(namespace) && (listed === undefined || listed.includes(permission));
   }
@@ -689,6 +717,125 @@ export class Connection {
     await this.#notify(session.requester.connectionId, { type: 'session.rejected', sessionId });
   }
 
+  /**
+   * Asks the user's other devices present in the namespace to approve this one (ADR 0042). Only a
+   * device whose token is bound to a key may ask: the approval binds that key.
+   */
+  async #createPairing(message: ClientMessage & { type: 'pairing.create' }): Promise<void> {
+    const { requestId, payload } = message;
+    const { namespace } = payload;
+    if (!(await this.#limit('pairing', this.id, requestId))) return;
+    const self = this.#context as ConnectionContext;
+    if (!self.pairing?.includes(namespace) || self.keyThumbprint === undefined) {
+      return this.#error('not_authorized', requestId);
+    }
+    // The user's own devices only: a backend invites other users.
+    const approvers: string[] = [];
+    for (const device of await this.#deps.coordination.listPresence(namespace)) {
+      if (device.userId !== self.userId || this.#isSelf(device)) continue;
+      const connectionId = await this.#deps.coordination.connectionOf(device);
+      if (connectionId !== undefined) approvers.push(connectionId);
+    }
+    if (approvers.length === 0) return this.#error('peer_unavailable', requestId);
+    const pairing: Pairing = {
+      id: crypto.randomUUID(),
+      namespace,
+      requester: { connectionId: this.id, device: identityOf(self) },
+      keyThumbprint: self.keyThumbprint,
+    };
+    this.#pairings.add(pairing.id, { pairing, approvers }, this.#deps.negotiationTimeoutMs, () => {
+      void this.#enqueue(() => {
+        this.#concludePairing(pairing.id, 'timeout');
+        const payload = { pairingId: pairing.id, reason: 'timeout' } as const;
+        // Each asked device's own timeout ends its copy.
+        this.#send({ type: 'pairing.ended', payload });
+        return Promise.resolve();
+      });
+    });
+    this.#send({ type: 'pairing.created', requestId, payload: { pairingId: pairing.id } });
+    this.#deps.logger.log('info', 'pairing.requested', {
+      appId: self.appId,
+      pairingId: pairing.id,
+    });
+    for (const approver of approvers) {
+      await this.#notify(approver, { type: 'pairing.request', pairing });
+    }
+  }
+
+  /** `pairing.approve` and `pairing.reject`, from a device the request reached. */
+  async #answerPairing(
+    message: ClientMessage & { type: 'pairing.approve' | 'pairing.reject' },
+  ): Promise<void> {
+    const { requestId, type, payload } = message;
+    const pairing = this.#pairingRequests.get(payload.pairingId);
+    if (pairing === undefined) return this.#error('pairing_unavailable', requestId);
+    let answer: PairingEvent = { type: 'pairing.rejected', pairingId: pairing.id };
+    if (type === 'pairing.approve') {
+      // A refresh may have withdrawn the permission since the request arrived.
+      if (!this.#permits(pairing.namespace, 'pairing.approve')) {
+        return this.#error('not_authorized', requestId);
+      }
+      // The request reached only connections bound to a key, which a refresh keeps (ADR 0041).
+      const key = (this.#context as ConnectionContext).keyThumbprint as string;
+      const { approval } = message.payload;
+      if (!(await approves(approval, pairing, key))) {
+        return this.#error('invalid_message', requestId);
+      }
+      answer = { type: 'pairing.approved', pairingId: pairing.id, approval };
+    }
+    this.#pairingRequests.take(pairing.id);
+    this.#ack(requestId);
+    await this.#notify(pairing.requester.connectionId, answer);
+  }
+
+  /** A connection taking part in a pairing changed it; this one updates its copy. */
+  async #onPairingEvent(event: PairingEvent): Promise<void> {
+    if (event.type === 'pairing.request') {
+      const { pairing } = event;
+      // A device that may not approve never hears of the request.
+      if (
+        this.#context?.keyThumbprint === undefined ||
+        !this.#permits(pairing.namespace, 'pairing.approve')
+      ) {
+        return;
+      }
+      const pairingId = pairing.id;
+      this.#pairingRequests.add(pairingId, pairing, this.#deps.negotiationTimeoutMs, () => {
+        // In case the requester's instance is gone and its own timeout never comes.
+        const payload = { pairingId, reason: 'timeout' } as const;
+        void this.#enqueue(() => Promise.resolve(this.#send({ type: 'pairing.ended', payload })));
+      });
+      const { userId, deviceId } = pairing.requester.device;
+      const payload = { pairingId, namespace: pairing.namespace, userId, deviceId };
+      return this.#send({ type: 'pairing.request', payload });
+    }
+    const { pairingId } = event;
+    if (event.type === 'pairing.ended') {
+      if (this.#pairingRequests.take(pairingId) === undefined) return;
+      return this.#send({ type: 'pairing.ended', payload: { pairingId, reason: event.reason } });
+    }
+    const entry = this.#pairings.take(pairingId);
+    // Gone already: it timed out, or another device answered first.
+    if (entry === undefined) return;
+    // The device that answered has no copy left, and ignores it.
+    const ended = { type: 'pairing.ended', pairingId, reason: 'answered' } as const;
+    for (const approver of entry.approvers) await this.#notify(approver, ended);
+    if (event.type === 'pairing.approved') {
+      this.#concludePairing(pairingId, 'approved');
+      this.#send({ type: 'pairing.approved', payload: { pairingId, approval: event.approval } });
+    } else {
+      this.#concludePairing(pairingId, 'rejected');
+      this.#send({ type: 'pairing.rejected', payload: { pairingId } });
+    }
+  }
+
+  /** Counted and logged by the requester's connection, so each pairing is audited once. */
+  #concludePairing(pairingId: string, result: 'approved' | 'rejected' | 'timeout'): void {
+    this.#deps.metrics.count('blindsignal_pairings_total', { result });
+    const event = result === 'timeout' ? 'pairing.expired' : `pairing.${result}`;
+    this.#deps.logger.log('info', event, { appId: this.#context?.appId, pairingId });
+  }
+
   /** Rebuilds an `rtc.*` message for the other participant of an active session (§7). */
   async #relay(message: RtcMessage): Promise<void> {
     const { requestId, type, payload } = message;
@@ -755,7 +902,7 @@ export class Connection {
     return this.#deps.coordination.publish(connectionTopic(connectionId), deliver(message));
   }
 
-  #notify(connectionId: string, event: SessionEvent): Promise<void> {
+  #notify(connectionId: string, event: SessionEvent | PairingEvent): Promise<void> {
     return this.#deps.coordination.publish(connectionTopic(connectionId), event);
   }
 
@@ -842,6 +989,8 @@ export class Connection {
       void this.#enqueue(() => Promise.resolve(this.#error('superseded', undefined, true)));
     } else if (typeof type === 'string' && type.startsWith('session.')) {
       void this.#enqueue(() => this.#onSessionEvent(event as SessionEvent));
+    } else if (typeof type === 'string' && type.startsWith('pairing.')) {
+      void this.#enqueue(() => this.#onPairingEvent(event as PairingEvent));
     } else if (type === 'deliver') {
       const { message } = event as ReturnType<typeof deliver>;
       void this.#enqueue(() => Promise.resolve(this.#send(message)));
