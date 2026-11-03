@@ -50,4 +50,21 @@ describe('SessionRegistry', () => {
     expect(registry.of('c2').map((s) => s.id)).toEqual([pending.id, accepted.id]);
     expect(registry.of('c3')).toEqual([]);
   });
+
+  it('times out an active session past its duration, when one is set', () => {
+    const registry = new SessionRegistry();
+    const onTimeout = vi.fn();
+    const requester = { connectionId: 'c1', device: alice };
+    const target = { connectionId: 'c2', device: bob };
+    const limited = registry.create('notes:a', requester, target, 1_000, onTimeout);
+    const unlimited = registry.create('notes:a', requester, target, 1_000, onTimeout);
+    vi.advanceTimersByTime(999);
+    registry.activate(limited.id, 5_000);
+    registry.activate(unlimited.id);
+    vi.advanceTimersByTime(4_999);
+    expect(onTimeout).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onTimeout.mock.calls).toEqual([[limited]]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

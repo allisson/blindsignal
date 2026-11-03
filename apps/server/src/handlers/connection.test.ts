@@ -1378,6 +1378,25 @@ describe('Connection', () => {
       expect(bob.errors()).toEqual(['session_unavailable']);
     });
 
+    it('ends an active session at the maximum duration, for both sides', async () => {
+      const quotas = { sessionDurationSeconds: 60 };
+      const { alice, bob, sessionId } = await active([{ ...devApplication('notes'), quotas }]);
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(alice.last()?.type).toBe('session.accepted');
+      await vi.advanceTimersByTimeAsync(1);
+      expect(alice.last()).toEqual(terminated(sessionId, 'timeout'));
+      expect(bob.last()).toEqual(terminated(sessionId, 'timeout'));
+      await alice.request('rtc.offer', { sessionId, sdp: 'v=0' });
+      expect(alice.errors()).toEqual(['session_unavailable']);
+    });
+
+    it('keeps an active session with no maximum duration', async () => {
+      const { alice, sessionId } = await active();
+      await vi.advanceTimersByTimeAsync(NEGOTIATION_MS * 10);
+      await alice.request('rtc.offer', { sessionId, sdp: 'v=0' });
+      expect(alice.errors()).toEqual([]);
+    });
+
     it('ends a session once when its timeout races an answer', async () => {
       const { alice, bob } = await pair();
       const sessionId = await create(alice);

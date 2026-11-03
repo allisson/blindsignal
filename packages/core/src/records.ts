@@ -27,6 +27,8 @@ export interface Quotas {
   readonly sessions: number;
   readonly sessionsPerDevice: number;
   readonly namespacesPerDevice: number;
+  /** How long a session may stay active; 0 sets no limit (ADR 0014). */
+  readonly sessionDurationSeconds: number;
 }
 
 export interface RateLimitPolicy {

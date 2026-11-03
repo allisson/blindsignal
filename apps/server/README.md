@@ -73,6 +73,7 @@ them (spec §8.2). A rate limit is `rate,burst`: tokens added per second, and th
 | `BLINDSIGNAL_MAX_SESSIONS_PER_APP` | `10000` | `quotas.sessions` |
 | `BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE` | `16` | `quotas.sessionsPerDevice` |
 | `BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE` | `100` | `quotas.namespacesPerDevice` |
+| `BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS` | `0` (no limit) | `quotas.sessionDurationSeconds` |
 | `BLINDSIGNAL_RATE_LIMIT_DISCOVERY` | `2,10` | `rateLimits.discovery` |
 | `BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE` | `2,10` | `rateLimits.session_create` |
 | `BLINDSIGNAL_RATE_LIMIT_SIGNALING` | `50,100` | `rateLimits.signaling` |

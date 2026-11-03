@@ -536,7 +536,8 @@ export class Connection {
     this.#ack(requestId);
     if (type === 'session.close') return this.#terminate(session, 'closed_by_peer');
     if (type === 'session.accept') {
-      this.#deps.sessions.activate(sessionId);
+      // The accepting connection's limits: both devices belong to the same application.
+      this.#deps.sessions.activate(sessionId, this.#limits.quotas.sessionDurationSeconds * 1000);
       return this.#publish(session.requester.connectionId, {
         type: 'session.accepted',
         payload: { sessionId },

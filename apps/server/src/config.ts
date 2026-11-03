@@ -109,6 +109,8 @@ const environment = z
     BLINDSIGNAL_MAX_SESSIONS_PER_APP: count.default(10_000),
     BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE: count.default(16),
     BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE: count.default(100),
+    // 0 sets no limit: a session already ends with either connection (ADR 0014).
+    BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS: seconds.default(0),
     BLINDSIGNAL_RATE_LIMIT_DISCOVERY: rateLimit(2, 10),
     BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE: rateLimit(2, 10),
     BLINDSIGNAL_RATE_LIMIT_SIGNALING: rateLimit(50, 100),
@@ -213,6 +215,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
           sessions: vars.BLINDSIGNAL_MAX_SESSIONS_PER_APP,
           sessionsPerDevice: vars.BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE,
           namespacesPerDevice: vars.BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE,
+          sessionDurationSeconds: vars.BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS,
         },
         rateLimits: {
           discovery: vars.BLINDSIGNAL_RATE_LIMIT_DISCOVERY,

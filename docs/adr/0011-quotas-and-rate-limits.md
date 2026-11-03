@@ -28,6 +28,7 @@ Initial values are set through load testing (spec §8.2).
   on `session.create` and `namespace.join` it does not.
 - **No per-device connection quota:** it is 1 by design (ADR 0008).
 - **No maximum session duration:** a session already ends with its connection (ADR 0004).
+  Superseded by ADR 0014, which adds it as an optional quota.
 - **Message size** is server-wide, since it is checked before the frame is parsed and the
   application is known; an oversized message is `message_too_large`.
 

@@ -2,7 +2,7 @@
 
 **Status:** Draft, protocol version 1  
 **Reference:** `docs/spec.md` §11, §13; `docs/adr/0003-one-to-one-sessions.md`;
-`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`; `docs/adr/0009-ice-configuration.md`; `docs/adr/0011-quotas-and-rate-limits.md`
+`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`; `docs/adr/0009-ice-configuration.md`; `docs/adr/0011-quotas-and-rate-limits.md`; `docs/adr/0013-bounded-queues-and-backpressure.md`; `docs/adr/0014-maximum-session-duration.md`
 
 JSON text messages over one WebSocket per connection. The protocol carries no application
 payload: application data travels only through WebRTC DataChannels. Administrative operations
@@ -154,7 +154,7 @@ them (ADR 0004).
    `session.rejected`.
 
 States: `pending` → `active` on accept; `pending` → `ended` on reject, timeout, close, or
-disconnect; `active` → `ended` on close, disconnect, or revocation. `rtc.*` is accepted only in
+disconnect; `active` → `ended` on close, disconnect, revocation, or the maximum session duration. `rtc.*` is accepted only in
 `active`. Only the target accepts or rejects, and only a `pending` session; any other
 `session.accept`, `session.reject`, or `session.close` gets `session_unavailable`.
 
@@ -163,6 +163,8 @@ disconnect; `active` → `ended` on close, disconnect, or revocation. `rtc.*` is
   their load cannot be enumerated. A session holds its quota slots from creation (ADR 0011).
 - A `pending` session expires after a configurable negotiation timeout; both sides get
   `session.terminated` with reason `timeout`.
+- An `active` session ends once it has been active for the application's maximum session
+  duration, when one is set; both sides get `session.terminated` with reason `timeout` (ADR 0014).
 - `session.close` is only client to server, from either participant, in `pending` or `active`.
   The other participant gets `session.terminated` with reason `closed_by_peer`.
 - When a participant's connection closes, the server ends the session and the other participant
@@ -178,7 +180,7 @@ disconnect; `active` → `ended` on close, disconnect, or revocation. `rtc.*` is
 | `closed_by_peer` | The other participant sent `session.close`. |
 | `peer_disconnected` | The other participant's connection closed. |
 | `peer_revoked` | The other participant's device was revoked (spec §6.4). |
-| `timeout` | The session stayed `pending` past the negotiation timeout. |
+| `timeout` | The session stayed `pending` past the negotiation timeout, or `active` past the maximum session duration (ADR 0014). |
 | `namespace_unauthorized` | A participant's `auth.refresh` removed the session's namespace (sent to both). |
 
 Application suspension and revocation send no `session.terminated`: every connection of the

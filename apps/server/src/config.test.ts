@@ -49,6 +49,7 @@ describe('loadConfig', () => {
           sessions: 10_000,
           sessionsPerDevice: 16,
           namespacesPerDevice: 100,
+          sessionDurationSeconds: 0,
         },
         rateLimits: {
           discovery: { ratePerSecond: 2, burst: 10 },
@@ -94,6 +95,7 @@ describe('loadConfig', () => {
       BLINDSIGNAL_MAX_SESSIONS_PER_APP: '60',
       BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE: '3',
       BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE: '7',
+      BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS: '3600',
       BLINDSIGNAL_RATE_LIMIT_DISCOVERY: '0.5,1',
       BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE: '1,2',
       BLINDSIGNAL_RATE_LIMIT_SIGNALING: '30,60',
@@ -130,6 +132,7 @@ describe('loadConfig', () => {
           sessions: 60,
           sessionsPerDevice: 3,
           namespacesPerDevice: 7,
+          sessionDurationSeconds: 3600,
         },
         rateLimits: {
           discovery: { ratePerSecond: 0.5, burst: 1 },
@@ -204,6 +207,7 @@ describe('loadConfig', () => {
     ['BLINDSIGNAL_MAX_SESSIONS_PER_APP', 'many'],
     ['BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE', '-1'],
     ['BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE', '0'],
+    ['BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS', '-1'],
     ['BLINDSIGNAL_RATE_LIMIT_DISCOVERY', '2'],
     ['BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE', '2,10,3'],
     ['BLINDSIGNAL_RATE_LIMIT_SIGNALING', '0,10'],

@@ -16,6 +16,7 @@ export interface Session {
 interface Entry extends Session {
   state: 'pending' | 'active';
   timer: ReturnType<typeof setTimeout> | undefined;
+  readonly onTimeout: (session: Session) => void;
 }
 
 const deviceKey = ({ appId, userId, deviceId }: DeviceIdentity) =>
@@ -45,7 +46,10 @@ export class SessionRegistry {
     return this.#connections.get(deviceKey(device));
   }
 
-  /** Creates a `pending` session; `onTimeout` runs if it is still pending after `timeoutMs`. */
+  /**
+   * Creates a `pending` session; `onTimeout` runs if it is still pending after `timeoutMs`, or
+   * active past the duration `activate` sets.
+   */
   create(
     namespace: string,
     requester: Participant,
@@ -61,6 +65,7 @@ export class SessionRegistry {
       target,
       state: 'pending',
       timer: undefined,
+      onTimeout,
     };
     entry.timer = setTimeout(() => onTimeout(entry), timeoutMs);
     this.#sessions.set(entry.id, entry);
@@ -76,12 +81,16 @@ export class SessionRegistry {
     return this.#sessions.get(sessionId);
   }
 
-  /** Moves a `pending` session to `active` and disarms its negotiation timeout. */
-  activate(sessionId: string): void {
+  /**
+   * Moves a `pending` session to `active` and disarms its negotiation timeout; a `durationMs`
+   * above 0 arms the maximum session duration (ADR 0014).
+   */
+  activate(sessionId: string, durationMs = 0): void {
     const entry = this.#sessions.get(sessionId);
     if (entry === undefined) return;
     entry.state = 'active';
     clearTimeout(entry.timer);
+    entry.timer = durationMs > 0 ? setTimeout(() => entry.onTimeout(entry), durationMs) : undefined;
   }
 
   /** Removes the session; true when it existed, so only one caller ends it. */

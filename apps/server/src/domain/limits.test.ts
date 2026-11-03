@@ -10,6 +10,7 @@ const defaults: Limits = {
     sessions: 30,
     sessionsPerDevice: 4,
     namespacesPerDevice: 5,
+    sessionDurationSeconds: 0,
   },
   rateLimits: {
     discovery: policy(1, 2),
