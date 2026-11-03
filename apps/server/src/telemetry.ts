@@ -35,6 +35,8 @@ const COUNTERS = {
   blindsignal_application_errors_total:
     'error messages sent once the token is verified, by application and code.',
   blindsignal_application_sessions_created_total: 'Sessions created, by application.',
+  blindsignal_abuse_alerts_total:
+    'Abuse alerts: rate_limited and quota_exceeded rejections reaching the threshold in a window, by application.',
 } as const;
 
 export type CounterName = keyof typeof COUNTERS;

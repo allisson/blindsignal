@@ -432,6 +432,8 @@ The server must support:
 
 Return consistent error codes and avoid leaking sensitive internal details.
 
+The server alerts on an application's repeated `rate_limited` and `quota_exceeded` rejections; suspension is the operator's decision, through the control plane (`docs/adr/0016-abuse-alerts.md`).
+
 Authentication and connection-closure error codes must tell the SDK whether a rejection is retryable (for example, an expired token that a new token from the application backend can replace), terminal (the application is suspended or revoked, or the device is revoked), or superseded (the duplicate-connection policy replaced this connection with a newer one of the same device, §13). The SDK stops reconnecting on a terminal rejection and closes its sessions (§6.4, §15). On a superseded closure it does not reconnect automatically, so two connections of the same device cannot replace each other in a loop.
 
 ### 8.4 Resource controls

@@ -17,6 +17,7 @@ import {
   type Payload,
   type ServerMessage,
 } from '@blindsignal/protocol';
+import type { AbuseMonitor } from '../domain/abuse.ts';
 import { unavailability, type TokenVerifier } from '../domain/auth.ts';
 import { applicationLimits, type Limits } from '../domain/limits.ts';
 import type { Participant, Session, SessionRegistry } from '../domain/sessions.ts';
@@ -80,6 +81,8 @@ export interface ConnectionDependencies {
   readonly maxQueuedMessages: number;
   /** Bytes waiting in one connection's send buffer (ADR 0013). */
   readonly maxBufferedBytes: number;
+  /** Shared by every connection of the process; alerts on an application's rejections (ADR 0016). */
+  readonly abuse: Pick<AbuseMonitor, 'record'>;
   readonly metrics: Pick<Metrics, 'count'>;
   readonly logger: Logger;
 }
@@ -684,14 +687,18 @@ export class Connection {
     }
   }
 
-  /** Counts an `error` sent, and by application once a token is verified (ADR 0015). */
+  /**
+   * Counts an `error` sent, and by application once a token is verified (ADR 0015); an
+   * application's `rate_limited` and `quota_exceeded` may raise an abuse alert (ADR 0016).
+   */
   #countError(code: ErrorCode): void {
     this.#deps.metrics.count('blindsignal_errors_total', { code });
-    if (this.#appId !== undefined) {
-      this.#deps.metrics.count('blindsignal_application_errors_total', {
-        app_id: this.#appId,
-        code,
-      });
+    const appId = this.#appId;
+    if (appId === undefined) return;
+    this.#deps.metrics.count('blindsignal_application_errors_total', { app_id: appId, code });
+    if ((code === 'rate_limited' || code === 'quota_exceeded') && this.#deps.abuse.record(appId)) {
+      this.#deps.logger.log('warn', 'application.abuse_suspected', { appId });
+      this.#deps.metrics.count('blindsignal_abuse_alerts_total', { app_id: appId });
     }
   }
 

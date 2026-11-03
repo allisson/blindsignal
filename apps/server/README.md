@@ -57,6 +57,8 @@ names the variable, never its value.
 | `BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION` | `1,10` | `auth.authenticate` and `auth.refresh` per client IP, as `rate,burst`; more get `rate_limited`. |
 | `BLINDSIGNAL_MAX_QUEUED_MESSAGES` | `1024` | Frames and events waiting on one connection, at least `2`; reading pauses at half, and a full queue closes with `1013` (ADR 0013). |
 | `BLINDSIGNAL_MAX_BUFFERED_BYTES` | `1048576` | Bytes waiting in one connection's send buffer, at least `65536`; more close with `1013` (ADR 0013). |
+| `BLINDSIGNAL_ABUSE_ALERT_THRESHOLD` | `0` (off) | An application's `rate_limited` and `quota_exceeded` errors within one window that raise an abuse alert (ADR 0016). |
+| `BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS` | `60` | The abuse alert's window. |
 
 The pre-authentication limits are keyed by the client IP (`BLINDSIGNAL_TRUSTED_PROXIES`) and apply
 to every application, which is not known yet (ADR 0011). The unauthenticated caps count this
@@ -108,3 +110,8 @@ terminated, registry reloads, connections closed by backpressure, open connectio
 The `blindsignal_application_*` series break connections, sessions, messages, sessions created,
 and errors down by application (`app_id`), once a token is verified
 (`docs/adr/0015-application-usage-metrics.md`).
+
+An application whose `rate_limited` and `quota_exceeded` errors reach
+`BLINDSIGNAL_ABUSE_ALERT_THRESHOLD` within one window logs `application.abuse_suspected` (`warn`)
+and counts `blindsignal_abuse_alerts_total{app_id}`, once per window. The server does not suspend
+it: set `status: "suspended"` in the registry and send `SIGHUP` (ADR 0005, ADR 0016).
