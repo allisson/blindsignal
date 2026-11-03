@@ -15,6 +15,8 @@ export interface SignalingServerOptions {
   readonly heartbeatIntervalMs: number;
   /** Closes each connection with 1001 before this lifetime ends; 0 or absent for none (ADR 0029). */
   readonly maxConnectionMs?: number;
+  /** Open connections, upgrades in progress included; more get HTTP 503. 0 or absent for none (ADR 0030). */
+  readonly maxConnections?: number;
   /** Checked at the upgrade; the authentication deadline is the connection's. */
   readonly preAuthentication: Omit<PreAuthentication, 'authenticationTimeoutMs'>;
   readonly coordination: Pick<CoordinationAdapter, 'consumeRateLimit'>;
@@ -49,6 +51,8 @@ export class SignalingServer {
   /** Unauthenticated connections per client IP, upgrades in progress included. */
   readonly #unauthenticated = new Map<string, number>();
   #unauthenticatedTotal = 0;
+  /** Sockets past the `Origin` check, from the upgrade until they close (ADR 0030). */
+  #open = 0;
 
   constructor(options: SignalingServerOptions) {
     this.#options = options;
@@ -145,6 +149,10 @@ export class SignalingServer {
     if (!isOriginAllowed(request.headers.origin, this.#options.allowedOrigins)) {
       return refuse(socket, 403);
     }
+    const { maxConnections = 0 } = this.#options;
+    if (maxConnections > 0 && this.#open >= maxConnections) return refuse(socket, 503);
+    this.#open++;
+    socket.once('close', () => this.#open--);
     const ip = clientIp(
       request.socket.remoteAddress ?? '',
       request.headers,

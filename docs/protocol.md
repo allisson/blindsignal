@@ -267,7 +267,9 @@ Initial catalog:
 | `server_error` | retryable | yes | The server could not handle the message, such as when its storage is unreachable (ADR 0021). The SDK reconnects with backoff. |
 
 Connection attempts above the rate limit or the unauthenticated connection cap are refused with
-HTTP `429` before the WebSocket upgrade, so they get no `error` message (ADR 0011).
+HTTP `429` before the WebSocket upgrade, so they get no `error` message (ADR 0011). An instance at
+its connection cap refuses the upgrade with HTTP `503` (ADR 0030); the SDK sees a failed open
+either way and reconnects with backoff.
 
 A failed `auth.refresh` with a retryable code leaves the connection on its current token until
 that token expires. An unknown application gets the same `invalid_token` as a bad signature, so
