@@ -23,6 +23,7 @@ server. Initial target: browser / PWA.
 - `docs/self-hosted.md`: one-host deployment with Compose and Caddy (Phase 10).
 - `docs/application-lifecycle.md`: registering, suspending, and revoking applications and devices.
 - `docs/secrets-and-keys.md`: every secret, its rotation, and what to do after a compromise.
+- `docs/backup-and-recovery.md`: what to back up, and restoring PostgreSQL.
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
 raise it; do not silently diverge. A change that alters a documented contract updates the spec,
@@ -55,7 +56,7 @@ maximum connection lifetime keeps connections under a hosting platform's request
 readiness before closing connections and ends within a deadline (ADR 0031); `examples/self-hosted/`
 runs it on one host behind Caddy (ADR 0032), and CI runs the production image read-only
 before every merge (ADR 0033); `docs/secrets-and-keys.md` and `docs/application-lifecycle.md` are the
-operator's procedures (ADR 0034). The workspace uses
+operator's procedures (ADR 0034), and `docs/backup-and-recovery.md` the backups (ADR 0035). The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey). Do not add a tool outside those ADRs without a new ADR.

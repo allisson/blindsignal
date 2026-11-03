@@ -487,7 +487,8 @@ Operating TURN is not required to complete the initial local MVP.
 - [ ] Document VPS deployment.
 - [x] Document self-hosted deployment: `docs/self-hosted.md`.
 - [x] Document optional TURN deployment: `docs/turn-operations.md`.
-- [ ] Define backup and recovery for durable metadata.
+- [x] Define backup and recovery for durable metadata: `docs/backup-and-recovery.md`
+  (ADR 0035).
 
 ### Deliverables
 
