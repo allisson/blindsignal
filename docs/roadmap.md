@@ -467,7 +467,8 @@ Operating TURN is not required to complete the initial local MVP.
 
 ### Tasks
 
-- [ ] Finalize production Docker image.
+- [x] Finalize production Docker image: pinned base, no package manager, tested in CI
+  (ADR 0033).
 - [x] Extend the Phase 3 Docker Compose setup for self-hosted deployment:
   `examples/self-hosted/` (ADR 0032).
 - [x] Implement production health and readiness checks: liveness, readiness, and dependency

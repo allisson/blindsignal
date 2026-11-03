@@ -20,7 +20,8 @@ docker compose up --build
 private key is public in this repository; it loads only with `BLINDSIGNAL_ENV=development`. Tokens
 for it come from `mintDevToken` in `packages/dev-issuer`.
 
-The image (`Dockerfile`) runs in production mode by default and needs at least
+The image (`Dockerfile`, ADR 0033) runs in production mode by default, as `node`, and works
+with a read-only root filesystem and no capabilities (`--read-only --cap-drop ALL`). It needs at least
 `BLINDSIGNAL_REGISTRY_PATH` and `BLINDSIGNAL_ALLOWED_ORIGINS`. It speaks plain WebSocket: put it
 behind a TLS-terminating proxy and list that proxy in `BLINDSIGNAL_TRUSTED_PROXIES` (spec §16).
 `docs/external-testing.md` covers the Compose workflow and exposing the server through a
