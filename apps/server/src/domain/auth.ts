@@ -40,6 +40,9 @@ const claims = z.object({
   exp: z.number(),
   jti: z.string().min(1),
   namespaces: z.array(namespaceId),
+  permissions: z
+    .record(namespaceId, z.array(z.enum(['session.create', 'session.accept'])))
+    .optional(),
 });
 
 export interface TokenVerifierOptions {
@@ -146,12 +149,14 @@ export class TokenVerifier {
     // 3. Claims against the application.
     const parsed = claims.safeParse(payload);
     if (!parsed.success) return fail('invalid_token');
-    const { sub, app_id, device_id, iat, exp, jti, namespaces } = parsed.data;
+    const { sub, app_id, device_id, iat, exp, jti, namespaces, permissions } = parsed.data;
     const prefix = `${application.appId}:`;
     if (
       app_id !== application.appId ||
       namespaces.length > maxNamespaces ||
-      !namespaces.every((namespace) => namespace.startsWith(prefix))
+      !namespaces.every((namespace) => namespace.startsWith(prefix)) ||
+      // Permissions only narrow the token's own namespaces (ADR 0040).
+      !Object.keys(permissions ?? {}).every((namespace) => namespaces.includes(namespace))
     ) {
       return fail('invalid_token');
     }
@@ -185,6 +190,7 @@ export class TokenVerifier {
           userId: sub,
           deviceId: device_id,
           namespaces,
+          ...(permissions === undefined ? {} : { permissions }),
           tokenExpiresAt: new Date(exp * 1000),
         },
       },

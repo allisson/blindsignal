@@ -6,6 +6,7 @@ import type {
   DeviceIdentity,
   DeviceRepository,
   RateLimitPolicy,
+  SessionPermission,
   Slot,
 } from '@blindsignal/core';
 import {
@@ -496,6 +497,12 @@ export class Connection {
     return (this.#context as ConnectionContext).namespaces.includes(namespace);
   }
 
+  /** The current token grants the session permission there: all of them unless it lists some. */
+  #permits(namespace: string, permission: SessionPermission): boolean {
+    const listed = (this.#context as ConnectionContext).permissions?.[namespace];
+    return this.#authorized(namespace) && (listed === undefined || listed.includes(permission));
+  }
+
   async #join(message: ClientMessage & { type: 'namespace.join' }): Promise<void> {
     const { requestId, payload } = message;
     const { namespace } = payload;
@@ -548,7 +555,8 @@ export class Connection {
     const { requestId, payload } = message;
     const { namespace, userId, deviceId } = payload;
     if (!(await this.#limit('session_create', this.id, requestId))) return;
-    if (!this.#authorized(namespace)) return this.#error('not_authorized', requestId);
+    if (!this.#permits(namespace, 'session.create'))
+      return this.#error('not_authorized', requestId);
     const self = this.#context as ConnectionContext;
     const target = { appId: self.appId, userId, deviceId };
     // Joining requires authorization, so a present target is authorized in the namespace.
@@ -604,6 +612,11 @@ export class Connection {
   async #onSessionEvent(event: SessionEvent): Promise<void> {
     if (event.type === 'session.request') {
       const { session } = event;
+      // Answered as a rejection, so the requester cannot tell a refusal from a policy (ADR 0040).
+      if (!this.#permits(session.namespace, 'session.accept')) {
+        const rejected = { type: 'session.rejected', sessionId: session.id } as const;
+        return this.#notify(session.requester.connectionId, rejected);
+      }
       this.#open(session);
       const { userId, deviceId } = session.requester.device;
       const payload = { sessionId: session.id, namespace: session.namespace, userId, deviceId };
@@ -641,6 +654,10 @@ export class Connection {
         ? this.#participates(session)
         : session.state === 'pending' && session.target.connectionId === this.id);
     if (!allowed) return this.#error('session_unavailable', requestId);
+    // A refresh may have withdrawn the permission since the request arrived.
+    if (type === 'session.accept' && !this.#permits(session.namespace, 'session.accept')) {
+      return this.#error('not_authorized', requestId);
+    }
     this.#ack(requestId);
     if (type === 'session.close') return this.#terminate(session, 'closed_by_peer');
     if (type === 'session.accept') {

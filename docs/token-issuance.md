@@ -54,6 +54,7 @@ Header: `{ "alg": "EdDSA" | "ES256", "kid": "<key id>" }`.
 | `exp`        | `iat` plus the lifetime; at most `iat` + 600 seconds.                                    |
 | `jti`        | A new random value for every token, such as a UUID.                                      |
 | `namespaces` | An array, possibly empty, of at most 100 namespace IDs the device may join.             |
+| `permissions` | Optional. Narrows the session permissions per namespace; see [Session permissions](#session-permissions). |
 | `nbf`        | Optional. Omit it or set it to `iat`.                                                    |
 
 Other claims are ignored. Example:
@@ -96,6 +97,24 @@ Other claims are ignored. Example:
 - The list is exact: no wildcards. It authorizes the connection until the next refresh, which
   replaces it (`docs/adr/0007-namespace-authorization.md`). To revoke a namespace, leave it out of
   the next token; the change takes effect within one token lifetime.
+
+### Session permissions
+
+- In a namespace of `namespaces`, a device may request sessions (`session.create`) and accept them
+  (`session.accept`). To narrow that, list the namespace in `permissions` with the permissions it
+  keeps (`docs/adr/0040-session-permissions.md`):
+
+  ```json
+  "namespaces": ["blindvault:vault-1", "blindvault:vault-2"],
+  "permissions": { "blindvault:vault-2": ["session.accept"] }
+  ```
+
+  Here the device requests and accepts sessions in `vault-1`, and only accepts them in `vault-2`.
+  An empty list keeps neither: the device joins and discovers, but opens no session.
+- Every key must be in `namespaces`, and every permission one of the two; anything else rejects the
+  whole token.
+- A request to a device without `session.accept` reaches the requester as `session.rejected`.
+  Withdrawing a permission takes effect at the next refresh and ends no session already open.
 
 ## Token endpoint
 

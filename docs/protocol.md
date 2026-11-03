@@ -123,9 +123,10 @@ sender, such as a client-sent `session.request` or `rtc.ice_config`.
   and the connection stays open; `auth.refresh` renews the credential.
 - The server checks the permission in §4 on every protected message, deny by default. Permissions
   are server-side checkpoints and never appear on the wire.
-- In the MVP, a device authorized in a namespace holds every namespace and session permission in
-  it. A connection is authorized exactly in the namespaces of its current token's `namespaces`
-  claim, each of the form `<app_id>:<scope>` (ADR 0007).
+- A connection is authorized exactly in the namespaces of its current token's `namespaces` claim,
+  each of the form `<app_id>:<scope>` (ADR 0007), and holds every namespace permission there. It
+  holds `session.create` and `session.accept` there too, unless the token's `permissions` claim
+  lists the namespace with fewer (ADR 0040; §7).
 - `auth.refresh` replaces that set. For each namespace no longer listed, the server removes the
   device from it and ends the connection's sessions there with `session.terminated` reason
   `namespace_unauthorized`, sent to both participants. New namespaces are not joined
@@ -159,6 +160,11 @@ disconnect; `active` → `ended` on close, disconnect, revocation, or the maximu
 `active`. Only the target accepts or rejects, and only a `pending` session; any other
 `session.accept`, `session.reject`, or `session.close` gets `session_unavailable`.
 
+- A requester without `session.create` in the namespace gets `not_authorized`, and no request
+  reaches the target. A target without `session.accept` there never receives `session.request`:
+  its connection answers the requester with `session.rejected`, as a rejection by the user would.
+  A target whose `session.accept` an `auth.refresh` withdrew after the request gets
+  `not_authorized` on `session.accept`, and the session stays `pending` (ADR 0040).
 - A target that does not exist, is not authorized in the namespace, has not joined it, is the
   requester itself, or has no free session slot gets the same `peer_unavailable`, so devices and
   their load cannot be enumerated. A session holds its quota slots from creation (ADR 0011).
@@ -252,7 +258,7 @@ Initial catalog:
 | `message_too_large` | terminal | yes | Message above the configured maximum size. |
 | `unsupported_version` | terminal | yes | `version` not supported, or different from the connection's. |
 | `not_authenticated` | terminal | yes | Any message other than `auth.authenticate` before authentication. |
-| `not_authorized` | retryable | no | Namespace not authorized or nonexistent. |
+| `not_authorized` | retryable | no | Namespace not authorized or nonexistent, or a session permission the token withholds (ADR 0040). |
 | `not_joined` | retryable | no | `discovery.request` for a namespace not joined. |
 | `peer_unavailable` | retryable | no | `session.create` target not reachable (§7). |
 | `session_unavailable` | retryable | no | Unknown session, wrong state, or sender not a participant. |

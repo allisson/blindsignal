@@ -265,13 +265,14 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 **Goal:** Establish trustworthy device identity and resource authorization.
 
-**MVP subset:** the tasks marked *(MVP)*: namespace authorization, device revocation (including the control-plane operation), propagating device revocation to the revoked device's active connections and sessions, and notifying remaining peers on revocation (spec §6.4). Pairing, session authorization, and the remaining tasks are post-MVP. Application suspension and revocation are handled in Phase 3 and propagated across instances in Phase 9. Until session authorization lands, any device authorized in a namespace may request a session with any other device in that namespace; the target device still accepts or rejects (spec §13).
+**MVP subset:** the tasks marked *(MVP)*: namespace authorization, device revocation (including the control-plane operation), propagating device revocation to the revoked device's active connections and sessions, and notifying remaining peers on revocation (spec §6.4). Pairing, session authorization, and the remaining tasks are post-MVP. Application suspension and revocation are handled in Phase 3 and propagated across instances in Phase 9. Session authorization narrows, per namespace, which devices may request and accept sessions (ADR 0040).
 
 ### Tasks
 
 - [ ] Design, review, and implement device proof-of-possession (`docs/adr/0006-token-profile-and-device-identity.md`).
 - [x] Finalize namespace authorization. *(MVP)*
-- [ ] Implement session authorization.
+- [x] Implement session authorization: `session.create` and `session.accept` per namespace from
+  the token's `permissions` claim (ADR 0040).
 - [ ] Design and review pairing protocol.
 - [ ] Implement pairing approval policy.
 - [x] Implement device revocation, including the control-plane operation (spec §5.6). *(MVP)*
@@ -643,6 +644,5 @@ suspension (ADR 0016). Phase 8 is complete: the server issues TURN
 credentials (ADR 0017), browsers relay through a test Coturn over UDP, TCP, and TLS, the SDK closes
 a session that never connects (ADR 0018), and `docs/turn-operations.md` is the TURN operations
 guide. A cross-network test through a TURN server reachable from other networks is deferred, with
-no date (ADR 0017). The post-MVP tasks
-of Phase 5 (proof-of-possession, session authorization, and pairing) each start with an ADR and
-are not scheduled yet.
+no date (ADR 0017). Session authorization, a post-MVP task of Phase 5, is done (ADR 0040); proof-of-possession and
+pairing each start with an ADR and are not scheduled yet.

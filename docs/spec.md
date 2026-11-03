@@ -669,7 +669,7 @@ Sessions are one-to-one (`docs/adr/0003-one-to-one-sessions.md`). A session is b
 
 Every session is created within one namespace, and both devices must be authorized in it.
 
-In the MVP, session-level authorization (§7.2) is not yet enforced beyond namespace authorization: any device authorized in a namespace may request a session with any other device in it, and the target device accepts or rejects (step 9).
+Session-level authorization (§7.2) comes from token claims: in each namespace, a device holds `session.create` and `session.accept` unless the token's `permissions` claim lists the namespace with fewer. A request to a target without `session.accept` is rejected for it, and the target device otherwise accepts or rejects (step 9) (`docs/adr/0040-session-permissions.md`).
 
 Session membership is enforced from the MVP onward: the server relays `rtc.*` messages only between the participants of a session that the target device has accepted, and rejects them otherwise.
 
