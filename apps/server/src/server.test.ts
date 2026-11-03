@@ -17,6 +17,7 @@ import { BlockList } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import { loadConfig, type PreAuthentication } from './config.ts';
+import { AbuseMonitor } from './domain/abuse.ts';
 import { TokenVerifier } from './domain/auth.ts';
 import { parseRegistry } from './domain/registry.ts';
 import { SessionRegistry } from './domain/sessions.ts';
@@ -87,6 +88,7 @@ async function start(options: Options = {}) {
       maxMessageBytes: options.maxMessageBytes,
       maxQueuedMessages: defaults.maxQueuedMessages,
       maxBufferedBytes: defaults.maxBufferedBytes,
+      abuse: new AbuseMonitor(defaults.abuseAlerts),
       metrics: new Metrics(),
       logger: { log: (level, event, fields) => logs.push({ level, event, ...fields }) },
     },

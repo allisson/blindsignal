@@ -120,8 +120,8 @@ Application payloads are not an asset of the server: they never reach it (spec Â
    history on restart. Tokens issued before the restart are rejected, so the lost `jti` history
    allows no replay (ADR 0006); revocations survive in the registry file.
 8. **A flooding connection is answered, not closed** (ADR 0011), until its queue fills and it is
-   closed with `1013` (ADR 0013); closing on repeated violations and abuse-triggered suspension
-   are post-MVP.
+   closed with `1013` (ADR 0013). Repeated violations raise an abuse alert, and suspending the
+   application is the operator's decision (ADR 0016).
 9. **The unauthenticated-connection caps are per instance** (`apps/server/README.md`): each
    instance behind a load balancer admits its own share.
 10. **A device record past its TTL may stay in memory** until its application's next new device

@@ -3,6 +3,7 @@ import { MAX_MESSAGE_BYTES } from '@blindsignal/protocol';
 import { isIP, type BlockList } from 'node:net';
 import { z } from 'zod';
 import { parseTrustedProxies, type ForwardedHeader } from './domain/client-ip.ts';
+import type { AbuseAlertPolicy } from './domain/abuse.ts';
 import type { Limits } from './domain/limits.ts';
 import type { AllowedOrigins } from './domain/origin.ts';
 
@@ -116,6 +117,9 @@ const environment = z
     BLINDSIGNAL_RATE_LIMIT_SIGNALING: rateLimit(50, 100),
     BLINDSIGNAL_RATE_LIMIT_RTC: rateLimit(10, 30),
     BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE: rateLimit(20, 50),
+    // Rejections of one application per window that raise an alert; 0 turns alerts off (ADR 0016).
+    BLINDSIGNAL_ABUSE_ALERT_THRESHOLD: seconds.default(0),
+    BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS: seconds.positive().default(60),
   })
   .refine(
     (vars) => vars.BLINDSIGNAL_ENV === 'development' || vars.BLINDSIGNAL_ALLOWED_ORIGINS.length > 0,
@@ -148,6 +152,7 @@ export interface ServerConfig {
   readonly maxQueuedMessages: number;
   readonly maxBufferedBytes: number;
   readonly limits: Limits;
+  readonly abuseAlerts: AbuseAlertPolicy;
 }
 
 /** Limits before authentication, when only the client IP is known (spec §8.1, §8.4). */
@@ -224,6 +229,10 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
           rtc: vars.BLINDSIGNAL_RATE_LIMIT_RTC,
           rtc_ice_candidate: vars.BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE,
         },
+      },
+      abuseAlerts: {
+        threshold: vars.BLINDSIGNAL_ABUSE_ALERT_THRESHOLD,
+        windowMs: vars.BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS * 1000,
       },
     },
   };

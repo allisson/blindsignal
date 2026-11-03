@@ -59,6 +59,7 @@ describe('loadConfig', () => {
           rtc_ice_candidate: { ratePerSecond: 20, burst: 50 },
         },
       },
+      abuseAlerts: { threshold: 0, windowMs: 60_000 },
     });
     expect(proxyTrust.header).toBe('x-forwarded-for');
     expect(proxyTrust.proxies.rules).toEqual([]);
@@ -101,6 +102,8 @@ describe('loadConfig', () => {
       BLINDSIGNAL_RATE_LIMIT_SIGNALING: '30,60',
       BLINDSIGNAL_RATE_LIMIT_RTC: '5,15',
       BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE: '8,40',
+      BLINDSIGNAL_ABUSE_ALERT_THRESHOLD: '25',
+      BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS: '30',
     });
     expect(rest).toEqual({
       development: true,
@@ -142,6 +145,7 @@ describe('loadConfig', () => {
           rtc_ice_candidate: { ratePerSecond: 8, burst: 40 },
         },
       },
+      abuseAlerts: { threshold: 25, windowMs: 30_000 },
     });
     expect(proxyTrust.header).toBe('cf-connecting-ip');
     expect(proxyTrust.proxies.check('10.1.2.3', 'ipv4')).toBe(true);
@@ -213,6 +217,8 @@ describe('loadConfig', () => {
     ['BLINDSIGNAL_RATE_LIMIT_SIGNALING', '0,10'],
     ['BLINDSIGNAL_RATE_LIMIT_RTC', '10,0'],
     ['BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE', ' 20, 50'],
+    ['BLINDSIGNAL_ABUSE_ALERT_THRESHOLD', '-1'],
+    ['BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS', '0'],
   ])('rejects %s=%s', (name, value) => {
     expect(error({ ...production, [name]: value })).toContain(name);
   });

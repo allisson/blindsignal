@@ -11,6 +11,7 @@ import {
   type ParseRegistryOptions,
   type RegistryResult,
 } from './domain/registry.ts';
+import { AbuseMonitor } from './domain/abuse.ts';
 import { SessionRegistry } from './domain/sessions.ts';
 import { SignalingServer } from './server.ts';
 import { jsonLogger, Metrics, serveMetrics } from './telemetry.ts';
@@ -67,6 +68,7 @@ async function main(): Promise<void> {
       maxBufferedBytes: config.maxBufferedBytes,
       presenceLeaseMs: config.presenceLeaseMs,
       negotiationTimeoutMs: config.negotiationTimeoutMs,
+      abuse: new AbuseMonitor(config.abuseAlerts),
       metrics,
       logger,
     },

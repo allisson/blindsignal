@@ -304,7 +304,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 **Goal:** Prevent individual applications or devices from exhausting shared infrastructure resources.
 
-**MVP subset:** the tasks marked *(MVP)*: basic per-application and per-device connection and concurrent-session limits, pre-authentication limits (authentication deadline and unauthenticated connection cap), connection-attempt, authentication, discovery, session-creation and signaling rate limits, maximum message size, and negotiation timeouts. Usage metrics, bounded queues, abuse-triggered suspension, and the session-duration quota are post-MVP. The device-count quota is part of the MVP, since device records are created on first authentication.
+**MVP subset:** the tasks marked *(MVP)*: basic per-application and per-device connection and concurrent-session limits, pre-authentication limits (authentication deadline and unauthenticated connection cap), connection-attempt, authentication, discovery, session-creation and signaling rate limits, maximum message size, and negotiation timeouts. Usage metrics, bounded queues, abuse alerts, and the session-duration quota are post-MVP. The device-count quota is part of the MVP, since device records are created on first authentication.
 
 ### Tasks
 
@@ -324,7 +324,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement maximum joined namespaces per device (`docs/adr/0011-quotas-and-rate-limits.md`). *(MVP)*
 - [x] Implement maximum session duration, where configured (spec §8.2) (`docs/adr/0014-maximum-session-duration.md`).
 - [x] Implement bounded queues and backpressure (`docs/adr/0013-bounded-queues-and-backpressure.md`).
-- [ ] Implement abuse-triggered application suspension and operational alerts (spec §8.3), reusing the Phase 3 suspension handling.
+- [x] Implement abuse alerts (spec §8.3), with suspension left to the operator through the Phase 3 suspension handling (`docs/adr/0016-abuse-alerts.md`).
 - [x] Implement per-application usage metrics (`docs/adr/0015-application-usage-metrics.md`).
 - [x] Add abuse and quota enforcement tests. *(MVP, for the MVP limits)*
 
@@ -626,9 +626,9 @@ These are later capabilities, not prerequisites for validating the core architec
 
 ## After the MVP
 
-The MVP is complete: every capability in the MVP definition is delivered. Next come the post-MVP
-tasks of Phase 6 (abuse-triggered suspension; bounded queues and backpressure, ADR 0013, the
-maximum session duration, ADR 0014, and per-application usage metrics, ADR 0015, are done), which
-build on ADR 0011 and Phase 3, and then Phase 8. The post-MVP tasks
+The MVP is complete: every capability in the MVP definition is delivered. The post-MVP tasks of
+Phase 6 are done too: bounded queues and backpressure (ADR 0013), the maximum session duration
+(ADR 0014), per-application usage metrics (ADR 0015), and abuse alerts with operator-driven
+suspension (ADR 0016). Next is Phase 8. The post-MVP tasks
 of Phase 5 (proof-of-possession, session authorization, and pairing) each start with an ADR and
 are not scheduled yet.

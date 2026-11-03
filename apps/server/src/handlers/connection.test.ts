@@ -8,6 +8,7 @@ import {
 } from '@blindsignal/storage-memory';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../config.ts';
+import { AbuseMonitor } from '../domain/abuse.ts';
 import { TokenVerifier } from '../domain/auth.ts';
 import type { Limits } from '../domain/limits.ts';
 import { parseRegistry } from '../domain/registry.ts';
@@ -34,7 +35,7 @@ const defaults = loadConfig({
   BLINDSIGNAL_REGISTRY_PATH: 'unused',
 });
 if (!defaults.ok) throw new Error(defaults.error);
-const { maxQueuedMessages, maxBufferedBytes } = defaults.config;
+const { maxQueuedMessages, maxBufferedBytes, abuseAlerts } = defaults.config;
 /** The server defaults, with a device quota. */
 const limits = (devices: number): Limits => ({
   ...defaults.config.limits,
@@ -100,6 +101,7 @@ async function setup(
     negotiationTimeoutMs: NEGOTIATION_MS,
     maxQueuedMessages,
     maxBufferedBytes,
+    abuse: new AbuseMonitor(abuseAlerts),
     metrics,
     logger: { log: (level, event, fields) => logs.push({ level, event, ...fields }) },
     ...options,
@@ -281,6 +283,59 @@ describe('Connection', () => {
       expect(metrics.render()).toContain(
         'blindsignal_application_errors_total{app_id="notes",code="rate_limited"} 1\n',
       );
+    });
+  });
+
+  describe('abuse alerts', () => {
+    const alerts = (logs: object[]) =>
+      logs.filter((entry) => 'event' in entry && entry.event === 'application.abuse_suspected');
+    const abuse = (threshold: number) => new AbuseMonitor({ threshold, windowMs: 60_000 });
+
+    it("alerts once when an application's rate_limited errors reach the threshold", async () => {
+      const { connect, logs, metrics } = await setup(undefined, {
+        authenticationAttempts: ONE_PER_SECOND,
+        abuse: abuse(2),
+      });
+      const client = connect();
+      await client.authenticate();
+      await client.refresh();
+      expect(alerts(logs)).toEqual([]);
+      await client.refresh();
+      await client.refresh();
+      expect(client.errors()).toEqual(['rate_limited', 'rate_limited', 'rate_limited']);
+      expect(alerts(logs)).toEqual([
+        { level: 'warn', event: 'application.abuse_suspected', appId: 'notes' },
+      ]);
+      expect(metrics.render()).toContain('blindsignal_abuse_alerts_total{app_id="notes"} 1\n');
+      expect(client.closes).toEqual([]);
+    });
+
+    it('counts quota_exceeded', async () => {
+      const { connect, logs } = await setup(
+        [{ ...devApplication('notes'), quotas: { namespacesPerDevice: 1 } }],
+        { abuse: abuse(1) },
+      );
+      const client = connect();
+      await client.authenticate({ namespaces: ['notes:a', 'notes:b'] });
+      await client.request('namespace.join', { namespace: 'notes:a' });
+      await client.request('namespace.join', { namespace: 'notes:b' });
+      expect(client.errors()).toEqual(['quota_exceeded']);
+      expect(alerts(logs)).toHaveLength(1);
+    });
+
+    it('ignores other codes, and rejections before the token is verified', async () => {
+      const { connect, logs } = await setup(undefined, {
+        authenticationAttempts: ONE_PER_SECOND,
+        abuse: abuse(1),
+      });
+      const client = connect();
+      await client.authenticate();
+      await client.connection.receive('garbage');
+      expect(client.errors()).toEqual(['malformed_frame']);
+      const other = connect();
+      await other.authenticate({ device_id: 'd2' });
+      expect(other.errors()).toEqual(['rate_limited']);
+      expect(alerts(logs)).toEqual([]);
     });
   });
 
