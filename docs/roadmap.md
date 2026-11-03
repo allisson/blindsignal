@@ -516,9 +516,7 @@ Operating TURN is not required to complete the initial local MVP.
 ### Tasks
 
 - [ ] Build a minimal SDK example.
-- [ ] Integrate with BlindNotes.
 - [ ] Integrate with BlindVault.
-- [ ] Evaluate integration with BlindChat.
 - [ ] Implement backend token issuance examples, building on the Phase 2 development issuer.
 - [ ] Document trusted issuer and JWKS setup.
 - [ ] Document application-level E2EE responsibilities.
