@@ -1,4 +1,9 @@
-import type { ApplicationRecord, ApplicationRepository, IssuerKeys } from '@blindsignal/core';
+import type {
+  ApplicationRecord,
+  ApplicationRepository,
+  CoordinationAdapter,
+  IssuerKeys,
+} from '@blindsignal/core';
 import { appId, deviceId, userId } from '@blindsignal/protocol';
 import { z } from 'zod';
 
@@ -107,6 +112,42 @@ export async function storedRegistry(
   const revoked = new Set(current?.revoked);
   for (const app of stored) if (app.status === 'revoked') revoked.add(app.appId);
   return { applications: stored, revoked };
+}
+
+/** Every instance publishes on it once it installs a reload (ADR 0024). */
+export const REGISTRY_TOPIC = 'registry';
+export const REGISTRY_CHANGED = { type: 'registry.changed' } as const;
+
+/**
+ * Installs the stored registry, which another instance's reload may have written, in this
+ * process's copy, keeping every application this process saw revoked (ADR 0024).
+ */
+export async function syncRegistry(
+  stored: Pick<ApplicationRepository, 'getAll'>,
+  copy: Pick<ApplicationRepository, 'replaceAll'>,
+  current: Registry,
+): Promise<Registry> {
+  const next = await storedRegistry(stored, current);
+  await copy.replaceAll(next.applications);
+  return next;
+}
+
+/**
+ * Runs `sync` on every registry event and every `intervalMs`; the interval covers an event lost
+ * while coordination was unreachable (ADR 0024). Returns a function that stops.
+ */
+export async function followRegistry(
+  coordination: Pick<CoordinationAdapter, 'subscribe'>,
+  intervalMs: number,
+  sync: () => void,
+): Promise<() => Promise<void>> {
+  const unsubscribe = await coordination.subscribe(REGISTRY_TOPIC, () => sync());
+  const timer = setInterval(sync, intervalMs);
+  timer.unref();
+  return async () => {
+    clearInterval(timer);
+    await unsubscribe();
+  };
 }
 
 export type RegistryResult =

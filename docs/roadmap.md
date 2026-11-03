@@ -436,7 +436,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Implement TTL-based presence leases (expiring in the server's clock, `docs/adr/0022-redis-coordination.md`).
 - [x] Implement ownership and lease renewal (releases by holder; connections renew presence and slots on every heartbeat, `docs/adr/0022-redis-coordination.md`).
 - [x] Implement cross-instance signaling event propagation (sessions copied on each side and kept in step by events, `docs/adr/0023-multi-instance-server.md`).
-- [ ] Implement cross-instance application suspension and revocation propagation, building on the Phase 3 single-instance handling.
+- [x] Implement cross-instance application suspension and revocation propagation, building on the Phase 3 single-instance handling (reloads published through Redis and synced from storage, `docs/adr/0024-registry-propagation.md`).
 - [x] Implement shared rate-limit, quota, and `jti` replay state across instances (`BLINDSIGNAL_REDIS_URL`, `docs/adr/0023-multi-instance-server.md`).
 - [x] Handle instance failure and stale leases (presence and slots expire, each side's session copy times out, `docs/adr/0022-redis-coordination.md`, `docs/adr/0023-multi-instance-server.md`).
 - [x] Test multiple server instances (two servers sharing Valkey in `apps/server/src/server.test.ts`).

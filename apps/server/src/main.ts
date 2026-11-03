@@ -10,8 +10,12 @@ import { openPostgreSQLStorage } from '@blindsignal/storage-postgresql';
 import { loadConfig } from './config.ts';
 import { TokenVerifier } from './domain/auth.ts';
 import {
+  followRegistry,
   parseRegistry,
+  REGISTRY_CHANGED,
+  REGISTRY_TOPIC,
   storedRegistry,
+  syncRegistry,
   type ParseRegistryOptions,
   type Registry,
   type RegistryResult,
@@ -161,18 +165,39 @@ async function main(): Promise<void> {
     registry = next.registry;
     await server.enforce(registry.applications);
     logger.log('info', 'registry.reloaded', { applications: registry.applications.length });
+    // Other instances follow at once, or at their next sync when the event is lost (ADR 0024).
+    await coordination
+      .publish(REGISTRY_TOPIC, REGISTRY_CHANGED)
+      .catch(() => logger.log('warn', 'registry.publish_failed'));
   };
-  // One reload at a time, so each is checked against the registry the previous one installed.
+  // Installs what another instance's reload stored; a failure keeps the current registry.
+  const sync = async () => {
+    try {
+      registry = await syncRegistry(storage.applications, applications, registry);
+    } catch {
+      logger.log('warn', 'registry.sync_failed');
+      return;
+    }
+    await server.enforce(registry.applications);
+  };
+  // One change at a time, so each is checked against the registry the previous one installed.
   let reloading = Promise.resolve();
   process.on('SIGHUP', () => {
     reloading = reloading.then(reload);
   });
+  const stopFollowing =
+    config.redis === undefined
+      ? () => Promise.resolve()
+      : await followRegistry(coordination, config.registrySyncIntervalMs, () => {
+          reloading = reloading.then(sync);
+        });
 
   const shutdown = async () => {
     logger.log('info', 'server.draining');
     await server.drain();
     await server.close();
     stopSweep();
+    await stopFollowing();
     await closeCoordination();
     await closeStorage();
     admin.server.close();

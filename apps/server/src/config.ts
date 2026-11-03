@@ -124,6 +124,8 @@ const environment = z
       .refine((value) => value === '' || /^rediss?:\/\//.test(value), {
         message: 'must be a redis:// or rediss:// URL',
       }),
+    // How often each instance rereads the stored registry, with Redis (ADR 0024).
+    BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS: seconds.positive().default(60),
     // Before authentication, keyed by client IP or global; no application can override them.
     BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS: seconds.positive().default(10),
     BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: count.default(20),
@@ -215,6 +217,7 @@ export interface ServerConfig {
   readonly database?: { readonly url: string; readonly poolSize: number };
   /** Absent when coordination stays in memory. */
   readonly redis?: { readonly url: string };
+  readonly registrySyncIntervalMs: number;
   readonly preAuthentication: PreAuthentication;
   readonly maxMessageBytes: number;
   readonly maxQueuedMessages: number;
@@ -281,6 +284,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       negotiationTimeoutMs: vars.BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS * 1000,
       deviceTtlMs: vars.BLINDSIGNAL_DEVICE_TTL_DAYS * 86_400_000,
       deviceSweepIntervalMs: vars.BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS * 1000,
+      registrySyncIntervalMs: vars.BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS * 1000,
       ...(vars.BLINDSIGNAL_DATABASE_URL === ''
         ? {}
         : {
