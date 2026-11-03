@@ -51,6 +51,27 @@ services:
     ports:
       - 127.0.0.1:5432:5432
 
+  # PgBouncer in transaction mode in front of that PostgreSQL, standing for a managed provider's
+  # pooler, such as Supabase's (ADR 0027): `docker compose --profile postgres up --wait pgbouncer`,
+  # then the same URL on port 6432. Prepared statements are off, as behind the strictest poolers.
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.26.1-p0
+    profiles: [postgres]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://blindsignal:blindsignal-test-password-never-in-production@postgres:5432/blindsignal
+      POOL_MODE: transaction
+      AUTH_TYPE: scram-sha-256
+      MAX_PREPARED_STATEMENTS: '0'
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -p, '5432']
+      interval: 2s
+      retries: 15
+    ports:
+      - 127.0.0.1:6432:5432
+
   # Valkey for the coordination adapter's tests (ADR 0019): `docker compose --profile valkey up
   # --wait valkey`, then BLINDSIGNAL_TEST_REDIS_URL=redis://127.0.0.1:6379. No password: it listens
   # on loopback only, and holds nothing but test state.

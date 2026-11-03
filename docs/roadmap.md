@@ -431,7 +431,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Implement PostgreSQL adapter (`adapters/storage/postgresql`, `docs/adr/0020-postgresql-storage.md`).
 - [x] Validate migrations and schema (the contract suite and the migration runner's tests, against the `compose.yaml` PostgreSQL in CI).
 - [x] Serialize registry writes across instances, so concurrent loads neither fail nor undo a revocation (`docs/adr/0025-registry-writes-take-turns.md`).
-- [ ] Evaluate Supabase as an optional managed PostgreSQL provider.
+- [x] Evaluate Supabase as an optional managed PostgreSQL provider (migrations and queries safe behind a transaction-mode pooler, tested through PgBouncer in CI; row-level security against a provider's API over the schema; `docs/supabase.md`, `docs/adr/0027-managed-postgresql.md`).
 - [x] Finalize `CoordinationAdapter` (slots as leases, events as JSON delivered at most once, `docs/adr/0022-redis-coordination.md`).
 - [x] Implement Redis-compatible coordination (`adapters/coordination/redis`, `docs/adr/0022-redis-coordination.md`).
 - [x] Implement TTL-based presence leases (expiring in the server's clock, `docs/adr/0022-redis-coordination.md`).

@@ -18,7 +18,8 @@ in-memory adapters never see it, and `pnpm test` still needs no external service
 - **Migrations: numbered SQL files in the PostgreSQL adapter, applied by a runner of its own.**
   The runner records each applied file in a `schema_migrations` table, applies each file in its
   own transaction, and holds a PostgreSQL advisory lock while it runs, so two instances never
-  migrate together. Migrations run through a separate command, before a release starts, never on
+  migrate together. ADR 0027 takes that lock in each file's transaction, so it holds behind a
+  pooler. Migrations run through a separate command, before a release starts, never on
   server startup. At startup the server checks the schema version and refuses to start when the
   database is behind the version it needs; a newer schema is accepted, so each migration keeps the
   previous release working (expand, then contract).
