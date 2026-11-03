@@ -28,4 +28,6 @@ export interface DeviceRepository {
     now: Date,
     limits: { readonly maxDevices: number; readonly ttlMs: number },
   ): Promise<DeviceTouchResult>;
+  /** Deletes every record not touched within `ttlMs`; returns how many (ADR 0012). */
+  deleteExpired(now: Date, ttlMs: number): Promise<number>;
 }

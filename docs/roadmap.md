@@ -428,8 +428,8 @@ Operating TURN is not required to complete the initial local MVP.
 
 - [x] Choose the PostgreSQL driver, the migration mechanism, the Redis-compatible client, and the test services (`docs/adr/0019-persistence-dependencies.md`).
 - [ ] Finalize `StorageAdapter`.
-- [ ] Implement PostgreSQL adapter.
-- [ ] Validate migrations and schema.
+- [x] Implement PostgreSQL adapter (`adapters/storage/postgresql`, `docs/adr/0020-postgresql-storage.md`; the server is wired to it next).
+- [x] Validate migrations and schema (the contract suite and the migration runner's tests, against the `compose.yaml` PostgreSQL in CI).
 - [ ] Evaluate Supabase as an optional managed PostgreSQL provider.
 - [ ] Finalize `CoordinationAdapter`.
 - [ ] Implement Redis-compatible coordination.

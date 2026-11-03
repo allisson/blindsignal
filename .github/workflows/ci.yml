@@ -39,3 +39,22 @@ jobs:
       - run: pnpm test:browser
         env:
           BLINDSIGNAL_TEST_TURN: '1'
+
+  # The adapters against their real services, from compose.yaml (ADR 0019).
+  adapters:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: docker compose --profile postgres up --wait postgres
+      - run: pnpm --filter @blindsignal/storage-postgresql migrate
+        env:
+          BLINDSIGNAL_DATABASE_URL: postgres://blindsignal:blindsignal-test-password-never-in-production@127.0.0.1:5432/blindsignal
+      - run: pnpm exec vitest run adapters/storage/postgresql
+        env:
+          BLINDSIGNAL_TEST_POSTGRES_URL: postgres://blindsignal:blindsignal-test-password-never-in-production@127.0.0.1:5432/blindsignal

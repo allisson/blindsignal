@@ -30,7 +30,7 @@ stored, logged, or counted. Application payloads never reach the server (spec §
   operation, but never keeps expired metadata past its next sweep. The in-memory device repository
   deletes expired records when the application's next new device authenticates; its state also
   ends with the process. Durable adapters (roadmap Phase 9) delete expired device records on a
-  schedule.
+  schedule, through `DeviceRepository.deleteExpired`, which the server calls (ADR 0020).
 - **Logs are written, never kept, by the server:** one JSON line per event on standard output, with
   a fixed set of fields: connection IDs, application IDs, close and error codes, and the client IP
   on `connection.opened` only, so an operator can tie abuse to a connection. No user, device,

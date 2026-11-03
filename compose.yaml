@@ -33,3 +33,20 @@ services:
       - 127.0.0.1:3478:3478/udp
       - 127.0.0.1:3478:3478/tcp
       - 127.0.0.1:5349:5349/tcp
+
+  # PostgreSQL for the storage adapter's tests (ADR 0019): `docker compose --profile postgres up
+  # --wait postgres`, then BLINDSIGNAL_TEST_POSTGRES_URL=postgres://blindsignal:blindsignal-test-password-never-in-production@127.0.0.1:5432/blindsignal.
+  # Its password is public in this repository, like the dev issuer's key.
+  postgres:
+    image: postgres:18.6-alpine
+    profiles: [postgres]
+    environment:
+      POSTGRES_USER: blindsignal
+      POSTGRES_PASSWORD: blindsignal-test-password-never-in-production
+      POSTGRES_DB: blindsignal
+    healthcheck:
+      test: [CMD, pg_isready, -U, blindsignal, -d, blindsignal]
+      interval: 2s
+      retries: 15
+    ports:
+      - 127.0.0.1:5432:5432

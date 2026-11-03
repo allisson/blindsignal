@@ -58,4 +58,17 @@ export class InMemoryDeviceRepository implements DeviceRepository {
     records.set(key, record);
     return Promise.resolve({ ok: true, record });
   }
+
+  deleteExpired(now: Date, ttlMs: number): Promise<number> {
+    let deleted = 0;
+    for (const records of this.#byApp.values()) {
+      for (const [key, record] of records) {
+        if (now.getTime() - record.lastAuthenticatedAt.getTime() >= ttlMs) {
+          records.delete(key);
+          deleted++;
+        }
+      }
+    }
+    return Promise.resolve(deleted);
+  }
 }
