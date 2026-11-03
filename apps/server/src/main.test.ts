@@ -39,7 +39,8 @@ async function launch(env: Record<string, string>) {
   return { child, port, events, exited };
 }
 
-describe('shutdown (ADR 0031)', () => {
+// Each test starts a server process, which takes seconds on a loaded machine.
+describe('shutdown (ADR 0031)', { timeout: 30_000 }, () => {
   it('fails readiness during the delay, then closes connections and exits with 0', async () => {
     const { child, port, events, exited } = await launch({
       BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS: '1',

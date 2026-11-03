@@ -24,7 +24,7 @@ The image (`Dockerfile`) runs in production mode by default and needs at least
 `BLINDSIGNAL_REGISTRY_PATH` and `BLINDSIGNAL_ALLOWED_ORIGINS`. It speaks plain WebSocket: put it
 behind a TLS-terminating proxy and list that proxy in `BLINDSIGNAL_TRUSTED_PROXIES` (spec §16).
 `docs/external-testing.md` covers the Compose workflow and exposing the server through a
-Cloudflare Quick Tunnel.
+Cloudflare Quick Tunnel, and `docs/self-hosted.md` a production deployment on one host.
 
 ## Configuration
 

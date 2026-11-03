@@ -1,0 +1,4 @@
+# Obtains and renews the certificate for the domain, and proxies WebSocket upgrades as they come.
+{$BLINDSIGNAL_DOMAIN} {
+	reverse_proxy server:8080
+}
