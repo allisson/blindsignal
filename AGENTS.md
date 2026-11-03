@@ -17,6 +17,7 @@ server. Initial target: browser / PWA.
 - `GLOSSARY.md`: canonical domain terms; use them in code, docs, and messages.
 - `docs/protocol.md`, `docs/threat-model.md`: Phase 0 deliverables.
 - `docs/token-issuance.md`: what an application backend must do to issue accepted tokens.
+- `docs/external-testing.md`: the Compose workflow and the cross-network test setup (Phase 7).
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
 raise it; do not silently diverge. A change that alters a documented contract updates the spec,
