@@ -21,6 +21,7 @@ import type { AbuseMonitor } from '../domain/abuse.ts';
 import { unavailability, type TokenVerifier } from '../domain/auth.ts';
 import { applicationLimits, type Limits } from '../domain/limits.ts';
 import type { Participant, Session, SessionRegistry } from '../domain/sessions.ts';
+import { turnServer, type TurnPolicy } from '../domain/turn.ts';
 import type { Logger, Metrics } from '../telemetry.ts';
 
 /** What a handler needs from the transport. */
@@ -61,6 +62,8 @@ export interface ConnectionDependencies {
     | 'releaseSlots'
   >;
   readonly iceServers: Payload<'rtc.ice_config'>['iceServers'];
+  /** Mints a TURN credential for every `rtc.ice_config` when present (ADR 0017). */
+  readonly turn?: TurnPolicy;
   readonly clockSkewSeconds: number;
   /** A connection not authenticated this long after it opened is closed (spec §8.4). */
   readonly authenticationTimeoutMs: number;
@@ -660,7 +663,14 @@ export class Connection {
       requestId,
       payload: { userId: context.userId, deviceId: context.deviceId, expiresInMs },
     });
-    this.#send({ type: 'rtc.ice_config', payload: { iceServers: [...this.#deps.iceServers] } });
+    const { iceServers, turn, metrics } = this.#deps;
+    if (turn === undefined) {
+      this.#send({ type: 'rtc.ice_config', payload: { iceServers: [...iceServers] } });
+    } else {
+      const server = turnServer(turn, context.appId, new Date());
+      this.#send({ type: 'rtc.ice_config', payload: { iceServers: [...iceServers, server] } });
+      metrics.count('blindsignal_turn_credentials_issued_total', { app_id: context.appId });
+    }
     clearTimeout(this.#expiryTimer);
     this.#expiryTimer = setTimeout(
       () =>

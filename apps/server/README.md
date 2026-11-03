@@ -42,6 +42,9 @@ names the variable, never its value.
 | `BLINDSIGNAL_TRUSTED_PROXIES` | none | Comma-separated IPs and CIDRs whose forwarding header is honored for the client IP. |
 | `BLINDSIGNAL_FORWARDED_HEADER` | `x-forwarded-for` | `x-forwarded-for` or `cf-connecting-ip`. |
 | `BLINDSIGNAL_ICE_SERVERS` | `[]` | JSON array of `{ "urls": [...] }`, STUN only, sent in `rtc.ice_config` (ADR 0009). |
+| `BLINDSIGNAL_TURN_URLS` | none (off) | Comma-separated `turn:` and `turns:` URLs, sent in `rtc.ice_config` with a credential minted for each message (ADR 0017). |
+| `BLINDSIGNAL_TURN_SECRET` | none | The secret shared with the TURN server (Coturn `static-auth-secret`), at least 32 bytes; required with `BLINDSIGNAL_TURN_URLS`. |
+| `BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS` | `900` | Lifetime of each TURN credential, at least the maximum token lifetime plus the clock skew (ADR 0009). |
 | `BLINDSIGNAL_TOKEN_MAX_LIFETIME_SECONDS` | `600` | Maximum `exp - iat` (ADR 0006). |
 | `BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS` | `60` | Clock-skew tolerance on token times. |
 | `BLINDSIGNAL_TOKEN_MAX_NAMESPACES` | `100` | Maximum namespaces in one token. |
@@ -115,3 +118,7 @@ An application whose `rate_limited` and `quota_exceeded` errors reach
 `BLINDSIGNAL_ABUSE_ALERT_THRESHOLD` within one window logs `application.abuse_suspected` (`warn`)
 and counts `blindsignal_abuse_alerts_total{app_id}`, once per window. The server does not suspend
 it: set `status: "suspended"` in the registry and send `SIGHUP` (ADR 0005, ADR 0016).
+
+With TURN configured, `blindsignal_turn_credentials_issued_total{app_id}` counts the credentials
+sent in `rtc.ice_config`, one per authentication and `auth.refresh`. Relay traffic is measured by
+the TURN server's own metrics, not here (`docs/adr/0017-turn-credentials.md`).
