@@ -47,20 +47,33 @@ test('two browsers open a DataChannel, exchange messages, and close', async ({ b
   for (const { page } of [alice, bob]) await expect(page.locator('#channel')).toHaveText('closed');
 });
 
-test('two browsers forced to TURN connect through the relay', async ({ browser }, info) => {
-  test.skip(!process.env.BLINDSIGNAL_TEST_TURN, 'needs the Coturn of compose.yaml');
-  const alice = await open(browser, 'alice', `relay-laptop-${info.project.name}`, { relay: '' });
-  const bob = await open(browser, 'bob', `relay-phone-${info.project.name}`, { relay: '' });
+// Each signaling server of playwright.config.ts offers one TURN URL, so a forced relay uses it.
+for (const [transport, port] of [
+  ['udp', 8787],
+  ['tcp', 8788],
+  ['tls', 8789],
+] as const) {
+  test(`two browsers forced to TURN connect through the relay over ${transport}`, async ({
+    browser,
+  }, info) => {
+    test.skip(!process.env.BLINDSIGNAL_TEST_TURN, 'needs the Coturn of compose.yaml');
+    test.skip(
+      transport === 'tls' && info.project.name === 'firefox',
+      "Firefox rejects the test TURN server's self-signed certificate",
+    );
+    const query = { relay: '', server: `ws://localhost:${port}` };
+    const suffix = `${transport}-${info.project.name}`;
+    const alice = await open(browser, 'alice', `relay-laptop-${suffix}`, query);
+    const bob = await open(browser, 'bob', `relay-phone-${suffix}`, query);
 
-  await alice.page
-    .getByRole('button', { name: `Connect to bob/relay-phone-${info.project.name}` })
-    .click();
-  for (const { page } of [alice, bob]) {
-    await expect(page.locator('#channel')).toHaveText('open');
-    await expect(page.locator('#connection-type')).toHaveText('relay');
-  }
-  await send(alice.page, 'hello over turn');
-  await expect(bob.page.locator('#log')).toContainText(
-    `alice/relay-laptop-${info.project.name}: hello over turn`,
-  );
-});
+    await alice.page.getByRole('button', { name: `Connect to bob/relay-phone-${suffix}` }).click();
+    for (const { page } of [alice, bob]) {
+      await expect(page.locator('#channel')).toHaveText('open');
+      await expect(page.locator('#connection-type')).toHaveText('relay');
+    }
+    await send(alice.page, `hello over ${transport}`);
+    await expect(bob.page.locator('#log')).toContainText(
+      `alice/relay-laptop-${suffix}: hello over ${transport}`,
+    );
+  });
+}

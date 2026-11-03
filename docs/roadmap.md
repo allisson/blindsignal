@@ -393,8 +393,8 @@ Cloudflare Quick Tunnel is a development ingress mechanism, not a WebRTC transpo
 - [x] Ensure credentials are short-lived and scoped appropriately: one application, at most `BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS` (ADR 0017).
 - [x] Never embed permanent TURN credentials in client code: `BLINDSIGNAL_ICE_SERVERS` and the SDK's `iceServers` accept STUN only (ADR 0017).
 - [x] Deploy a test Coturn instance or use a managed TURN provider: Coturn under the `turn` profile of `compose.yaml`, on loopback.
-- [x] Test TURN relay connectivity: the Playwright relay test, over UDP (`BLINDSIGNAL_TEST_TURN=1`).
-- [ ] Test configured UDP and TCP/TLS transports.
+- [x] Test TURN relay connectivity: the Playwright relay tests (`BLINDSIGNAL_TEST_TURN=1`).
+- [x] Test configured UDP and TCP/TLS transports: one relay test per transport, TLS in Chromium only (ADR 0017).
 - [ ] Test direct-to-relay fallback behavior.
 - [ ] Test TURN unavailable and credential expiration.
 - [ ] Add relay usage metrics: credentials issued per application, relay traffic from the TURN server (ADR 0017).
