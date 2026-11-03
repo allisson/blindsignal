@@ -55,7 +55,7 @@ jobs:
       - run: pnpm --filter @blindsignal/storage-postgresql migrate
         env:
           BLINDSIGNAL_DATABASE_URL: postgres://blindsignal:blindsignal-test-password-never-in-production@127.0.0.1:5432/blindsignal
-      - run: pnpm exec vitest run adapters/storage/postgresql adapters/coordination/redis
+      - run: pnpm exec vitest run adapters/storage/postgresql adapters/coordination/redis apps/server/src/server.test.ts
         env:
           BLINDSIGNAL_TEST_POSTGRES_URL: postgres://blindsignal:blindsignal-test-password-never-in-production@127.0.0.1:5432/blindsignal
           BLINDSIGNAL_TEST_REDIS_URL: redis://127.0.0.1:6379

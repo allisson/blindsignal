@@ -25,7 +25,8 @@ device records are deleted.
 - **Token verification reads a copy in the process,** installed with the registry, never the
   database: the authentication path makes no query for its application, and an instance answers
   with the registry it enforces. Connections on other instances learn of a reload when those
-  instances reload; propagating it is a separate Phase 9 task.
+  instances reload; propagating it is a separate Phase 9 task (ADR 0023 shares the rest of the
+  server's state).
 - **A storage failure closes the connection with `server_error`.** A task of a connection that
   rejects, such as a device touch while the database is unreachable, sends `server_error`, a new
   retryable code, and closes with `4001`; the SDK reconnects with backoff. The log line

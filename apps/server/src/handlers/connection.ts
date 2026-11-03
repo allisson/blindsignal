@@ -21,7 +21,7 @@ import {
 import type { AbuseMonitor } from '../domain/abuse.ts';
 import { unavailability, type TokenVerifier } from '../domain/auth.ts';
 import { applicationLimits, type Limits } from '../domain/limits.ts';
-import type { Participant, Session, SessionRegistry } from '../domain/sessions.ts';
+import { SessionRegistry, type Participant, type Session } from '../domain/sessions.ts';
 import { turnServer, type TurnPolicy } from '../domain/turn.ts';
 import type { Logger, Metrics } from '../telemetry.ts';
 
@@ -53,6 +53,7 @@ export interface ConnectionDependencies {
     CoordinationAdapter,
     | 'claimDeviceConnection'
     | 'releaseDeviceConnection'
+    | 'connectionOf'
     | 'acquirePresence'
     | 'releasePresence'
     | 'listPresence'
@@ -76,8 +77,6 @@ export interface ConnectionDependencies {
   readonly limits: Limits;
   /** Presence leases and quota slots last this long, renewed on every heartbeat (ADR 0022). */
   readonly presenceLeaseMs: number;
-  /** Shared by every connection of the process. */
-  readonly sessions: SessionRegistry;
   /** How long a session may stay `pending` (docs/protocol.md §7). */
   readonly negotiationTimeoutMs: number;
   readonly maxMessageBytes?: number;
@@ -130,6 +129,20 @@ const deliver = (message: Outbound) => ({ type: 'deliver', message }) as const;
 
 type PresenceChanged = Payload<'presence.changed'>;
 type TerminationReason = Payload<'session.terminated'>['reason'];
+
+/**
+ * What one participant's connection tells the other's, on any instance, so both copies of a
+ * session stay in step (ADR 0023).
+ */
+type SessionEvent =
+  | { readonly type: 'session.request'; readonly session: Omit<Session, 'state'> }
+  | { readonly type: 'session.accepted'; readonly sessionId: string }
+  | { readonly type: 'session.rejected'; readonly sessionId: string }
+  | {
+      readonly type: 'session.terminated';
+      readonly sessionId: string;
+      readonly reason: TerminationReason;
+    };
 type SessionMessage = ClientMessage & {
   type: 'session.accept' | 'session.reject' | 'session.close';
 };
@@ -172,6 +185,8 @@ export class Connection {
   #unsubscribe: (() => Promise<void>) | undefined;
   /** Joined namespaces, each with its presence topic's unsubscribe. */
   readonly #joined = new Map<string, () => Promise<void>>();
+  /** This connection's copy of its sessions; the peer's connection keeps its own. */
+  readonly #sessions = new SessionRegistry();
 
   constructor(port: ConnectionPort, deps: ConnectionDependencies, id = crypto.randomUUID()) {
     this.id = id;
@@ -188,6 +203,14 @@ export class Connection {
   /** The authenticated context, or undefined before `auth.authenticate` succeeds. */
   get context(): ConnectionContext | undefined {
     return this.#context;
+  }
+
+  /**
+   * The sessions pending or active that this connection requested: each session is counted once,
+   * by its requester's instance (ADR 0015, ADR 0023).
+   */
+  get requestedSessions(): readonly Session[] {
+    return this.#sessions.all().filter((session) => this.#requested(session));
   }
 
   /** Resolves once this frame, and every one before it, has been handled. */
@@ -231,7 +254,7 @@ export class Connection {
       if (this.#context === undefined) return;
       for (const namespace of this.#joined.keys()) await this.#acquirePresence(namespace);
       await this.#acquireConnectionSlot();
-      for (const session of this.#deps.sessions.of(this.id)) {
+      for (const session of this.#sessions.all()) {
         const slots = sessionSlots(
           session.requester.device,
           session.target.device,
@@ -286,18 +309,16 @@ export class Connection {
 
   async #release(): Promise<void> {
     const device = this.#context === undefined ? undefined : identityOf(this.#context);
-    // Unregistered in the same tick as the session scan, so no new session can slip in between.
-    if (device !== undefined) this.#deps.sessions.unregister(device, this.id);
-    for (const session of this.#deps.sessions.of(this.id)) {
-      await this.#terminate(session, this.#endReason);
+    // Released first, so a new session finds this connection gone; a request already on its way
+    // finds the connection closed and times out on the requester's side.
+    if (device !== undefined) {
+      await this.#deps.coordination.releaseDeviceConnection(device, this.id);
     }
+    for (const session of this.#sessions.all()) await this.#terminate(session, this.#endReason);
     for (const namespace of [...this.#joined.keys()]) await this.#leave(namespace);
     const unsubscribe = this.#unsubscribe;
     this.#unsubscribe = undefined;
     await unsubscribe?.();
-    if (device !== undefined) {
-      await this.#deps.coordination.releaseDeviceConnection(device, this.id);
-    }
     if (this.#slot !== undefined) await this.#deps.coordination.releaseSlots(this.id, [this.#slot]);
   }
 
@@ -376,7 +397,6 @@ export class Connection {
     if (previous !== undefined) {
       await this.#deps.coordination.publish(connectionTopic(previous), SUPERSEDED);
     }
-    this.#deps.sessions.register(identityOf(context), this.id);
     clearTimeout(this.#deadline);
     this.#port.authenticated?.();
     this.#accept({ ...context, protocolVersion: message.version }, requestId);
@@ -443,7 +463,7 @@ export class Connection {
     }
     this.#accept({ ...context, protocolVersion: current.protocolVersion }, requestId);
     // The new token replaces the authorized set: end and leave what it no longer lists (ADR 0007).
-    for (const session of this.#deps.sessions.of(this.id)) {
+    for (const session of this.#sessions.all()) {
       if (!this.#authorized(session.namespace)) {
         await this.#terminate(session, 'namespace_unauthorized', true);
       }
@@ -516,7 +536,7 @@ export class Connection {
     // Joining requires authorization, so a present target is authorized in the namespace.
     // Every unreachable target looks the same, so devices cannot be enumerated (§7).
     const present = await this.#deps.coordination.listPresence(namespace);
-    const targetId = this.#deps.sessions.connectionOf(target);
+    const targetId = await this.#deps.coordination.connectionOf(target);
     if (
       this.#isSelf(target) ||
       targetId === undefined ||
@@ -535,30 +555,66 @@ export class Connection {
       await this.#deps.coordination.releaseSlots(sessionId, [app.key, own.key]);
       return this.#error('peer_unavailable', requestId);
     }
-    this.#deps.sessions.create(
+    const session = {
+      id: sessionId,
       namespace,
       requester,
-      { connectionId: targetId, device: target },
-      this.#deps.negotiationTimeoutMs,
-      (expired) => void this.#enqueue(() => this.#terminate(expired, 'timeout', true)),
-      sessionId,
-    );
+      target: { connectionId: targetId, device: target },
+    };
+    this.#open(session);
     this.#deps.metrics.count('blindsignal_sessions_created_total');
     this.#deps.metrics.count('blindsignal_application_sessions_created_total', {
       app_id: self.appId,
     });
     this.#send({ type: 'session.created', requestId, payload: { sessionId } });
-    await this.#publish(targetId, {
-      type: 'session.request',
-      payload: { sessionId, namespace, userId: self.userId, deviceId: self.deviceId },
-    });
+    await this.#notify(targetId, { type: 'session.request', session });
+  }
+
+  /** Keeps this connection's copy of a new session, which times out while still pending. */
+  #open(session: Omit<Session, 'state'>): void {
+    this.#sessions.create(
+      session.namespace,
+      session.requester,
+      session.target,
+      this.#deps.negotiationTimeoutMs,
+      (expired) => void this.#enqueue(() => this.#terminate(expired, 'timeout', true)),
+      session.id,
+    );
+  }
+
+  /** The other participant's connection changed the session; updates this copy to match. */
+  async #onSessionEvent(event: SessionEvent): Promise<void> {
+    if (event.type === 'session.request') {
+      const { session } = event;
+      this.#open(session);
+      const { userId, deviceId } = session.requester.device;
+      const payload = { sessionId: session.id, namespace: session.namespace, userId, deviceId };
+      return this.#send({ type: 'session.request', payload });
+    }
+    const { sessionId } = event;
+    if (event.type === 'session.accepted') {
+      const durationMs = this.#limits.quotas.sessionDurationSeconds * 1000;
+      if (this.#sessions.activate(sessionId, durationMs)) {
+        this.#send({ type: 'session.accepted', payload: { sessionId } });
+      }
+      return;
+    }
+    const session = this.#sessions.get(sessionId);
+    // Gone already: this side ended it too, and the two ends crossed.
+    if (session === undefined) return;
+    await this.#end(session);
+    if (event.type === 'session.rejected') {
+      return this.#send({ type: 'session.rejected', payload: { sessionId } });
+    }
+    this.#countTermination(session, event.reason);
+    this.#send({ type: 'session.terminated', payload: { sessionId, reason: event.reason } });
   }
 
   /** `session.accept` and `session.reject` from the target; `session.close` from either side. */
   async #answerSession(message: SessionMessage): Promise<void> {
     const { requestId, type } = message;
     const { sessionId } = message.payload;
-    const session = this.#deps.sessions.get(sessionId);
+    const session = this.#sessions.get(sessionId);
     const allowed =
       session !== undefined &&
       (type === 'session.close'
@@ -569,23 +625,17 @@ export class Connection {
     if (type === 'session.close') return this.#terminate(session, 'closed_by_peer');
     if (type === 'session.accept') {
       // The accepting connection's limits: both devices belong to the same application.
-      this.#deps.sessions.activate(sessionId, this.#limits.quotas.sessionDurationSeconds * 1000);
-      return this.#publish(session.requester.connectionId, {
-        type: 'session.accepted',
-        payload: { sessionId },
-      });
+      this.#sessions.activate(sessionId, this.#limits.quotas.sessionDurationSeconds * 1000);
+      return this.#notify(session.requester.connectionId, { type: 'session.accepted', sessionId });
     }
     await this.#end(session);
-    await this.#publish(session.requester.connectionId, {
-      type: 'session.rejected',
-      payload: { sessionId },
-    });
+    await this.#notify(session.requester.connectionId, { type: 'session.rejected', sessionId });
   }
 
   /** Rebuilds an `rtc.*` message for the other participant of an active session (§7). */
   async #relay(message: RtcMessage): Promise<void> {
     const { requestId, type, payload } = message;
-    const session = this.#deps.sessions.get(payload.sessionId);
+    const session = this.#sessions.get(payload.sessionId);
     if (session?.state !== 'active' || !this.#participates(session)) {
       return this.#error('session_unavailable', requestId);
     }
@@ -599,15 +649,29 @@ export class Connection {
   /** Ends the session; tells the other participant, and this one too when `both` is set. */
   async #terminate(session: Session, reason: TerminationReason, both = false): Promise<void> {
     if (!(await this.#end(session))) return;
-    this.#deps.metrics.count('blindsignal_sessions_terminated_total', { reason });
-    const terminated = { type: 'session.terminated', payload: { sessionId: session.id, reason } };
-    if (both) this.#send(terminated as Outbound);
-    await this.#publish(this.#peerOf(session), terminated as Outbound);
+    this.#countTermination(session, reason);
+    const sessionId = session.id;
+    if (both) this.#send({ type: 'session.terminated', payload: { sessionId, reason } });
+    await this.#notify(this.#peerOf(session), { type: 'session.terminated', sessionId, reason });
   }
 
-  /** Removes the session and frees its quota slots; true for the one caller that ended it. */
+  /** Counted by the requester's connection, so a session ended on both sides counts once. */
+  #countTermination(session: Session, reason: TerminationReason): void {
+    if (this.#requested(session)) {
+      this.#deps.metrics.count('blindsignal_sessions_terminated_total', { reason });
+    }
+  }
+
+  #requested(session: Session): boolean {
+    return session.requester.connectionId === this.id;
+  }
+
+  /**
+   * Removes this copy of the session and frees its quota slots; true when the copy existed. Both
+   * sides release, harmlessly twice.
+   */
   async #end(session: Session): Promise<boolean> {
-    if (!this.#deps.sessions.end(session.id)) return false;
+    if (!this.#sessions.end(session.id)) return false;
     const slots = sessionSlots(
       session.requester.device,
       session.target.device,
@@ -632,6 +696,10 @@ export class Connection {
 
   #publish(connectionId: string, message: Outbound): Promise<void> {
     return this.#deps.coordination.publish(connectionTopic(connectionId), deliver(message));
+  }
+
+  #notify(connectionId: string, event: SessionEvent): Promise<void> {
+    return this.#deps.coordination.publish(connectionTopic(connectionId), event);
   }
 
   #acquireConnectionSlot(): Promise<boolean> {
@@ -715,6 +783,8 @@ export class Connection {
     const type = (event as { type?: unknown } | null)?.type;
     if (type === SUPERSEDED.type) {
       void this.#enqueue(() => Promise.resolve(this.#error('superseded', undefined, true)));
+    } else if (typeof type === 'string' && type.startsWith('session.')) {
+      void this.#enqueue(() => this.#onSessionEvent(event as SessionEvent));
     } else if (type === 'deliver') {
       const { message } = event as ReturnType<typeof deliver>;
       void this.#enqueue(() => Promise.resolve(this.#send(message)));

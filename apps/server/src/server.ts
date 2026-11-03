@@ -66,6 +66,18 @@ export class SignalingServer {
     return counts;
   }
 
+  /** Sessions pending or active, counted by the instance of the connection that requested each. */
+  sessionsByApplication(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const connection of this.#connections) {
+      for (const { requester } of connection.requestedSessions) {
+        const { appId } = requester.device;
+        counts.set(appId, (counts.get(appId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }
+
   /** Resolves to the bound port; port 0 picks a free one. */
   listen(port: number, host?: string): Promise<number> {
     return new Promise((resolve, reject) => {

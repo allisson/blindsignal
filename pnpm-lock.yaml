@@ -227,6 +227,9 @@ importers:
       '@blindsignal/coordination-memory':
         specifier: workspace:*
         version: link:../../adapters/coordination/memory
+      '@blindsignal/coordination-redis':
+        specifier: workspace:*
+        version: link:../../adapters/coordination/redis
       '@blindsignal/core':
         specifier: workspace:*
         version: link:../../packages/core

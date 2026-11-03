@@ -55,6 +55,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS` | `3600` | How often expired device records are deleted (ADR 0012). |
 | `BLINDSIGNAL_DATABASE_URL` | unset | A `postgres://` URL: device records and the last accepted registry go to PostgreSQL, shared by every instance. Unset keeps them in memory, for one instance (ADR 0021). |
 | `BLINDSIGNAL_DATABASE_POOL_SIZE` | `10` | Connections in the PostgreSQL pool. |
+| `BLINDSIGNAL_REDIS_URL` | unset | A `redis://` or `rediss://` URL: presence, sessions, quotas, rate limits, and `jti` claims are shared by every instance through Redis or Valkey. Requires `BLINDSIGNAL_DATABASE_URL`. Unset keeps them in memory, for one instance (ADR 0023). |
 | `BLINDSIGNAL_MAX_MESSAGE_BYTES` | `65536` | Maximum message size in UTF-8 bytes, at most `65536` (docs/protocol.md §1). |
 | `BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS` | `10` | A connection not authenticated this long after it opened is closed with `1008`. |
 | `BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP` | `20` | Concurrent unauthenticated connections per client IP; more get HTTP `429` at the upgrade. |
@@ -111,6 +112,14 @@ registry stored by any instance, so a revoked application cannot be reactivated 
 or by another instance (ADR 0021). With the database down, authentications and `auth.refresh`
 get `server_error` and reconnect with backoff, and reloads are rejected.
 
+## Several instances
+
+With `BLINDSIGNAL_DATABASE_URL` and `BLINDSIGNAL_REDIS_URL` set, any number of instances serve one
+deployment behind a load balancer: devices on different instances discover each other, open
+sessions, and signal (ADR 0023). Redis runs standalone or with Sentinel, not as a Cluster
+(ADR 0022). With Redis down, operations fail with `server_error` and clients reconnect with
+backoff. A `SIGHUP` reloads only the instance that receives it: signal every instance.
+
 ## Signals
 
 - `SIGHUP` reloads the registry file, all or nothing, and closes the connections of suspended,
@@ -126,11 +135,13 @@ connection ID, application ID, client IP, or error code where they apply. They n
 secrets, payloads, `sub`, or `device_id`. The server keeps no logs itself; keep those with a
 client IP (`connection.opened`) for at most 14 days (`docs/adr/0012-metadata-retention.md`).
 Storage logs `storage.ready`, `storage.connection_lost`, `connection.failed` (with the error's
-SQLSTATE or name), `devices.expired`, and `devices.sweep_failed` (ADR 0021).
+SQLSTATE or name), `devices.expired`, and `devices.sweep_failed` (ADR 0021); coordination logs
+`coordination.ready` and `coordination.connection_lost` (ADR 0023).
 
 `GET /metrics` on the admin port serves process-local counters and gauges in the Prometheus text
 format: messages by type, authentications by result, errors by code, sessions created and
-terminated, registry reloads, connections closed by backpressure, open connections, and sessions.
+terminated, registry reloads, connections closed by backpressure, open connections, and sessions
+(counted by the instance of the connection that requested each, ADR 0023).
 The `blindsignal_application_*` series break connections, sessions, messages, sessions created,
 and errors down by application (`app_id`), once a token is verified
 (`docs/adr/0015-application-usage-metrics.md`).

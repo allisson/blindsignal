@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@blindsignal/coordination-memory": "workspace:*",
+    "@blindsignal/coordination-redis": "workspace:*",
     "@blindsignal/core": "workspace:*",
     "@blindsignal/protocol": "workspace:*",
     "@blindsignal/storage-memory": "workspace:*",

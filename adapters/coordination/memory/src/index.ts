@@ -70,6 +70,10 @@ export class InMemoryCoordinationAdapter implements CoordinationAdapter {
     return Promise.resolve();
   }
 
+  connectionOf(device: DeviceIdentity): Promise<string | undefined> {
+    return Promise.resolve(this.#connections.get(deviceKey(device)));
+  }
+
   acquirePresence(
     namespace: string,
     device: DeviceIdentity,

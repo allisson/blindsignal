@@ -96,6 +96,7 @@ describe('loadConfig', () => {
       BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS: '60',
       BLINDSIGNAL_DATABASE_URL: 'postgresql://bs:pw@db.example:5432/bs',
       BLINDSIGNAL_DATABASE_POOL_SIZE: '4',
+      BLINDSIGNAL_REDIS_URL: 'rediss://default:pw@cache.example:6380',
       BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS: '4',
       BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: '3',
       BLINDSIGNAL_MAX_UNAUTHENTICATED: '30',
@@ -138,6 +139,7 @@ describe('loadConfig', () => {
       deviceTtlMs: 7 * 86_400_000,
       deviceSweepIntervalMs: 60_000,
       database: { url: 'postgresql://bs:pw@db.example:5432/bs', poolSize: 4 },
+      redis: { url: 'rediss://default:pw@cache.example:6380' },
       preAuthentication: {
         authenticationTimeoutMs: 4_000,
         maxUnauthenticatedPerIp: 3,
@@ -299,6 +301,20 @@ describe('loadConfig', () => {
     const message = error({ ...production, BLINDSIGNAL_DATABASE_URL: 'mysql://u:secret-pw@db/bs' });
     expect(message).toContain('BLINDSIGNAL_DATABASE_URL');
     expect(message).not.toContain('secret-pw');
+  });
+
+  it('accepts only a redis:// URL, with a database, and never echoes it', () => {
+    const database = { ...production, BLINDSIGNAL_DATABASE_URL: 'postgres://db/bs' };
+    expect(config({ ...database, BLINDSIGNAL_REDIS_URL: 'redis://cache' }).redis).toEqual({
+      url: 'redis://cache',
+    });
+    expect(config(database).redis).toBeUndefined();
+    const invalid = error({ ...database, BLINDSIGNAL_REDIS_URL: 'http://u:secret-pw@cache' });
+    expect(invalid).toContain('BLINDSIGNAL_REDIS_URL');
+    expect(invalid).not.toContain('secret-pw');
+    expect(error({ ...production, BLINDSIGNAL_REDIS_URL: 'redis://cache' })).toBe(
+      'BLINDSIGNAL_REDIS_URL: requires BLINDSIGNAL_DATABASE_URL',
+    );
   });
 
   it('names invalid variables without their values', () => {

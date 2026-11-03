@@ -12,7 +12,6 @@ import { AbuseMonitor } from '../domain/abuse.ts';
 import { TokenVerifier } from '../domain/auth.ts';
 import type { Limits } from '../domain/limits.ts';
 import { parseRegistry } from '../domain/registry.ts';
-import { SessionRegistry } from '../domain/sessions.ts';
 import { Metrics } from '../telemetry.ts';
 import {
   Connection,
@@ -97,7 +96,6 @@ async function setup(
     deviceTtlMs: 86_400_000,
     limits: limits(10),
     presenceLeaseMs: LEASE_MS,
-    sessions: new SessionRegistry(),
     negotiationTimeoutMs: NEGOTIATION_MS,
     maxQueuedMessages,
     maxBufferedBytes,
@@ -1567,12 +1565,90 @@ describe('Connection', () => {
       expect(alice.errors()).toEqual([]);
     });
 
-    it('ends a session once when its timeout races an answer', async () => {
+    describe('copies on each side (ADR 0023)', () => {
+      const alicePeer = (connectionId: string) => ({
+        connectionId,
+        device: { appId: 'notes', userId: 'u1', deviceId: 'd1' },
+      });
+      const [s1, s2] = [crypto.randomUUID(), crypto.randomUUID()];
+      /** A request from a requester whose instance never speaks again. */
+      const request = (target: string, id = s1) => ({
+        type: 'session.request',
+        session: {
+          id,
+          namespace: 'notes:a',
+          requester: alicePeer('gone'),
+          target: {
+            connectionId: target,
+            device: { appId: 'notes', userId: 'u2', deviceId: 'd2' },
+          },
+        },
+      });
+
+      it("times out the target's copy when the requester never answers", async () => {
+        const { connect, coordination } = await setup();
+        const bob = await member(connect, bobClaims);
+        await coordination.publish(connectionTopic(bob.connection.id), request(bob.connection.id));
+        await settle();
+        expect(bob.last()).toEqual({
+          version: 1,
+          type: 'session.request',
+          payload: { sessionId: s1, namespace: 'notes:a', userId: 'u1', deviceId: 'd1' },
+        });
+        await bob.request('session.accept', { sessionId: s1 });
+        await bob.request('session.close', { sessionId: s1 });
+        expect(bob.errors()).toEqual([]);
+        await coordination.publish(
+          connectionTopic(bob.connection.id),
+          request(bob.connection.id, s2),
+        );
+        await settle();
+        await vi.advanceTimersByTimeAsync(NEGOTIATION_MS);
+        expect(sessionEvents(bob)).toEqual([terminated(s2, 'timeout')]);
+      });
+
+      it("ends the requester's copy at the maximum duration when the target's instance is gone", async () => {
+        const quotas = { sessionDurationSeconds: 60 };
+        const { alice, sessionId, coordination } = await active([
+          { ...devApplication('notes'), quotas },
+        ]);
+        // Nothing reaches alice's connection from now on, as when bob's instance stops.
+        const publish = coordination.publish.bind(coordination);
+        vi.spyOn(coordination, 'publish').mockImplementation((topic, event) =>
+          topic === connectionTopic(alice.connection.id)
+            ? Promise.resolve()
+            : publish(topic, event),
+        );
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(alice.last()).toEqual(terminated(sessionId, 'timeout'));
+      });
+
+      it('answers a late or repeated event of the peer only once', async () => {
+        const { alice, bob, sessionId, coordination } = await active();
+        const topic = connectionTopic(alice.connection.id);
+        await coordination.publish(topic, { type: 'session.accepted', sessionId });
+        await settle();
+        expect(alice.sent.filter((m) => m.type === 'session.accepted')).toHaveLength(1);
+        await bob.request('session.close', { sessionId });
+        await settle();
+        await coordination.publish(topic, {
+          type: 'session.terminated',
+          sessionId,
+          reason: 'timeout',
+        });
+        await coordination.publish(topic, { type: 'session.rejected', sessionId });
+        await settle();
+        expect(sessionEvents(alice)).toEqual([terminated(sessionId, 'closed_by_peer')]);
+        expect(alice.sent.filter((m) => m.type === 'session.rejected')).toEqual([]);
+      });
+    });
+
+    it('ends each copy once when the timeout races an answer (ADR 0023)', async () => {
       const { alice, bob } = await pair();
       const sessionId = await create(alice);
       vi.advanceTimersByTime(NEGOTIATION_MS - 1);
-      // The reject waits on its rate limit, so the timeout ends the session and the reject finds
-      // it gone.
+      // The reject waits on its rate limit: alice's copy times out meanwhile, and bob's copy ends
+      // with the reject; each side drops the other's late event.
       const reject = bob.request('session.reject', { sessionId });
       vi.advanceTimersByTime(1);
       await reject;
@@ -1580,8 +1656,9 @@ describe('Connection', () => {
       const types = (client: Client) =>
         client.sent.map((message) => message.type).filter((type) => type.startsWith('session.'));
       expect(types(alice)).toEqual(['session.created', 'session.terminated']);
-      expect(types(bob)).toEqual(['session.request', 'session.terminated']);
-      expect(bob.errors()).toEqual(['session_unavailable']);
+      expect(types(bob)).toEqual(['session.request']);
+      expect(bob.errors()).toEqual([]);
+      expect(bob.last()?.type).toBe('ack');
     });
 
     it.each(['alice', 'bob'] as const)(
@@ -1795,12 +1872,13 @@ describe('Connection', () => {
       });
     });
 
-    it('counts created and terminated sessions', async () => {
-      const { alice, sessionId, metrics, deps } = await active();
-      expect(deps.sessions.size).toBe(1);
-      await alice.request('session.close', { sessionId });
+    it('counts created and terminated sessions once, on the requester side', async () => {
+      const { alice, bob, sessionId, metrics } = await active();
+      expect(alice.connection.requestedSessions.map(({ id }) => id)).toEqual([sessionId]);
+      expect(bob.connection.requestedSessions).toEqual([]);
+      await bob.request('session.close', { sessionId });
       await settle();
-      expect(deps.sessions.size).toBe(0);
+      expect(alice.connection.requestedSessions).toEqual([]);
       const text = metrics.render();
       expect(text).toContain('blindsignal_sessions_created_total 1\n');
       expect(text).toContain('blindsignal_application_sessions_created_total{app_id="notes"} 1\n');
