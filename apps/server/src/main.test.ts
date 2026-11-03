@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { connect } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -21,6 +23,7 @@ const CRASH = `data:text/javascript,${encodeURIComponent(`
 interface Entry {
   readonly event: string;
   readonly port?: number;
+  readonly adminPort?: number;
   readonly [field: string]: unknown;
 }
 
@@ -56,9 +59,9 @@ function start(env: Record<string, string>, execArgv: string[] = []) {
 /** Starts the server process; resolves once it listens, with its ports and its log events. */
 async function launch(env: Record<string, string>, execArgv: string[] = []) {
   const { child, entries, exited } = start(env, execArgv);
-  const port = await new Promise<number>((resolve, reject) => {
+  const listening = await new Promise<Entry>((resolve, reject) => {
     child.on('entry', (entry: Entry) => {
-      if (entry.event === 'server.listening') resolve(entry.port ?? 0);
+      if (entry.event === 'server.listening') resolve(entry);
     });
     void exited.then(() =>
       reject(new Error(`exited before listening: ${entries.map((e) => e.event).join(', ')}`)),
@@ -67,7 +70,8 @@ async function launch(env: Record<string, string>, execArgv: string[] = []) {
   const events = {
     includes: (event: string) => entries.some((entry) => entry.event === event),
   };
-  return { child, port, events, entries, exited };
+  const { port = 0, adminPort = 0 } = listening;
+  return { child, port, adminPort, events, entries, exited };
 }
 
 // Each test starts a server process, which takes seconds on a loaded machine.
@@ -140,5 +144,63 @@ describe('crashes (ADR 0037)', { timeout: 30_000 }, () => {
     ]);
     expect(await exited).toBe(1);
     expect(entries.map((entry) => entry.event)).toEqual(['server.crashed']);
+  });
+});
+
+describe('OpenTelemetry (ADR 0038)', { timeout: 30_000 }, () => {
+  it('serves /metrics, and pushes to the OTLP endpoint until it exits', async () => {
+    const posts: { path: string; body: string }[] = [];
+    const collector = createServer((request, response) => {
+      let body = '';
+      request.on('data', (chunk: Buffer) => (body += chunk.toString()));
+      request.on('end', () => {
+        posts.push({ path: request.url ?? '', body });
+        response.writeHead(200, { 'content-type': 'application/json' }).end('{}');
+      });
+    });
+    await new Promise<void>((resolve) => collector.listen(0, '127.0.0.1', resolve));
+    try {
+      const endpoint = `http://127.0.0.1:${(collector.address() as AddressInfo).port}`;
+      const { child, adminPort, events, exited } = await launch({
+        OTEL_EXPORTER_OTLP_ENDPOINT: endpoint,
+        OTEL_METRIC_EXPORT_INTERVAL: '200',
+      });
+      const text = await (await fetch(`http://127.0.0.1:${adminPort}/metrics`)).text();
+      expect(text).toContain('# TYPE blindsignal_connections gauge\nblindsignal_connections 0\n');
+      expect(text).toContain('# TYPE nodejs_eventloop_delay_seconds gauge\n');
+      await expect.poll(() => posts.length).toBeGreaterThan(0);
+      const [first] = posts;
+      expect(first?.path).toBe('/v1/metrics');
+      expect(first?.body).toContain('"blindsignal_connections"');
+      expect(first?.body).toContain('"service.instance.id"');
+      const before = posts.length;
+      child.kill('SIGTERM');
+      expect(await exited).toBe(0);
+      // The shutdown's last push.
+      expect(posts.length).toBeGreaterThan(before);
+      expect(events.includes('telemetry.export_failed')).toBe(false);
+    } finally {
+      collector.close();
+    }
+  });
+
+  it('gives up the last push at the shutdown deadline and still exits with 0', async () => {
+    // Accepts the push and never answers it.
+    const collector = createServer(() => {});
+    await new Promise<void>((resolve) => collector.listen(0, '127.0.0.1', resolve));
+    try {
+      const endpoint = `http://127.0.0.1:${(collector.address() as AddressInfo).port}`;
+      const { child, events, exited } = await launch({
+        OTEL_EXPORTER_OTLP_ENDPOINT: endpoint,
+        BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS: '2',
+      });
+      child.kill('SIGTERM');
+      expect(await exited).toBe(0);
+      expect(events.includes('telemetry.export_failed')).toBe(true);
+      expect(events.includes('server.shutdown_timeout')).toBe(false);
+    } finally {
+      collector.closeAllConnections();
+      collector.close();
+    }
   });
 });

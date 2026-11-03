@@ -1,6 +1,18 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
+import type { Counter, Histogram, Meter } from '@opentelemetry/api';
+import { ExportResultCode, type ExportResult } from '@opentelemetry/core';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+import { PrometheusExporter, PrometheusSerializer } from '@opentelemetry/exporter-prometheus';
+import { resourceFromAttributes } from '@opentelemetry/resources';
+import {
+  MeterProvider,
+  PeriodicExportingMetricReader,
+  type MetricReader,
+  type PushMetricExporter,
+  type ResourceMetrics,
+} from '@opentelemetry/sdk-metrics';
 
 /** In increasing severity. */
 export const levels = ['info', 'warn', 'error'] as const;
@@ -72,70 +84,134 @@ const COUNTERS = {
 
 export type CounterName = keyof typeof COUNTERS;
 
-// Label values come from closed catalogs (message types, error codes) or the registry's
-// application IDs, so cardinality is bounded (ADR 0015).
-const escape = (value: string) =>
-  value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\n');
+const HISTOGRAMS = {
+  blindsignal_authentication_duration_seconds: {
+    description:
+      'auth.authenticate from its receipt to the reply, by result: ok or the error code.',
+    buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  },
+  blindsignal_session_acceptance_seconds: {
+    description: 'Sessions from session.create to session.accepted, measured by the requester.',
+    buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60],
+  },
+} as const;
 
-const labelSet = (labels: Readonly<Record<string, string>>) => {
-  const pairs = Object.entries(labels).map(([key, value]) => `${key}="${escape(value)}"`);
-  return pairs.length === 0 ? '' : `{${pairs.join(',')}}`;
-};
+export type HistogramName = keyof typeof HISTOGRAMS;
+
+type Labels = Readonly<Record<string, string>>;
+
+/** Calls `done` with the export's result, and logs a failure without its error (ADR 0038). */
+export class OTLPExporter extends OTLPMetricExporter {
+  readonly #logger: Logger;
+
+  constructor(logger: Logger, config?: ConstructorParameters<typeof OTLPMetricExporter>[0]) {
+    super(config);
+    this.#logger = logger;
+  }
+
+  override export(metrics: ResourceMetrics, done: (result: ExportResult) => void): void {
+    super.export(metrics, (result) => {
+      // The error can quote the endpoint's response; the event alone is enough to alert on.
+      if (result.code !== ExportResultCode.SUCCESS)
+        this.#logger.log('warn', 'telemetry.export_failed');
+      done(result);
+    });
+  }
+}
 
 /**
- * Process-local counters and gauges in the Prometheus text format.
- * shortcut: no OpenTelemetry; Phase 10 replaces this through an ADR.
+ * Counters, gauges, and histograms through the OpenTelemetry metrics SDK (ADR 0038): rendered in
+ * the Prometheus text format for `/metrics`, and pushed to `exporter` every `intervalMs` when one
+ * is given. Label values come from closed catalogs (message types, error codes) or the registry's
+ * application IDs, so cardinality is bounded (ADR 0015).
  */
 export class Metrics {
-  readonly #counters = new Map<CounterName, Map<string, number>>();
-  readonly #gauges: {
-    name: string;
-    help: string;
-    read: () => number | ReadonlyMap<string, number>;
-    label?: string;
-  }[] = [];
+  readonly #prometheus = new PrometheusExporter({ preventServerStart: true });
+  readonly #serializer = new PrometheusSerializer('', false, undefined, true, true);
+  readonly #provider: MeterProvider;
+  readonly #meter: Meter;
+  readonly #counters: ReadonlyMap<string, Counter>;
+  readonly #histograms: ReadonlyMap<string, Histogram>;
 
-  count(name: CounterName, labels: Readonly<Record<string, string>> = {}, by = 1): void {
-    const series = this.#counters.get(name) ?? new Map<string, number>();
-    const key = labelSet(labels);
-    series.set(key, (series.get(key) ?? 0) + by);
-    this.#counters.set(name, series);
+  constructor(push?: { exporter: PushMetricExporter; intervalMs: number }) {
+    const readers: MetricReader[] = [this.#prometheus];
+    if (push !== undefined) {
+      readers.push(
+        new PeriodicExportingMetricReader({
+          exporter: push.exporter,
+          exportIntervalMillis: push.intervalMs,
+          exportTimeoutMillis: Math.min(push.intervalMs, 30_000),
+        }),
+      );
+    }
+    this.#provider = new MeterProvider({
+      // Each process is its own instance, so a backend keeps the instances' series apart.
+      resource: resourceFromAttributes({
+        'service.name': 'blindsignal',
+        'service.instance.id': crypto.randomUUID(),
+      }),
+      readers,
+    });
+    const meter = this.#provider.getMeter('blindsignal');
+    this.#meter = meter;
+    this.#counters = new Map(
+      Object.entries(COUNTERS).map(([name, description]) => [
+        name,
+        meter.createCounter(name, { description }),
+      ]),
+    );
+    this.#histograms = new Map(
+      Object.entries(HISTOGRAMS).map(([name, { description, buckets }]) => [
+        name,
+        meter.createHistogram(name, {
+          description,
+          unit: 's',
+          advice: { explicitBucketBoundaries: [...buckets] },
+        }),
+      ]),
+    );
   }
 
-  /** A gauge read when scraped. */
+  count(name: CounterName, labels: Labels = {}, by = 1): void {
+    this.#counters.get(name)?.add(by, labels);
+  }
+
+  observe(name: HistogramName, seconds: number, labels: Labels = {}): void {
+    this.#histograms.get(name)?.record(seconds, labels);
+  }
+
+  /** A gauge read on every collection: a scrape or an export. */
   gauge(name: string, help: string, read: () => number): void {
-    this.#gauges.push({ name, help, read });
+    this.#meter
+      .createObservableGauge(name, { description: help })
+      .addCallback((result) => result.observe(read()));
   }
 
-  /** A gauge with one series per value of `label`, read when scraped. */
+  /** A gauge with one series per value of `label`, read on every collection. */
   labeledGauge(
     name: string,
     help: string,
     label: string,
-    read: () => ReadonlyMap<string, number>,
+    read: () => ReadonlyMap<string, number> | Promise<ReadonlyMap<string, number>>,
   ): void {
-    this.#gauges.push({ name, help, read, label });
+    this.#meter.createObservableGauge(name, { description: help }).addCallback(async (result) => {
+      for (const [key, value] of await read()) result.observe(value, { [label]: key });
+    });
   }
 
-  render(): string {
-    const lines: string[] = [];
-    for (const [name, help] of Object.entries(COUNTERS)) {
-      lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} counter`);
-      for (const [labels, value] of this.#counters.get(name as CounterName) ?? []) {
-        lines.push(`${name}${labels} ${value}`);
-      }
-    }
-    for (const { name, help, read, label } of this.#gauges) {
-      lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} gauge`);
-      const value = read();
-      if (typeof value === 'number') lines.push(`${name} ${value}`);
-      else {
-        for (const [key, count] of value) {
-          lines.push(`${name}${labelSet({ [label as string]: key })} ${count}`);
-        }
-      }
-    }
-    return `${lines.join('\n')}\n`;
+  async render(): Promise<string> {
+    const { resourceMetrics } = await this.#prometheus.collect();
+    return this.#serializer.serialize(resourceMetrics);
+  }
+
+  /**
+   * Pushes what is left to the exporter, if any, and stops the periodic export; rejects past
+   * `timeoutMs`.
+   */
+  shutdown(timeoutMs?: number): Promise<void> {
+    return this.#provider.shutdown(
+      timeoutMs === undefined ? undefined : { timeoutMillis: timeoutMs },
+    );
   }
 }
 
@@ -177,14 +253,14 @@ export function watchProcess(metrics: Metrics): () => void {
 }
 
 /**
- * Renders `blindsignal_dependency_up`: 1 for each dependency whose check resolves within
- * `timeoutMs`, 0 otherwise (ADR 0028). A check still running from an earlier scrape is awaited
+ * Reads `blindsignal_dependency_up`: 1 for each dependency whose check resolves within
+ * `timeoutMs`, 0 otherwise (ADR 0028). A check still running from an earlier collection is awaited
  * again rather than started twice, so a dependency that hangs holds one check, not one per scrape.
  */
 export function dependencyProbe(
   checks: Readonly<Record<string, () => Promise<void>>>,
   timeoutMs: number,
-): () => Promise<string> {
+): () => Promise<ReadonlyMap<string, number>> {
   const running = new Map<string, Promise<boolean>>();
   const check = (name: string, run: () => Promise<void>) => {
     let result = running.get(name);
@@ -211,20 +287,15 @@ export function dependencyProbe(
       clearTimeout(timer);
     }
   };
-  return async () => {
-    const name = 'blindsignal_dependency_up';
-    const lines = [
-      `# HELP ${name} Whether the dependency answered a probe within the timeout: 1 or 0.`,
-      `# TYPE ${name} gauge`,
-    ];
-    const results = await Promise.all(
-      Object.entries(checks).map(async ([dependency, run]) => {
-        const up = await within(check(dependency, run));
-        return `${name}${labelSet({ dependency })} ${up ? 1 : 0}`;
-      }),
+  return async () =>
+    new Map(
+      await Promise.all(
+        Object.entries(checks).map(
+          async ([dependency, run]) =>
+            [dependency, (await within(check(dependency, run))) ? 1 : 0] as const,
+        ),
+      ),
     );
-    return `${[...lines, ...results].join('\n')}\n`;
-  };
 }
 
 /**
@@ -232,15 +303,17 @@ export function dependencyProbe(
  * with it; 404 elsewhere. Resolves to the server and its bound port.
  */
 export function serveMetrics(
-  metrics: { render(): string | Promise<string> },
+  metrics: { render(): Promise<string> },
   port: number,
   host: string,
 ): Promise<{ server: Server; port: number }> {
   const server = createServer((request, response) => {
     if (request.method === 'GET' && request.url === '/metrics') {
-      void Promise.resolve(metrics.render()).then((text) =>
-        response.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' }).end(text),
-      );
+      void metrics
+        .render()
+        .then((text) =>
+          response.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' }).end(text),
+        );
       return;
     }
     response.writeHead(404).end();

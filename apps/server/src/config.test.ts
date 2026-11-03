@@ -132,6 +132,8 @@ describe('loadConfig', () => {
       BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE: '8,40',
       BLINDSIGNAL_ABUSE_ALERT_THRESHOLD: '25',
       BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS: '30',
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: 'https://otlp.example/v1/metrics',
+      OTEL_METRIC_EXPORT_INTERVAL: '10000',
     });
     expect(rest).toEqual({
       development: true,
@@ -189,11 +191,19 @@ describe('loadConfig', () => {
         },
       },
       abuseAlerts: { threshold: 25, windowMs: 30_000 },
+      otlp: { intervalMs: 10_000 },
     });
     expect(proxyTrust.header).toBe('cf-connecting-ip');
     expect(proxyTrust.proxies.check('10.1.2.3', 'ipv4')).toBe(true);
     expect(proxyTrust.proxies.check('::1', 'ipv6')).toBe(true);
     expect(proxyTrust.proxies.check('11.0.0.1', 'ipv4')).toBe(false);
+  });
+
+  it('exports over OTLP every 60 seconds once an endpoint is set (ADR 0038)', () => {
+    expect(config(production).otlp).toBeUndefined();
+    expect(
+      config({ ...production, OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318' }).otlp,
+    ).toEqual({ intervalMs: 60_000 });
   });
 
   it('requires the registry path', () => {
@@ -237,6 +247,7 @@ describe('loadConfig', () => {
     ['BLINDSIGNAL_ADMIN_PORT', '-1'],
     ['BLINDSIGNAL_ADMIN_HOST', 'localhost'],
     ['BLINDSIGNAL_LOG_LEVEL', 'debug'],
+    ['OTEL_METRIC_EXPORT_INTERVAL', '0'],
     ['BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS', '0'],
     ['BLINDSIGNAL_PRESENCE_LEASE_SECONDS', '1.5'],
     ['BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS', 'soon'],

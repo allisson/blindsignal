@@ -21,11 +21,11 @@ describe('SessionRegistry', () => {
     const pending = registry.create('notes:a', requester, target, 1_000, onTimeout);
     const accepted = registry.create('notes:a', requester, target, 1_000, onTimeout);
     const ended = registry.create('notes:a', requester, target, 1_000, onTimeout);
-    expect(registry.activate(accepted.id)).toBe(true);
-    expect(registry.activate(accepted.id)).toBe(false);
+    expect(registry.activate(accepted.id)).toBeGreaterThanOrEqual(0);
+    expect(registry.activate(accepted.id)).toBeUndefined();
     expect(registry.end(ended.id)).toBe(true);
     expect(registry.end(ended.id)).toBe(false);
-    expect(registry.activate(ended.id)).toBe(false);
+    expect(registry.activate(ended.id)).toBeUndefined();
     vi.advanceTimersByTime(1_000);
     expect(onTimeout.mock.calls).toEqual([[pending]]);
     expect(registry.get(accepted.id)?.state).toBe('active');
@@ -41,7 +41,8 @@ describe('SessionRegistry', () => {
     const limited = registry.create('notes:a', requester, target, 1_000, onTimeout);
     const unlimited = registry.create('notes:a', requester, target, 1_000, onTimeout);
     vi.advanceTimersByTime(999);
-    registry.activate(limited.id, 5_000);
+    // How long it was pending.
+    expect(registry.activate(limited.id, 5_000)).toBe(999);
     registry.activate(unlimited.id);
     vi.advanceTimersByTime(4_999);
     expect(onTimeout).not.toHaveBeenCalled();

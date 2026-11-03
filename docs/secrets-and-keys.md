@@ -12,12 +12,13 @@ client-visible errors, or with the shortest window where that is not possible. T
 | `BLINDSIGNAL_TURN_SECRET` | Server and Coturn | Server environment; Coturn `static-auth-secret` | [TURN secret](#turn-secret) |
 | PostgreSQL password | Server and migration | Inside `BLINDSIGNAL_DATABASE_URL` | [PostgreSQL password](#postgresql-password) |
 | Redis or Valkey password | Server | Inside `BLINDSIGNAL_REDIS_URL` | [Redis password](#redis-password) |
+| OTLP backend credentials, when metrics are pushed | Server | Inside `OTEL_EXPORTER_OTLP_HEADERS` | [OTLP credentials](#otlp-credentials) |
 
 The server holds no private key. The registry file holds public keys and JWKS URLs only; it is not
 secret, but whoever can change it decides which issuers the server trusts, so only operators may
 write it.
 
-Set the three server secrets from the platform's secret store: Secret Manager exposed as
+Set the server's secrets from the platform's secret store: Secret Manager exposed as
 environment variables on Cloud Run, or the `chmod 600` `.env` of `docs/self-hosted.md`. Never commit
 them, and never pass them on a command line, where the process list shows them. The server never
 logs them, and a configuration error names the variable, never its value.
@@ -90,6 +91,14 @@ from the server's configuration file (`requirepass` or an ACL file), update it t
 restart of Redis brings the old one back. On a managed Redis, follow the provider's rotation,
 which works the same way when it offers two passwords.
 
+## OTLP credentials
+
+A backend that takes OTLP pushes, rather than a collector on the same network, authenticates them
+with a header, such as `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <token>` (ADR 0038). Issue
+a new token in the backend, update the variable in the secret store, restart or redeploy every
+instance, then revoke the old token. Pushes made with the old token in between fail and log
+`telemetry.export_failed`; `/metrics` is unaffected.
+
 ## After a compromise
 
 Removal comes first; the overlap of the procedures above is for planned rotations.
@@ -102,5 +111,7 @@ Removal comes first; the overlap of the procedures above is for planned rotation
   reactivate it once the key is gone (`docs/application-lifecycle.md`).
 - **The TURN secret:** replace it in Coturn and the server together, with no overlap, and restart
   both. Coturn's restart ends the allocations made with stolen credentials.
+- **The OTLP token:** revoke it in the backend first; the pushes fail until every instance has the
+  new one.
 - **The PostgreSQL or Redis password:** rotate it as above, and for Redis remove the old password
   first. Then check the database for changes you did not make.

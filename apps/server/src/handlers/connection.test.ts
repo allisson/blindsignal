@@ -265,8 +265,11 @@ describe('Connection', () => {
       });
       await connect().authenticate();
       await connect().authenticate({ device_id: 'd2' });
-      const text = metrics.render();
+      const text = await metrics.render();
       expect(text).toContain('blindsignal_errors_total{code="rate_limited"} 1');
+      // A rate-limited attempt is no authentication: neither counted nor timed.
+      expect(text).toContain('blindsignal_authentication_duration_seconds_count{result="ok"} 1\n');
+      expect(text).not.toContain('result="rate_limited"');
       // Before the token is verified, the application is not known.
       expect(text).not.toContain('blindsignal_application_errors_total{');
     });
@@ -278,7 +281,7 @@ describe('Connection', () => {
       const client = connect();
       await client.authenticate();
       await client.refresh();
-      expect(metrics.render()).toContain(
+      expect(await metrics.render()).toContain(
         'blindsignal_application_errors_total{app_id="notes",code="rate_limited"} 1\n',
       );
     });
@@ -304,7 +307,9 @@ describe('Connection', () => {
       expect(alerts(logs)).toEqual([
         { level: 'warn', event: 'application.abuse_suspected', appId: 'notes' },
       ]);
-      expect(metrics.render()).toContain('blindsignal_abuse_alerts_total{app_id="notes"} 1\n');
+      expect(await metrics.render()).toContain(
+        'blindsignal_abuse_alerts_total{app_id="notes"} 1\n',
+      );
       expect(client.closes).toEqual([]);
     });
 
@@ -412,7 +417,7 @@ describe('Connection', () => {
         appId: 'notes',
         limit: 'queued_messages',
       });
-      expect(metrics.render()).toContain(
+      expect(await metrics.render()).toContain(
         'blindsignal_overloaded_connections_total{limit="queued_messages"} 1',
       );
     });
@@ -610,7 +615,7 @@ describe('Connection', () => {
           ],
         },
       });
-      expect(metrics.render()).toContain(
+      expect(await metrics.render()).toContain(
         'blindsignal_turn_credentials_issued_total{app_id="notes"} 2\n',
       );
     });
@@ -618,7 +623,7 @@ describe('Connection', () => {
     it('counts no TURN credential when none is configured', async () => {
       const { connect, metrics } = await setup();
       await connect().authenticate();
-      expect(metrics.render()).not.toContain('blindsignal_turn_credentials_issued_total{');
+      expect(await metrics.render()).not.toContain('blindsignal_turn_credentials_issued_total{');
     });
 
     it('sends an empty ICE configuration when none is configured', async () => {
@@ -1941,10 +1946,11 @@ describe('Connection', () => {
       await bob.request('session.close', { sessionId });
       await settle();
       expect(alice.connection.requestedSessions).toEqual([]);
-      const text = metrics.render();
+      const text = await metrics.render();
       expect(text).toContain('blindsignal_sessions_created_total 1\n');
       expect(text).toContain('blindsignal_application_sessions_created_total{app_id="notes"} 1\n');
       expect(text).toContain('blindsignal_sessions_terminated_total{reason="closed_by_peer"} 1\n');
+      expect(text).toContain('blindsignal_session_acceptance_seconds_count 1\n');
     });
 
     describe('registry reload (ADR 0005)', () => {
@@ -2029,12 +2035,14 @@ describe('Connection', () => {
       await alice.authenticate();
       await alice.request('namespace.join', { namespace: 'notes:other' });
       await connect().request('auth.authenticate', { token: 'not-a-jwt' });
-      const text = metrics.render();
+      const text = await metrics.render();
       for (const line of [
         'blindsignal_messages_total{type="auth.authenticate"} 2',
         'blindsignal_messages_total{type="namespace.join"} 1',
         'blindsignal_authentications_total{result="ok"} 1',
         'blindsignal_authentications_total{result="invalid_token"} 1',
+        'blindsignal_authentication_duration_seconds_count{result="ok"} 1',
+        'blindsignal_authentication_duration_seconds_count{result="invalid_token"} 1',
         'blindsignal_errors_total{code="invalid_token"} 1',
         'blindsignal_errors_total{code="not_authorized"} 1',
         // The authenticating message comes before the context; the bad token names no application.
@@ -2052,8 +2060,11 @@ describe('Connection', () => {
       });
       await connect().authenticate();
       await connect().authenticate({ sub: 'u2', device_id: 'd2' });
-      const text = metrics.render();
+      const text = await metrics.render();
       expect(text).toContain('blindsignal_authentications_total{result="quota_exceeded"} 1\n');
+      expect(text).toContain(
+        'blindsignal_authentication_duration_seconds_count{result="quota_exceeded"} 1\n',
+      );
       expect(text).toContain(
         'blindsignal_application_errors_total{app_id="notes",code="quota_exceeded"} 1\n',
       );
@@ -2096,7 +2107,7 @@ describe('Connection', () => {
       expect(bob.sent.map((m) => m.type)).toContain('rtc.ice_candidate');
       await connect().request('auth.authenticate', { token: badToken });
       await alice.connection.receive('{');
-      const emitted = JSON.stringify(logs) + metrics.render();
+      const emitted = JSON.stringify(logs) + (await metrics.render());
       for (const value of [...tokens, ...secrets]) expect(emitted).not.toContain(value);
     });
 

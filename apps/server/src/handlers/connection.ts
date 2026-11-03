@@ -86,7 +86,7 @@ export interface ConnectionDependencies {
   readonly maxBufferedBytes: number;
   /** Shared by every connection of the process; alerts on an application's rejections (ADR 0016). */
   readonly abuse: Pick<AbuseMonitor, 'record'>;
-  readonly metrics: Pick<Metrics, 'count'>;
+  readonly metrics: Pick<Metrics, 'count' | 'observe'>;
   readonly logger: Logger;
 }
 
@@ -382,16 +382,17 @@ export class Connection {
 
   async #authenticate(message: ClientMessage & { type: 'auth.authenticate' }): Promise<void> {
     const { requestId } = message;
+    const started = performance.now();
     if (!(await this.#allowAuthentication(requestId))) return;
     const verified = await this.#deps.verifier.verify(message.payload.token);
-    if (!verified.ok) return this.#rejectAuthentication(verified.code, requestId);
+    if (!verified.ok) return this.#rejectAuthentication(verified.code, requestId, started);
     const { application, context } = verified.token;
     this.#appId = context.appId;
     // Released with the connection, whether or not the authentication completes.
     this.#slot = connectionSlot(context.appId);
     this.#limits = applicationLimits(this.#deps.limits, application);
     if (!(await this.#acquireConnectionSlot()) || !(await this.#touch(context))) {
-      return this.#rejectAuthentication('quota_exceeded', requestId);
+      return this.#rejectAuthentication('quota_exceeded', requestId, started);
     }
     this.#deps.metrics.count('blindsignal_authentications_total', { result: 'ok' });
 
@@ -409,6 +410,7 @@ export class Connection {
     clearTimeout(this.#deadline);
     this.#port.authenticated?.();
     this.#accept({ ...context, protocolVersion: message.version }, requestId);
+    this.#observeAuthentication('ok', started);
     this.#deps.logger.log('info', 'connection.authenticated', {
       connectionId: this.id,
       appId: context.appId,
@@ -452,9 +454,16 @@ export class Connection {
   }
 
   /** Every rejection closes: the connection has nothing to keep. */
-  #rejectAuthentication(code: ErrorCode, requestId: string): void {
+  #rejectAuthentication(code: ErrorCode, requestId: string, started: number): void {
     this.#deps.metrics.count('blindsignal_authentications_total', { result: code });
     this.#error(code, requestId, true);
+    this.#observeAuthentication(code, started);
+  }
+
+  /** From the message's receipt to the reply sent, by the same result the counter has. */
+  #observeAuthentication(result: string, started: number): void {
+    const seconds = (performance.now() - started) / 1000;
+    this.#deps.metrics.observe('blindsignal_authentication_duration_seconds', seconds, { result });
   }
 
   async #refresh(message: ClientMessage & { type: 'auth.refresh' }): Promise<void> {
@@ -603,9 +612,11 @@ export class Connection {
     const { sessionId } = event;
     if (event.type === 'session.accepted') {
       const durationMs = this.#limits.quotas.sessionDurationSeconds * 1000;
-      if (this.#sessions.activate(sessionId, durationMs)) {
-        this.#send({ type: 'session.accepted', payload: { sessionId } });
-      }
+      const pendingMs = this.#sessions.activate(sessionId, durationMs);
+      if (pendingMs === undefined) return;
+      // Only the requester receives the event, so each session is observed once (ADR 0038).
+      this.#deps.metrics.observe('blindsignal_session_acceptance_seconds', pendingMs / 1000);
+      this.#send({ type: 'session.accepted', payload: { sessionId } });
       return;
     }
     const session = this.#sessions.get(sessionId);

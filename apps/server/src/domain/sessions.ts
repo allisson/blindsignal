@@ -16,6 +16,7 @@ export interface Session {
 interface Entry extends Session {
   state: 'pending' | 'active';
   timer: ReturnType<typeof setTimeout> | undefined;
+  readonly createdAt: number;
   readonly onTimeout: (session: Session) => void;
 }
 
@@ -46,6 +47,7 @@ export class SessionRegistry {
       target,
       state: 'pending',
       timer: undefined,
+      createdAt: performance.now(),
       onTimeout,
     };
     entry.timer = setTimeout(() => onTimeout(entry), timeoutMs);
@@ -59,15 +61,16 @@ export class SessionRegistry {
 
   /**
    * Moves a `pending` session to `active` and disarms its negotiation timeout; a `durationMs`
-   * above 0 arms the maximum session duration (ADR 0014). True when it was pending.
+   * above 0 arms the maximum session duration (ADR 0014). Returns how long it was pending, in
+   * milliseconds, or undefined when it was not pending.
    */
-  activate(sessionId: string, durationMs = 0): boolean {
+  activate(sessionId: string, durationMs = 0): number | undefined {
     const entry = this.#sessions.get(sessionId);
-    if (entry?.state !== 'pending') return false;
+    if (entry?.state !== 'pending') return undefined;
     entry.state = 'active';
     clearTimeout(entry.timer);
     entry.timer = durationMs > 0 ? setTimeout(() => entry.onTimeout(entry), durationMs) : undefined;
-    return true;
+    return performance.now() - entry.createdAt;
   }
 
   /** Removes the session; true when it existed, so only one caller ends it. */
