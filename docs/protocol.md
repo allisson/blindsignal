@@ -105,7 +105,8 @@ rebuilt by the server for the other session participant.
 `userId` is the issuer's `sub`, meaningful only within the application (spec §6.1). A device is
 identified by `userId` and `deviceId` together, never by `deviceId` alone (ADR 0006).
 `rtc.ice_config` follows every successful `auth.result`, and only then (ADR 0009); `iceServers` is
-empty when the server configures no ICE server.
+empty when the server configures no ICE server. A TURN entry carries a credential minted for that
+message, valid until the expiry in its `username` (ADR 0017).
 `expiresInMs` is the time left until the token's `exp`, so the SDK can refresh before the server
 closes the connection without reading the token. Pairing
 messages are defined with the pairing protocol (spec §7.4, post-MVP).

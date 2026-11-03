@@ -34,7 +34,7 @@ browsers on separate networks connect through Cloudflare Quick Tunnels (`docs/ex
 `docs/connectivity-report.md`), which completes the MVP. The post-MVP tasks of Phase 6 are done:
 bounded queues and backpressure (ADR 0013), the maximum session duration (ADR 0014),
 per-application usage metrics (ADR 0015), and abuse alerts with operator-driven suspension
-(ADR 0016). Next is Phase 8 (TURN support); see the roadmap's "After the MVP". The workspace uses the toolchain in
+(ADR 0016). Next is Phase 8 (TURN support), decided in ADR 0017; see the roadmap's "After the MVP". The workspace uses the toolchain in
 `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
 `jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a
 new ADR.

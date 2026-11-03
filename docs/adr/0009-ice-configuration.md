@@ -29,5 +29,5 @@ gives a credential lifetime unrelated to the connection's.
 
 - A revoked device or a closed connection stops receiving credentials; the ones already issued
   stay usable until they expire (spec §6.4).
-- How the server mints TURN credentials (for example, the shared-secret scheme Coturn supports)
-  is decided in Phase 8, when TURN is deployed.
+- The server mints TURN credentials with the shared-secret scheme Coturn supports
+  (`docs/adr/0017-turn-credentials.md`).
