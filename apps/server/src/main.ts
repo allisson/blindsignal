@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { InMemoryCoordinationAdapter } from '@blindsignal/coordination-memory';
 import { openRedisCoordination } from '@blindsignal/coordination-redis';
-import type { CoordinationAdapter, StorageAdapter } from '@blindsignal/core';
+import type { ApplicationRepository, CoordinationAdapter, StorageAdapter } from '@blindsignal/core';
 import {
   InMemoryApplicationRepository,
   InMemoryDeviceRepository,
@@ -11,12 +11,10 @@ import { loadConfig } from './config.ts';
 import { TokenVerifier } from './domain/auth.ts';
 import {
   followRegistry,
-  parseRegistry,
   REGISTRY_CHANGED,
   REGISTRY_TOPIC,
-  storedRegistry,
+  storeRegistry,
   syncRegistry,
-  type ParseRegistryOptions,
   type Registry,
   type RegistryResult,
 } from './domain/registry.ts';
@@ -27,7 +25,11 @@ import { jsonLogger, Metrics, serveMetrics } from './telemetry.ts';
 
 const logger = jsonLogger();
 
-async function readRegistry(path: string, options: ParseRegistryOptions): Promise<RegistryResult> {
+async function readRegistry(
+  path: string,
+  stored: ApplicationRepository,
+  options: Parameters<typeof storeRegistry>[2],
+): Promise<RegistryResult> {
   let text: string;
   try {
     text = await readFile(path, 'utf8');
@@ -35,7 +37,7 @@ async function readRegistry(path: string, options: ParseRegistryOptions): Promis
     // The path is operator configuration, not a secret; the error's message could quote more.
     return { ok: false, error: `cannot read the registry at ${path}` };
   }
-  return parseRegistry(text, options);
+  return storeRegistry(text, stored, options);
 }
 
 /** Wires the adapters and starts the server; the only module that imports adapters (ADR 0002). */
@@ -62,15 +64,13 @@ async function main(): Promise<void> {
   logger.log('info', 'storage.ready', {
     storage: config.database === undefined ? 'memory' : 'postgresql',
   });
-  // Stored first: a registry that cannot be stored is not installed.
+  // Copies what `readRegistry` stored; a registry that cannot be stored is not installed.
   const install = async (next: Registry) => {
-    await storage.applications.replaceAll(next.applications);
     if (storage.applications !== applications) await applications.replaceAll(next.applications);
   };
 
-  const initial = await readRegistry(registryPath, {
+  const initial = await readRegistry(registryPath, storage.applications, {
     now: startedAt,
-    previous: await storedRegistry(storage.applications),
     development,
   });
   if (!initial.ok) throw new Error(`invalid registry: ${initial.error}`);
@@ -148,9 +148,9 @@ async function main(): Promise<void> {
   const reload = async () => {
     let next: RegistryResult;
     try {
-      next = await readRegistry(registryPath, {
+      next = await readRegistry(registryPath, storage.applications, {
         now: new Date(),
-        previous: await storedRegistry(storage.applications, registry),
+        current: registry,
         development,
       });
       if (next.ok) await install(next.registry);

@@ -9,6 +9,14 @@ export interface StorageAdapter {
 export interface ApplicationRepository {
   /** Replaces the whole registry atomically: readers never see a partial one. */
   replaceAll(applications: readonly ApplicationRecord[]): Promise<void>;
+  /**
+   * Replaces the registry with what `next` returns for the stored one, or keeps it when `next`
+   * returns `undefined`. Calls on every instance take turns, so each decides on what the previous
+   * one stored (ADR 0025).
+   */
+  replaceWith(
+    next: (stored: readonly ApplicationRecord[]) => readonly ApplicationRecord[] | undefined,
+  ): Promise<void>;
   getById(appId: string): Promise<ApplicationRecord | undefined>;
   getByIssuer(issuer: string): Promise<ApplicationRecord | undefined>;
   /** Every application, in no particular order. */

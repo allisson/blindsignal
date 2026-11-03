@@ -108,10 +108,32 @@ export async function storedRegistry(
   applications: Pick<ApplicationRepository, 'getAll'>,
   current?: Registry,
 ): Promise<Registry> {
-  const stored = await applications.getAll();
+  return withRevoked(await applications.getAll(), current);
+}
+
+function withRevoked(stored: readonly ApplicationRecord[], current?: Registry): Registry {
   const revoked = new Set(current?.revoked);
   for (const app of stored) if (app.status === 'revoked') revoked.add(app.appId);
   return { applications: stored, revoked };
+}
+
+/**
+ * Checks the registry file against the stored registry and stores the result, in one turn of
+ * the storage, so a concurrent load on any instance cannot undo a revocation (ADR 0025). On a
+ * reload, `current` adds the applications this process saw revoked.
+ */
+export async function storeRegistry(
+  text: string,
+  applications: Pick<ApplicationRepository, 'replaceWith'>,
+  options: Omit<ParseRegistryOptions, 'previous'> & { readonly current?: Registry },
+): Promise<RegistryResult> {
+  const { current, ...parse } = options;
+  let result: RegistryResult | undefined;
+  await applications.replaceWith((stored) => {
+    result = parseRegistry(text, { ...parse, previous: withRevoked(stored, current) });
+    return result.ok ? result.registry.applications : undefined;
+  });
+  return result as RegistryResult;
 }
 
 /** Every instance publishes on it once it installs a reload (ADR 0024). */
