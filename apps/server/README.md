@@ -94,7 +94,8 @@ so a reloaded registry's limits apply from its next refresh.
 
 Logs are one JSON object per line on stdout, with `time`, `level`, and `event`, plus the
 connection ID, application ID, client IP, or error code where they apply. They never carry tokens,
-secrets, payloads, `sub`, or `device_id`.
+secrets, payloads, `sub`, or `device_id`. The server keeps no logs itself; keep those with a
+client IP (`connection.opened`) for at most 14 days (`docs/adr/0012-metadata-retention.md`).
 
 `GET /metrics` on the admin port serves process-local counters and gauges in the Prometheus text
 format: messages by type, authentications by result, errors by code, sessions created and

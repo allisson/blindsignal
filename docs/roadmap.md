@@ -280,8 +280,8 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [ ] Implement pairing attempt rate limits (spec §8.1).
 - [x] Add signaling message validation and abuse protection.
 - [x] Review token and credential handling.
-- [ ] Define metadata retention.
-- [ ] Perform threat-model review.
+- [x] Define metadata retention.
+- [x] Perform threat-model review.
 - [x] Add security-focused tests.
 
 ### Deliverables
