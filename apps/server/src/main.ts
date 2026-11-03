@@ -169,7 +169,6 @@ async function main(): Promise<void> {
     dependencyProbe(dependencies, config.dependencyProbeTimeoutMs),
   );
   const admin = await serveMetrics(metrics, config.adminPort, config.adminHost);
-  logger.log('info', 'server.listening', { port, adminPort: admin.port });
 
   const stopSweep = sweepDevices(
     storage.devices,
@@ -253,6 +252,8 @@ async function main(): Promise<void> {
       void shutdown(deadline).finally(() => process.exit(0));
     });
   }
+  // Only now: a SIGTERM before the handlers above would kill the process without draining it.
+  logger.log('info', 'server.listening', { port, adminPort: admin.port });
 }
 
 main().catch((error: unknown) => {

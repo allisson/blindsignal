@@ -19,7 +19,7 @@ secret, but whoever can change it decides which issuers the server trusts, so on
 write it.
 
 Set the server's secrets from the platform's secret store: Secret Manager exposed as
-environment variables on Cloud Run, or the `chmod 600` `.env` of `docs/self-hosted.md`. Never commit
+environment variables on Cloud Run (`docs/cloud-run.md`), or the `chmod 600` `.env` of `docs/self-hosted.md`. Never commit
 them, and never pass them on a command line, where the process list shows them. The server never
 logs them, and a configuration error names the variable, never its value.
 

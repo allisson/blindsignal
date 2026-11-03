@@ -25,6 +25,7 @@ server. Initial target: browser / PWA.
 - `docs/secrets-and-keys.md`: every secret, its rotation, and what to do after a compromise.
 - `docs/backup-and-recovery.md`: what to back up, and restoring PostgreSQL.
 - `docs/vps.md`: one VPS behind a firewall, with Coturn on the same host.
+- `docs/cloud-run.md`: Cloud Run, with the registry in Secret Manager (untested on Cloud Run).
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
 raise it; do not silently diverge. A change that alters a documented contract updates the spec,
@@ -60,7 +61,7 @@ before every merge (ADR 0033); `docs/secrets-and-keys.md` and `docs/application-
 operator's procedures (ADR 0034), and `docs/backup-and-recovery.md` the backups (ADR 0035); `docs/vps.md` adds a firewall and
 Coturn on the same host (ADR 0036); logs take a level, crashes are logged as JSON, and `/metrics`
 reports the process (ADR 0037); metrics go through OpenTelemetry, pushed over OTLP when an endpoint
-is set (ADR 0038). The workspace uses
+is set (ADR 0038); `docs/cloud-run.md` configures Cloud Run, not yet tested there (ADR 0039). The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10

@@ -48,8 +48,8 @@ never a value.
 - **Several instances:** signal one instance; it stores the registry and the others install it
   through Redis, or at their next sync when Redis was down (ADR 0024). Every instance must read
   the same file, or a restarted instance loads its own copy.
-- **Cloud Run and other hosts without signals:** a registry change is a new deployment. It
-  restarts the instances, which close their connections; clients reconnect with new tokens.
+- **Cloud Run and other hosts without signals:** a registry change is a new deployment, with a new
+  secret version on Cloud Run (`docs/cloud-run.md`). It restarts the instances, which close their connections; clients reconnect with new tokens.
 
 ## Changing an application
 

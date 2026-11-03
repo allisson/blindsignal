@@ -485,7 +485,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Document application registration and onboarding: `docs/application-lifecycle.md`.
 - [x] Document key rotation and application revocation: `docs/secrets-and-keys.md` and
   `docs/application-lifecycle.md`.
-- [ ] Document Cloud Run deployment.
+- [x] Document Cloud Run deployment: `docs/cloud-run.md`, untested on Cloud Run (ADR 0039).
 - [x] Document VPS deployment: `docs/vps.md` (ADR 0036).
 - [x] Document self-hosted deployment: `docs/self-hosted.md`.
 - [x] Document optional TURN deployment: `docs/turn-operations.md`.
