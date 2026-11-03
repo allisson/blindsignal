@@ -397,7 +397,7 @@ Cloudflare Quick Tunnel is a development ingress mechanism, not a WebRTC transpo
 - [x] Test configured UDP and TCP/TLS transports: one relay test per transport, TLS in Chromium only (ADR 0017).
 - [x] Test direct-to-relay fallback behavior: Firefox without host candidates relays under the default policy (ADR 0017).
 - [x] Test TURN unavailable: direct sessions still connect.
-- [ ] Close a session that never connects: with the relay forced and TURN unavailable, no candidate is gathered and the peer connection never reaches `failed`.
+- [x] Close a session that never connects: the SDK's `connectTimeoutMs` treats a connection not connected in time as failed (ADR 0018).
 - [ ] Test credential expiration: an established allocation outlives its credential in Coturn 4.18.
 - [ ] Add relay usage metrics: credentials issued per application, relay traffic from the TURN server (ADR 0017).
 - [ ] Document TURN operational requirements.
@@ -633,6 +633,6 @@ Phase 6 are done too: bounded queues and backpressure (ADR 0013), the maximum se
 (ADR 0014), per-application usage metrics (ADR 0015), and abuse alerts with operator-driven
 suspension (ADR 0016). Next is Phase 8, whose TURN credentials, configuration, test setup, and
 relay metrics are decided in ADR 0017; the server issues TURN credentials, and browsers relay
-through a test Coturn. The post-MVP tasks
+through a test Coturn, and the SDK closes a session that never connects (ADR 0018). The post-MVP tasks
 of Phase 5 (proof-of-possession, session authorization, and pairing) each start with an ADR and
 are not scheduled yet.

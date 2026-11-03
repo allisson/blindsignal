@@ -46,6 +46,7 @@ session.on("open", () => session.send("hello"));
 | `backoffResetMs` | `30000` | Time connected after which the reconnect count resets. |
 | `heartbeat` | `{ intervalMs: 25000, timeoutMs: 10000 }` | `connection.ping` interval and pong timeout. |
 | `maxIceRestarts` | `3` | ICE restarts in a row before a failed connection closes. |
+| `connectTimeoutMs` | `30000` | Time to connect after each offer/answer exchange before the connection counts as failed (ADR 0018). |
 | `createSocket`, `createPeerConnection` | browser globals | Replaced in tests. |
 
 | Member | Meaning |

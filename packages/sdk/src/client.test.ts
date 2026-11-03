@@ -1045,6 +1045,21 @@ describe('BlindSignalClient WebRTC', () => {
     expect(harness.last()).toMatchObject({ type: 'session.close', payload: { sessionId } });
   });
 
+  it('restarts ICE when the connection does not connect in time, 30 s by default', async () => {
+    for (const [options, timeoutMs] of [
+      [undefined, 30_000],
+      [{ connectTimeoutMs: 5_000 }, 5_000],
+    ] as const) {
+      const harness = await connected(300_000, options);
+      const { sessionId, pc } = await accepted(harness);
+      harness.socket().receive(event('rtc.answer', { sessionId, sdp: 'answer sdp' }));
+      await vi.advanceTimersByTimeAsync(timeoutMs - 1);
+      expect(pc.iceRestarts).toBe(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(pc.iceRestarts).toBe(1);
+    }
+  });
+
   it('does not restart ICE once the session ended', async () => {
     const harness = await connected();
     const { sessionId, pc, channel, events } = await accepted(harness);

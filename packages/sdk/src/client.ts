@@ -33,6 +33,8 @@ export interface BlindSignalClientOptions {
   iceTransportPolicy?: RTCIceTransportPolicy;
   /** ICE restarts the requester tries in a row before a failed connection closes. Defaults to 3. */
   maxIceRestarts?: number;
+  /** Time a connection has to connect after each offer/answer exchange before it counts as failed. Defaults to 30 s. */
+  connectTimeoutMs?: number;
   /** Creates the WebSocket; tests replace it. */
   createSocket?: SocketFactory;
   /** Creates each session's RTCPeerConnection; tests replace it. */
@@ -294,6 +296,7 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
       },
       signaling,
       maxIceRestarts: this.#options.maxIceRestarts ?? 3,
+      connectTimeoutMs: this.#options.connectTimeoutMs ?? 30_000,
       createPeerConnection:
         this.#options.createPeerConnection ??
         ((configuration) => new RTCPeerConnection(configuration)),

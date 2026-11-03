@@ -28,16 +28,19 @@ export interface PeerLinkEvents extends Record<string, unknown> {
  */
 export class PeerLink extends Emitter<PeerLinkEvents> {
   readonly #sessionId: string;
+  readonly #role: 'requester' | 'target';
   readonly #relay: Relay;
   readonly #signaling: () => boolean;
   readonly #configuration: () => RTCConfiguration;
   readonly #maxIceRestarts: number;
+  readonly #connectTimeoutMs: number;
   readonly #pc: RTCPeerConnection;
   #channel: RTCDataChannel | undefined;
   /** Candidates that arrived before the remote description; addIceCandidate needs it first. */
   readonly #early: RTCIceCandidateInit[] = [];
   #closed = false;
   #iceRestarts = 0;
+  #connectTimer: ReturnType<typeof setTimeout> | undefined;
   #connectionType: ConnectionType = 'unknown';
 
   constructor(init: {
@@ -50,6 +53,8 @@ export class PeerLink extends Emitter<PeerLinkEvents> {
     signaling: () => boolean;
     /** ICE restarts tried in a row before a failed connection closes. */
     maxIceRestarts: number;
+    /** Time from each description exchange to `connected`, after which it counts as failed (ADR 0018). */
+    connectTimeoutMs: number;
     createPeerConnection: PeerConnectionFactory;
   }) {
     super();
@@ -58,7 +63,8 @@ export class PeerLink extends Emitter<PeerLinkEvents> {
     this.#signaling = init.signaling;
     this.#configuration = init.configuration;
     this.#maxIceRestarts = init.maxIceRestarts;
-    const role = init.role;
+    this.#connectTimeoutMs = init.connectTimeoutMs;
+    this.#role = init.role;
     const pc = init.createPeerConnection(init.configuration());
     this.#pc = pc;
     pc.addEventListener('icecandidate', ({ candidate }) => {
@@ -70,13 +76,14 @@ export class PeerLink extends Emitter<PeerLinkEvents> {
     });
     pc.addEventListener('connectionstatechange', () => {
       if (pc.connectionState === 'connected') {
+        clearTimeout(this.#connectTimer);
         this.#iceRestarts = 0;
         void this.#readConnectionType();
       } else if (pc.connectionState === 'failed') {
-        this.#failed(role);
+        this.#failed();
       }
     });
-    if (role === 'requester') this.#attach(pc.createDataChannel('blindsignal'));
+    if (init.role === 'requester') this.#attach(pc.createDataChannel('blindsignal'));
     else pc.addEventListener('datachannel', ({ channel }) => this.#attach(channel), { once: true });
   }
 
@@ -126,6 +133,7 @@ export class PeerLink extends Emitter<PeerLinkEvents> {
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
+    clearTimeout(this.#connectTimer);
     this.#channel?.close();
     this.#pc.close();
     this.emit('close', undefined);
@@ -135,9 +143,10 @@ export class PeerLink extends Emitter<PeerLinkEvents> {
    * Only the requester restarts ICE, so the two sides never offer at once; the target waits for
    * that offer while the session can still signal.
    */
-  #failed(role: 'requester' | 'target'): void {
+  #failed(): void {
+    clearTimeout(this.#connectTimer);
     if (!this.#signaling()) return this.close();
-    if (role === 'target') return;
+    if (this.#role === 'target') return;
     if (this.#iceRestarts++ >= this.#maxIceRestarts) return this.close();
     this.#pc.setConfiguration(this.#configuration());
     this.#pc.restartIce();
@@ -189,6 +198,8 @@ export class PeerLink extends Emitter<PeerLinkEvents> {
 
   async #describe(description: RTCSessionDescriptionInit): Promise<void> {
     await this.#pc.setRemoteDescription(description);
+    clearTimeout(this.#connectTimer);
+    this.#connectTimer = setTimeout(() => this.#failed(), this.#connectTimeoutMs);
     for (const candidate of this.#early.splice(0)) {
       await this.#pc.addIceCandidate(candidate).catch(() => undefined);
     }

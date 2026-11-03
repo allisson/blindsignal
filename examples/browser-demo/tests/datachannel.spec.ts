@@ -128,3 +128,22 @@ test('two browsers connect directly while TURN is unreachable', async ({ browser
     ).toBe(true);
   }
 });
+
+test('a session forced to an unreachable TURN server closes', async ({ browser }, info) => {
+  test.skip(!process.env.BLINDSIGNAL_TEST_TURN, 'needs the signaling servers of the TURN run');
+  // No candidate is ever gathered, so only the SDK's connection timeout ends the session.
+  const query = { relay: '', server: 'ws://localhost:8790', connectTimeout: '1000' };
+  const suffix = `dead-turn-${info.project.name}`;
+  const alice = await open(browser, 'alice', `laptop-${suffix}`, query);
+  const bob = await open(browser, 'bob', `phone-${suffix}`, query);
+
+  await alice.page.getByRole('button', { name: `Connect to bob/phone-${suffix}` }).click();
+  for (const { page } of [alice, bob]) {
+    await expect(page.locator('#channel')).toHaveText('connecting');
+  }
+  // 1 s for the offer/answer exchange and each of the 3 ICE restarts.
+  for (const { page } of [alice, bob]) {
+    await expect(page.locator('#channel')).toHaveText('closed', { timeout: 15_000 });
+  }
+  expect(alice.sent.filter((frame) => frame.includes('"rtc.offer"'))).toHaveLength(4);
+});
