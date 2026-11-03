@@ -49,15 +49,17 @@ call to another service on the authentication path.
   `iceTransportPolicy: 'relay'`, once per transport: a signaling server for each of UDP, TCP, and
   TLS offers only that URL, so a relayed session proves the transport. TLS uses a self-signed
   certificate the container makes at startup; Chromium accepts it with
-  `--ignore-certificate-errors`, and Firefox, which has no such switch, tests TLS only against a
-  TURN server with a trusted certificate, in the cross-network test. The fallback from direct to
+  `--ignore-certificate-errors`, and Firefox, which has no such switch, skips TLS: it needs a TURN
+  server with a trusted certificate. The fallback from direct to
   relay is tested in Firefox with `media.peerconnection.ice.no_host`, under the default policy:
   with no host candidates only the relay connects. Dropping non-relay candidates from signaling
   does not simulate a blocked network, since checks through the relay reveal peer-reflexive
   addresses and ICE then connects directly. A signaling server whose TURN URL nothing listens on
-  shows that an unreachable TURN server leaves direct sessions working. A TURN server reachable
-  from other networks, for the cross-network test, is set up only with the operator's explicit
-  approval.
+  shows that an unreachable TURN server leaves direct sessions working. A cross-network test
+  through a TURN server reachable from other networks is deferred, with no date: it needs a public
+  host and a trusted certificate, set up only with the operator's explicit approval. Until it runs,
+  Firefox over `turns:`, relaying across real networks, and the configuration of
+  `docs/turn-operations.md` are untested.
 - **Operating TURN** (`docs/turn-operations.md`): `denied-peer-ip` for private, loopback,
   link-local, and cloud metadata ranges, since a relay otherwise reaches the network that hosts it;
   never `allow-loopback-peers`; `turns:` on port 443 for networks that block everything else;
