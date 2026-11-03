@@ -29,6 +29,8 @@ export interface BlindSignalClientOptions {
   heartbeat?: HeartbeatOptions;
   /** STUN servers only; TURN servers and credentials come from the server (spec §12.3). */
   iceServers?: RTCIceServer[];
+  /** `relay` uses TURN candidates only, hiding this device's addresses from peers. Defaults to `all`. */
+  iceTransportPolicy?: RTCIceTransportPolicy;
   /** ICE restarts the requester tries in a row before a failed connection closes. Defaults to 3. */
   maxIceRestarts?: number;
   /** Creates the WebSocket; tests replace it. */
@@ -282,6 +284,9 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
       role,
       configuration: () => ({
         iceServers: [...(this.#options.iceServers ?? []), ...(this.#iceConfig?.iceServers ?? [])],
+        ...(this.#options.iceTransportPolicy && {
+          iceTransportPolicy: this.#options.iceTransportPolicy,
+        }),
       }),
       // A relay the server refuses gets an `error` that nothing waits for; session.terminated follows.
       relay: (type, payload) => {

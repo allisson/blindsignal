@@ -1,13 +1,13 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 
 /** Each browser its own context, as two devices; a suffix keeps parallel projects apart. */
-async function open(browser: Browser, user: string, device: string) {
+async function open(browser: Browser, user: string, device: string, query: object = {}) {
   const page = await (await browser.newContext()).newPage();
   const sent: string[] = [];
   page.on('websocket', (socket) =>
     socket.on('framesent', ({ payload }) => sent.push(String(payload))),
   );
-  await page.goto(`/?${new URLSearchParams({ user, device })}`);
+  await page.goto(`/?${new URLSearchParams({ user, device, ...query })}`);
   await expect(page.locator('#state')).toHaveText('connected');
   return { page, sent };
 }
@@ -45,4 +45,22 @@ test('two browsers open a DataChannel, exchange messages, and close', async ({ b
 
   await alice.page.getByRole('button', { name: 'Close' }).click();
   for (const { page } of [alice, bob]) await expect(page.locator('#channel')).toHaveText('closed');
+});
+
+test('two browsers forced to TURN connect through the relay', async ({ browser }, info) => {
+  test.skip(!process.env.BLINDSIGNAL_TEST_TURN, 'needs the Coturn of compose.yaml');
+  const alice = await open(browser, 'alice', `relay-laptop-${info.project.name}`, { relay: '' });
+  const bob = await open(browser, 'bob', `relay-phone-${info.project.name}`, { relay: '' });
+
+  await alice.page
+    .getByRole('button', { name: `Connect to bob/relay-phone-${info.project.name}` })
+    .click();
+  for (const { page } of [alice, bob]) {
+    await expect(page.locator('#channel')).toHaveText('open');
+    await expect(page.locator('#connection-type')).toHaveText('relay');
+  }
+  await send(alice.page, 'hello over turn');
+  await expect(bob.page.locator('#log')).toContainText(
+    `alice/relay-laptop-${info.project.name}: hello over turn`,
+  );
 });

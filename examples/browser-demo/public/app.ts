@@ -4,6 +4,8 @@ const NAMESPACE = 'notes:demo';
 const params = new URLSearchParams(location.search);
 const user = params.get('user') ?? 'alice';
 const device = params.get('device') ?? crypto.randomUUID().slice(0, 8);
+// `?relay` connects through TURN only, when the server configures it.
+const relay = params.has('relay');
 
 const $ = (id: string) => document.getElementById(id)!;
 const log = (line: string) =>
@@ -19,6 +21,7 @@ const client = new BlindSignalClient({
     if (!response.ok) throw new Error(`token request failed: ${response.status}`);
     return response.text();
   },
+  ...(relay && { iceTransportPolicy: 'relay' as const }),
 });
 
 let session: Session | undefined;
