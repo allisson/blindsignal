@@ -42,13 +42,15 @@ call to another service on the authentication path.
   comes from the TURN server's own metrics, aggregated: Coturn's `turn_traffic_*` counters carry a
   `realm` label only.
 - **Testing:** a Coturn service in `compose.yaml`, under a `turn` profile, bound to loopback, with a
-  test secret that, like the development issuer, is never trusted in production. It sets
-  `allow-loopback-peers` so two browsers on one machine relay through it; the Playwright suite uses
-  it with `iceTransportPolicy: 'relay'`. A TURN server reachable from other networks, for the
+  test secret that, like the development issuer, is never trusted in production. Two browsers on
+  one machine reach it on loopback and relay between two addresses inside its container, so it
+  needs no `allow-loopback-peers`; Firefox needs `media.peerconnection.ice.loopback` to reach it.
+  The Playwright suite starts it with `BLINDSIGNAL_TEST_TURN=1`, as CI does, and uses it with
+  `iceTransportPolicy: 'relay'`. A TURN server reachable from other networks, for the
   cross-network test, is set up only with the operator's explicit approval.
 - **Operating TURN** (the deployment guide): `denied-peer-ip` for private, loopback, link-local,
   and cloud metadata ranges, since a relay otherwise reaches the network that hosts it; never
-  `allow-loopback-peers` outside tests; `turns:` on port 443 for networks that block everything
+  `allow-loopback-peers`; `turns:` on port 443 for networks that block everything
   else.
 
 ## Considered options

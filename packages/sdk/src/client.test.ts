@@ -829,6 +829,15 @@ describe('BlindSignalClient WebRTC', () => {
     ).not.toThrow();
   });
 
+  it('applies iceTransportPolicy to every peer connection', async () => {
+    const harness = await connected(300_000, { iceTransportPolicy: 'relay' });
+    await accepted(harness);
+    expect(harness.peers[0]!.configuration).toEqual({
+      iceServers: iceConfig.iceServers,
+      iceTransportPolicy: 'relay',
+    });
+  });
+
   it('merges the STUN servers with the latest rtc.ice_config', async () => {
     const stun = { urls: 'stun:stun.example' };
     const harness = await connected(300_000, { iceServers: [stun] });

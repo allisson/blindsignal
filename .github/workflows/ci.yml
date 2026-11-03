@@ -35,4 +35,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @blindsignal/browser-demo exec playwright install --with-deps chromium firefox
+      # Docker on the runner starts the compose.yaml Coturn for the relay test.
       - run: pnpm test:browser
+        env:
+          BLINDSIGNAL_TEST_TURN: '1'
