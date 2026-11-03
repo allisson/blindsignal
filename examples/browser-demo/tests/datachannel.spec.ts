@@ -4,12 +4,14 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 async function open(browser: Browser, user: string, device: string, query: object = {}) {
   const page = await (await browser.newContext()).newPage();
   const sent: string[] = [];
-  page.on('websocket', (socket) =>
-    socket.on('framesent', ({ payload }) => sent.push(String(payload))),
-  );
+  const received: string[] = [];
+  page.on('websocket', (socket) => {
+    socket.on('framesent', ({ payload }) => sent.push(String(payload)));
+    socket.on('framereceived', ({ payload }) => received.push(String(payload)));
+  });
   await page.goto(`/?${new URLSearchParams({ user, device, ...query })}`);
   await expect(page.locator('#state')).toHaveText('connected');
-  return { page, sent };
+  return { page, sent, received };
 }
 
 async function send(page: Page, text: string) {
@@ -77,3 +79,52 @@ for (const [transport, port] of [
     );
   });
 }
+
+test('two browsers without direct candidates fall back to the relay', async ({
+  playwright,
+}, info) => {
+  test.skip(!process.env.BLINDSIGNAL_TEST_TURN, 'needs the Coturn of compose.yaml');
+  test.skip(info.project.name !== 'firefox', 'only Firefox can drop host candidates');
+  // The default policy, `all`, on a browser that gathers no host candidates: only the relay
+  // connects, as on a network that blocks direct paths.
+  const browser = await playwright.firefox.launch({
+    firefoxUserPrefs: {
+      'media.peerconnection.ice.loopback': true,
+      'media.peerconnection.ice.no_host': true,
+    },
+  });
+  const suffix = `fallback-${info.project.name}`;
+  const alice = await open(browser, 'alice', `laptop-${suffix}`);
+  const bob = await open(browser, 'bob', `phone-${suffix}`);
+
+  await alice.page.getByRole('button', { name: `Connect to bob/phone-${suffix}` }).click();
+  for (const { page } of [alice, bob]) {
+    await expect(page.locator('#channel')).toHaveText('open');
+    await expect(page.locator('#connection-type')).toHaveText('relay');
+  }
+  await send(alice.page, 'hello after fallback');
+  await expect(bob.page.locator('#log')).toContainText(
+    `alice/laptop-${suffix}: hello after fallback`,
+  );
+  await browser.close();
+});
+
+// The signaling server on 8790 offers a TURN URL that nothing listens on.
+test('two browsers connect directly while TURN is unreachable', async ({ browser }, info) => {
+  test.skip(!process.env.BLINDSIGNAL_TEST_TURN, 'needs the signaling servers of the TURN run');
+  const query = { server: 'ws://localhost:8790' };
+  const suffix = `no-turn-${info.project.name}`;
+  const alice = await open(browser, 'alice', `laptop-${suffix}`, query);
+  const bob = await open(browser, 'bob', `phone-${suffix}`, query);
+
+  await alice.page.getByRole('button', { name: `Connect to bob/phone-${suffix}` }).click();
+  for (const { page } of [alice, bob]) {
+    await expect(page.locator('#channel')).toHaveText('open');
+    await expect(page.locator('#connection-type')).toHaveText('direct');
+  }
+  for (const { received } of [alice, bob]) {
+    expect(
+      received.some((frame) => frame.includes('"rtc.ice_config"') && frame.includes(':3479')),
+    ).toBe(true);
+  }
+});

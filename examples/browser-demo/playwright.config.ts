@@ -5,12 +5,14 @@ const signalingPort = 8787;
 const demoPort = 3787;
 const development = { BLINDSIGNAL_ENV: 'development' };
 // BLINDSIGNAL_TEST_TURN=1 starts the compose.yaml Coturn, with Docker, and one signaling server per
-// TURN transport, each offering only that URL; the relay tests run only then.
+// TURN transport, each offering only that URL, plus one whose TURN URL nothing listens on; the
+// relay tests run only then.
 const turn = !!process.env.BLINDSIGNAL_TEST_TURN;
 const turnUrls = {
   [signalingPort]: 'turn:127.0.0.1:3478?transport=udp',
   [signalingPort + 1]: 'turn:127.0.0.1:3478?transport=tcp',
   [signalingPort + 2]: 'turns:localhost:5349?transport=tcp',
+  [signalingPort + 3]: 'turn:127.0.0.1:3479?transport=udp',
 };
 const turnEnv = (port: number): Record<string, string> =>
   turn
