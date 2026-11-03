@@ -91,7 +91,7 @@ Application payloads are not an asset of the server: they never reach it (spec �
 | Threat | Mitigation | Reference |
 |---|---|---|
 | Payload read by the server or a TURN relay | Payload only over DTLS-encrypted DataChannels; application E2EE on top | spec §4.1, §12.3 |
-| TURN credentials stolen or reused | Temporary credentials scoped to one application, delivered only through `rtc.ice_config`; a long random shared secret | ADR 0009, ADR 0017 |
+| TURN credentials stolen or reused | Temporary credentials scoped to one application, delivered only through `rtc.ice_config`; a long random shared secret; per-credential and server quotas on the TURN server | ADR 0009, ADR 0017 |
 | A relay used to reach the network that hosts the TURN server | `denied-peer-ip` for private, loopback, link-local, and metadata ranges; no loopback peers outside tests | ADR 0017 |
 | A revoked device keeps talking to its peers | Peers notified with `session.terminated`; the SDK closes the session | spec §6.4 |
 
@@ -110,7 +110,8 @@ Application payloads are not an asset of the server: they never reach it (spec �
 2. **Device identity is backend-asserted.** A user can claim any `device_id` under its own `sub`,
    but never another user's device (ADR 0006).
 3. **Established P2P sessions outlive revocation.** A modified client can keep a DataChannel
-   open; relayed sessions last until TURN credentials and allocations expire (spec §6.4).
+   open; a relayed session lasts while its client keeps refreshing its allocation, past the
+   credential's expiry (spec §6.4, ADR 0017).
 4. **Namespace removal is not immediate.** It takes effect at the next `auth.refresh` or
    reconnect, within the maximum token lifetime; device revocation is the fast path (ADR 0007).
 5. **The server sees metadata** (spec §4.4): identifiers, IP addresses, timing, presence, and
@@ -127,8 +128,10 @@ Application payloads are not an asset of the server: they never reach it (spec �
    instance behind a load balancer admits its own share.
 10. **A device record past its TTL may stay in memory** until its application's next new device
     or a restart; it no longer counts toward any quota (ADR 0012).
-11. **A TURN credential cannot be revoked before it expires.** A stolen one grants relay bandwidth
-    for at most the configured lifetime, never payload access (ADR 0017).
+11. **A TURN credential cannot be revoked before it expires, and its allocations outlive it.** A
+    stolen one opens allocations for at most the configured lifetime, and each relays for as long
+    as the thief refreshes it, within the TURN server's quotas; restarting the TURN server ends
+    them all. It never gives payload access (ADR 0017, `docs/turn-operations.md`).
 
 ## 6. Out of scope
 

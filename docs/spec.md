@@ -309,9 +309,9 @@ Once a WebRTC DataChannel is established, application data no longer passes thro
 On application or device revocation, the server can:
 - Close the revoked party's WebSocket connections and reject new authentication.
 - Notify the remaining peers of affected sessions that the counterpart was revoked.
-- Stop issuing TURN credentials. Existing relay allocations may remain usable until their credentials expire, and, depending on the TURN server, up to one allocation lifetime afterwards.
+- Stop issuing TURN credentials. Existing relay allocations may remain usable after their credentials expire: Coturn checks the expiry only when an allocation is created, so an allocation lasts while its client refreshes it (`docs/adr/0017-turn-credentials.md`).
 
-Termination of an established P2P session therefore depends on the remaining authorized peer's SDK closing the connection when notified. A modified or malicious client can keep an established direct connection open. TURN credential and allocation lifetimes bound this window for relayed sessions.
+Termination of an established P2P session therefore depends on the remaining authorized peer's SDK closing the connection when notified. A modified or malicious client can keep an established direct connection open. For relayed sessions, the TURN credential lifetime bounds only when new allocations can be created; the TURN server's quotas bound what an allocation relays.
 
 When the SDK loses its signaling connection and reauthentication is rejected because the application is suspended or revoked, or the device is revoked, the SDK must close all of its sessions, including established DataChannels. This covers application suspension, where no remaining peer is left to notify (§11).
 

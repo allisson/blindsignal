@@ -398,9 +398,9 @@ Cloudflare Quick Tunnel is a development ingress mechanism, not a WebRTC transpo
 - [x] Test direct-to-relay fallback behavior: Firefox without host candidates relays under the default policy (ADR 0017).
 - [x] Test TURN unavailable: direct sessions still connect.
 - [x] Close a session that never connects: the SDK's `connectTimeoutMs` treats a connection not connected in time as failed (ADR 0018).
-- [ ] Test credential expiration: an established allocation outlives its credential in Coturn 4.18.
-- [ ] Add relay usage metrics: credentials issued per application, relay traffic from the TURN server (ADR 0017).
-- [ ] Document TURN operational requirements.
+- [x] Test credential expiration: an established allocation outlives its credential in Coturn 4.18, `stale-nonce` included; quotas bound it (ADR 0017, `docs/turn-operations.md`).
+- [x] Add relay usage metrics: credentials issued per application, relay traffic from the TURN server's aggregated metrics (ADR 0017, `docs/turn-operations.md`).
+- [x] Document TURN operational requirements: `docs/turn-operations.md`.
 
 ### Deliverables
 
@@ -479,7 +479,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [ ] Document Cloud Run deployment.
 - [ ] Document VPS deployment.
 - [ ] Document self-hosted deployment.
-- [ ] Document optional TURN deployment.
+- [x] Document optional TURN deployment: `docs/turn-operations.md`.
 - [ ] Define backup and recovery for durable metadata.
 
 ### Deliverables
@@ -631,8 +631,10 @@ These are later capabilities, not prerequisites for validating the core architec
 The MVP is complete: every capability in the MVP definition is delivered. The post-MVP tasks of
 Phase 6 are done too: bounded queues and backpressure (ADR 0013), the maximum session duration
 (ADR 0014), per-application usage metrics (ADR 0015), and abuse alerts with operator-driven
-suspension (ADR 0016). Next is Phase 8, whose TURN credentials, configuration, test setup, and
-relay metrics are decided in ADR 0017; the server issues TURN credentials, and browsers relay
-through a test Coturn, and the SDK closes a session that never connects (ADR 0018). The post-MVP tasks
+suspension (ADR 0016). Phase 8 is complete: the server issues TURN
+credentials (ADR 0017), browsers relay through a test Coturn over UDP, TCP, and TLS, the SDK closes
+a session that never connects (ADR 0018), and `docs/turn-operations.md` is the TURN operations
+guide. A cross-network test through a TURN server reachable from other networks waits for the
+operator's approval (ADR 0017). The post-MVP tasks
 of Phase 5 (proof-of-possession, session authorization, and pairing) each start with an ADR and
 are not scheduled yet.

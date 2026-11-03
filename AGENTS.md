@@ -18,6 +18,7 @@ server. Initial target: browser / PWA.
 - `docs/protocol.md`, `docs/threat-model.md`: Phase 0 deliverables.
 - `docs/token-issuance.md`: what an application backend must do to issue accepted tokens.
 - `docs/external-testing.md`: the Compose workflow and the cross-network test setup (Phase 7).
+- `docs/turn-operations.md`: running Coturn for BlindSignal (Phase 8).
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
 raise it; do not silently diverge. A change that alters a documented contract updates the spec,
@@ -34,9 +35,9 @@ browsers on separate networks connect through Cloudflare Quick Tunnels (`docs/ex
 `docs/connectivity-report.md`), which completes the MVP. The post-MVP tasks of Phase 6 are done:
 bounded queues and backpressure (ADR 0013), the maximum session duration (ADR 0014),
 per-application usage metrics (ADR 0015), and abuse alerts with operator-driven suspension
-(ADR 0016). Phase 8 (TURN support), decided in ADR 0017, is in progress: the server issues TURN
-credentials, browsers relay through a test Coturn, and the SDK closes a session that never
-connects (ADR 0018); see the roadmap's "After the MVP". The workspace uses the toolchain in
+(ADR 0016). Phase 8 (TURN support) is complete: the server issues TURN credentials (ADR 0017),
+browsers relay through a test Coturn, the SDK closes a session that never connects (ADR 0018), and
+`docs/turn-operations.md` documents operating Coturn; see the roadmap's "After the MVP". The workspace uses the toolchain in
 `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
 `jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a
 new ADR.

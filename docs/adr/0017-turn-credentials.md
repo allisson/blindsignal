@@ -58,10 +58,10 @@ call to another service on the authentication path.
   shows that an unreachable TURN server leaves direct sessions working. A TURN server reachable
   from other networks, for the cross-network test, is set up only with the operator's explicit
   approval.
-- **Operating TURN** (the deployment guide): `denied-peer-ip` for private, loopback, link-local,
-  and cloud metadata ranges, since a relay otherwise reaches the network that hosts it; never
-  `allow-loopback-peers`; `turns:` on port 443 for networks that block everything
-  else.
+- **Operating TURN** (`docs/turn-operations.md`): `denied-peer-ip` for private, loopback,
+  link-local, and cloud metadata ranges, since a relay otherwise reaches the network that hosts it;
+  never `allow-loopback-peers`; `turns:` on port 443 for networks that block everything else;
+  `user-quota`, `max-bps`, and `total-quota` to bound what one credential and the server relay.
 
 ## Considered options
 
@@ -82,10 +82,17 @@ call to another service on the authentication path.
 ## Consequences
 
 - A deployment without TURN is unchanged: `rtc.ice_config` carries only the STUN servers.
-- A stolen credential grants relay bandwidth until its expiry, at most the configured lifetime, and
-  no access to payloads, which DTLS encrypts end to end (spec §12.3).
-- Whether an established relay allocation survives its credential's expiry depends on the TURN
-  server. Phase 8 tests it; if the allocation ends, the SDK's ICE restart with the latest
-  `rtc.ice_config` recovers the session.
+- An allocation outlives its credential. Coturn 4.18 checks the expiry in the username only when
+  it creates an allocation: refreshes pass after the expiry. With `stale-nonce`, the client answers
+  the `438` with a new nonce and the same credential, and its permission and channel refreshes
+  still pass; `max-allocate-lifetime` caps each refresh, not the total
+  (`docs/turn-operations.md`). A relayed
+  session therefore lasts while its client keeps refreshing, and a legitimate one is not cut when
+  its credential expires.
+- A stolen credential opens allocations until its expiry, at most the configured lifetime, and
+  each lasts while the thief keeps refreshing it. `user-quota` and `max-bps` bound what one
+  credential relays, `total-quota` the server; restarting Coturn ends every allocation, and the
+  SDK's ICE restart with the latest `rtc.ice_config` recovers the legitimate sessions. No
+  credential gives access to payloads, which DTLS encrypts end to end (spec §12.3).
 - Relay cost per application is estimated from issued credentials, not measured in bytes.
 - Coturn joins the test infrastructure as a container image, not a workspace dependency.
