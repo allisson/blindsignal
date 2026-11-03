@@ -88,7 +88,7 @@ pages.
 | S2 | Same network | Two devices on one Wi-Fi network | As S1; connection type `direct` |
 | S3 | Different networks | One device on Wi-Fi, the other on mobile data or another Wi-Fi network | As S1 where the NATs allow a direct path; a failure is recorded, not retried with TURN |
 | S4 | Invalid token | The command below, from any network | `{"version":1,"type":"error","requestId":"r1","payload":{"code":"invalid_token"}}`; the server logs `connection.error` with `invalid_token` and no `connection.authenticated` |
-| S5 | WebSocket interruption | Stop the signaling server (Ctrl-C) for 10 seconds, then start it again | Signaling shows `connecting`, then `connected`; the session ended at the interruption, and a new one opens on request |
+| S5 | WebSocket interruption | Stop the signaling server (Ctrl-C) for 10 seconds, then start it again | Signaling shows `connecting`, then `connected`; an open DataChannel stays open and keeps carrying messages, while the server-side session is gone (`blindsignal_sessions` 0); a new session opens on request |
 | S6 | Network change | During an open session, switch the phone from Wi-Fi to mobile data | Record what happens: whether signaling reconnects, and whether the session survives or ends |
 
 S4 sends a token that is not a JWT, with Node.js 26's built-in WebSocket. It sends no `Origin`
@@ -121,10 +121,17 @@ ws.onmessage = (message) => { console.log(message.data); ws.close(); };" wss://<
   application must authenticate its users before issuing tokens (`docs/token-issuance.md`).
 - A browser suspends a backgrounded page, mobile ones especially, so a PWA keeps no connection
   while inactive (spec §15).
+- A network change that drops the WebSocket also ends the session: the device's new connection
+  supersedes the old one (ADR 0008), and the server ends its sessions with `peer_disconnected`.
+  If the DataChannel's path went with the old network, it closes, since an ICE restart needs the
+  session; the application opens a new one (spec §15).
+- The old connection of a device that changed networks stays open on the server until a missed
+  heartbeat closes it with `1006`, about 30 seconds later; its sessions end earlier, when the new
+  connection supersedes it.
 
 ## Connectivity test report
 
-Copy this table into the pull request or issue that records a test run.
+Copy this table into a new section of `docs/connectivity-report.md`, which records each run.
 
 | ID | Date | Device A: browser, network | Device B: browser, network | Signaling | DataChannel | Connection type | Selected candidates | Notes |
 |---|---|---|---|---|---|---|---|---|

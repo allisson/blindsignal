@@ -352,17 +352,17 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 ### Tasks
 
 - [x] Document local Docker Compose workflow.
-- [ ] Expose the local signaling server using Cloudflare Quick Tunnel.
-- [ ] Test WebSocket connections through the tunnel.
-- [ ] Verify that pre-authentication limits see each client's IP through the tunnel, with the tunnel configured as a trusted proxy (spec §8.1).
-- [ ] Connect authorized browser clients from separate networks.
+- [x] Expose the local signaling server using Cloudflare Quick Tunnel.
+- [x] Test WebSocket connections through the tunnel.
+- [x] Verify that pre-authentication limits see each client's IP through the tunnel, with the tunnel configured as a trusted proxy (spec §8.1).
+- [x] Connect authorized browser clients from separate networks.
 - [ ] Validate STUN-based ICE negotiation.
-- [ ] Test same-network and different-network scenarios.
-- [ ] Test reconnect after WebSocket interruption.
-- [ ] Test reconnect after network changes.
+- [x] Test same-network and different-network scenarios.
+- [x] Test reconnect after WebSocket interruption.
+- [x] Test reconnect after network changes.
 - [ ] Capture ICE diagnostics.
 - [ ] Verify direct and unknown connection-type reporting (relay reporting is verified in Phase 8).
-- [ ] Document known connectivity limitations.
+- [x] Document known connectivity limitations.
 
 ### Deliverables
 
