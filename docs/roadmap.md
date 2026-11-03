@@ -356,12 +356,12 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Test WebSocket connections through the tunnel.
 - [x] Verify that pre-authentication limits see each client's IP through the tunnel, with the tunnel configured as a trusted proxy (spec §8.1).
 - [x] Connect authorized browser clients from separate networks.
-- [ ] Validate STUN-based ICE negotiation.
+- [x] Validate STUN-based ICE negotiation.
 - [x] Test same-network and different-network scenarios.
 - [x] Test reconnect after WebSocket interruption.
 - [x] Test reconnect after network changes.
-- [ ] Capture ICE diagnostics.
-- [ ] Verify direct and unknown connection-type reporting (relay reporting is verified in Phase 8).
+- [x] Capture ICE diagnostics.
+- [x] Verify direct and unknown connection-type reporting (relay reporting is verified in Phase 8).
 - [x] Document known connectivity limitations.
 
 ### Deliverables
