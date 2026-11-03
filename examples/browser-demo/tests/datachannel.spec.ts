@@ -49,6 +49,52 @@ test('two browsers open a DataChannel, exchange messages, and close', async ({ b
   for (const { page } of [alice, bob]) await expect(page.locator('#channel')).toHaveText('closed');
 });
 
+test('two browsers bound to device keys connect, and keep their keys across a reload', async ({
+  browser,
+}, info) => {
+  const alice = await open(browser, 'alice', `pop-laptop-${info.project.name}`, { pop: '' });
+  const bob = await open(browser, 'bob', `pop-phone-${info.project.name}`, { pop: '' });
+  for (const { page, sent } of [alice, bob]) {
+    await expect(page.locator('#key')).toHaveText(/^[\w-]{43}$/);
+    expect(sent.find((frame) => frame.includes('"auth.authenticate"'))).toContain('"proof"');
+  }
+  expect(await alice.page.locator('#key').textContent()).not.toBe(
+    await bob.page.locator('#key').textContent(),
+  );
+
+  const thumbprint = await alice.page.locator('#key').textContent();
+  await alice.page.reload();
+  await expect(alice.page.locator('#state')).toHaveText('connected');
+  await expect(alice.page.locator('#key')).toHaveText(thumbprint!);
+
+  await alice.page
+    .getByRole('button', { name: `Connect to bob/pop-phone-${info.project.name}` })
+    .click();
+  for (const { page } of [alice, bob]) await expect(page.locator('#channel')).toHaveText('open');
+});
+
+test('a bound token without its proof is refused', async ({ browser }, info) => {
+  const page = await (await browser.newContext()).newPage();
+  const received: string[] = [];
+  // Between the page and the server: drops the proof from every authentication.
+  await page.routeWebSocket(/:8787/, (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => {
+      const frame = JSON.parse(String(message)) as { type: string; payload: { proof?: string } };
+      if (frame.type === 'auth.authenticate') delete frame.payload.proof;
+      server.send(JSON.stringify(frame));
+    });
+    server.onMessage((message) => {
+      received.push(String(message));
+      socket.send(message);
+    });
+  });
+  const query = { user: 'mallory', device: `pop-${info.project.name}`, pop: '' };
+  await page.goto(`/?${new URLSearchParams(query)}`);
+  await expect.poll(() => received.some((frame) => frame.includes('"invalid_token"'))).toBe(true);
+  await expect(page.locator('#state')).not.toHaveText('connected');
+});
+
 // Each signaling server of playwright.config.ts offers one TURN URL, so a forced relay uses it.
 for (const [transport, port] of [
   ['udp', 8787],

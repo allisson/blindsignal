@@ -318,6 +318,10 @@ importers:
       '@blindsignal/protocol':
         specifier: workspace:*
         version: link:../protocol
+    devDependencies:
+      jose:
+        specifier: ^6.2.14
+        version: 6.2.14
 
 packages:
 

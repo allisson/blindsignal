@@ -53,10 +53,13 @@ export class Signaling extends Emitter<SignalingEvents> {
   #nextId = 0;
   #closed = false;
   #lastError: ErrorCode | undefined;
+  readonly #challenge = Promise.withResolvers<string>();
 
   private constructor(socket: WebSocket) {
     super();
     this.#socket = socket;
+    // Waited for only with a device key; a close rejects it unobserved otherwise.
+    this.#challenge.promise.catch(() => undefined);
     socket.addEventListener('message', (event) => this.#receive(event.data));
     socket.addEventListener('close', (event) => this.#onClose(event.code), { once: true });
   }
@@ -100,6 +103,14 @@ export class Signaling extends Emitter<SignalingEvents> {
     return this.#send(type, payload);
   }
 
+  /**
+   * The nonce of the server's `auth.challenge`, sent right after the upgrade (ADR 0041). Rejects
+   * with `connection_closed` if the connection closes first.
+   */
+  get challenge(): Promise<string> {
+    return this.#challenge.promise;
+  }
+
   close(): void {
     this.#socket.close(1000);
   }
@@ -116,6 +127,7 @@ export class Signaling extends Emitter<SignalingEvents> {
     const parsed = parseServerMessage(data);
     if (!parsed.ok) return;
     const message = parsed.message;
+    if (message.type === 'auth.challenge') return this.#challenge.resolve(message.payload.nonce);
     if (message.type === 'error') this.#lastError = message.payload.code;
     const id = message.requestId;
     const pending = id === undefined ? undefined : this.#pending.get(id);
@@ -135,6 +147,7 @@ export class Signaling extends Emitter<SignalingEvents> {
 
   #onClose(code: number): void {
     this.#closed = true;
+    this.#challenge.reject(new BlindSignalError('connection_closed'));
     for (const pending of this.#pending.values()) {
       pending.reject(new BlindSignalError('connection_closed'));
     }

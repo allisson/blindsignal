@@ -129,7 +129,8 @@ sender, such as a client-sent `session.request` or `rtc.ice_config`.
   SHA-256 of the token. The server checks the signature with `jwk`, that the thumbprint of `jwk`
   (RFC 7638, SHA-256) is `cnf.jkt`, `nonce`, and `ath`; any failure is `invalid_token`. An
   application may require bound tokens; otherwise a `proof` with an unbound token is ignored.
-  A client that holds no device key ignores `auth.challenge`.
+  A client that holds no device key ignores `auth.challenge`. The SDK's client, given one, waits
+  for the challenge up to its heartbeat timeout, then reconnects.
 - A connection authenticates once. A later `auth.authenticate` gets `error` `invalid_message`
   and the connection stays open; `auth.refresh` renews the credential.
 - The server checks the permission in §4 on every protected message, deny by default. Permissions

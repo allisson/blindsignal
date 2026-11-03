@@ -1,4 +1,4 @@
-import { BlindSignalClient, type Peer, type Session } from '@blindsignal/sdk';
+import { BlindSignalClient, DeviceKey, type Peer, type Session } from '@blindsignal/sdk';
 
 const NAMESPACE = 'notes:demo';
 const params = new URLSearchParams(location.search);
@@ -8,12 +8,15 @@ const device = params.get('device') ?? crypto.randomUUID().slice(0, 8);
 const relay = params.has('relay');
 // `?connectTimeout=<ms>` shortens the SDK's connection timeout (ADR 0018).
 const connectTimeout = params.get('connectTimeout');
+// `?pop` binds the tokens to this origin's device key (ADR 0041).
+const deviceKey = params.has('pop') ? await DeviceKey.load() : undefined;
 
 const $ = (id: string) => document.getElementById(id)!;
 const log = (line: string) =>
   $('log').append(Object.assign(document.createElement('li'), { textContent: line }));
 const name = (peer: Pick<Peer, 'userId' | 'deviceId'>) => `${peer.userId}/${peer.deviceId}`;
 $('me').textContent = `${user}/${device}`;
+$('key').textContent = deviceKey?.thumbprint ?? 'none';
 
 // `?server=<url>` picks another signaling server than the demo's own.
 const serverUrl =
@@ -22,10 +25,13 @@ const serverUrl =
 const client = new BlindSignalClient({
   serverUrl,
   accessTokenProvider: async () => {
-    const response = await fetch(`/token?${new URLSearchParams({ user, device })}`);
+    // The backend binds the token to the key whose thumbprint the device sends.
+    const query = { user, device, ...(deviceKey && { jkt: deviceKey.thumbprint }) };
+    const response = await fetch(`/token?${new URLSearchParams(query)}`);
     if (!response.ok) throw new Error(`token request failed: ${response.status}`);
     return response.text();
   },
+  ...(deviceKey && { deviceKey }),
   ...(relay && { iceTransportPolicy: 'relay' as const }),
   ...(connectTimeout && { connectTimeoutMs: Number(connectTimeout) }),
 });

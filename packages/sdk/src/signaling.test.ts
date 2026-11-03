@@ -144,4 +144,14 @@ describe('Signaling', () => {
     signaling.close();
     expect(socket.closedWith).toBe(1000);
   });
+
+  it('keeps the challenge nonce out of the messages, and rejects it on an early close', async () => {
+    const { signaling, socket, messages } = await connect();
+    socket.receive({ version: 1, type: 'auth.challenge', payload: { nonce: 'n1' } });
+    await expect(signaling.challenge).resolves.toBe('n1');
+    expect(messages).toEqual([]);
+    const other = await connect();
+    other.socket.drop(1006);
+    await expect(other.signaling.challenge).rejects.toMatchObject({ code: 'connection_closed' });
+  });
 });

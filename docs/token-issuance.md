@@ -135,8 +135,9 @@ thumbprint (`docs/adr/0041-proof-of-possession.md`): a stolen token alone is use
 - To require it, bind every device's tokens first, then ask the operator to set
   `requireProofOfPossession`.
 
-The SDK does not hold a device key yet: until it does, bind tokens only for clients that send the
-proof themselves (`docs/protocol.md` §5).
+With the SDK, `DeviceKey.load()` gives the device's key and `deviceKey.thumbprint` the value to
+send the backend; passed as `deviceKey`, the client signs every proof (`packages/sdk/README.md`).
+Other clients send the proof themselves (`docs/protocol.md` §5).
 
 ## Token endpoint
 
