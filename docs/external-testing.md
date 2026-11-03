@@ -7,7 +7,7 @@ Stop the tunnels when the test ends.
 
 Cloudflare Quick Tunnel is the ingress here: it gives the local server a temporary HTTPS and WSS
 address. It is not a WebRTC transport or a TURN relay. DataChannel traffic still flows directly
-between the browsers, or not at all: TURN arrives in Phase 8.
+between the browsers, or not at all: this setup configures no TURN server (see Known limitations).
 
 ## Local workflow with Docker Compose
 
@@ -103,8 +103,8 @@ ws.onmessage = (message) => { console.log(message.data); ws.close(); };" wss://<
 ## ICE diagnostics
 
 - The demo shows the connection type of the open session: `direct`, `relay`, or `unknown` until a
-  candidate pair is selected. With STUN only, `relay` never appears; relay reporting is verified in
-  Phase 8.
+  candidate pair is selected. With STUN only, `relay` never appears; the Playwright relay tests verify
+  relay reporting (ADR 0017).
 - Chromium: `chrome://webrtc-internals` lists each peer connection's ICE candidates, candidate
   pairs, and the selected pair. Firefox: `about:webrtc`. Save the page (Chromium's "Create dump",
   Firefox's "Save page") when a scenario fails.
@@ -113,8 +113,10 @@ ws.onmessage = (message) => { console.log(message.data); ws.close(); };" wss://<
 
 ## Known limitations
 
-- No TURN until Phase 8: two peers behind symmetric NATs, common on mobile carriers, may never
-  find a direct path, and the session ends at the negotiation timeout.
+- No TURN in this setup: two peers behind symmetric NATs, common on mobile carriers, may never
+  find a direct path, and the session ends at the negotiation timeout. The server can issue TURN
+  credentials (`docs/turn-operations.md`), but a cross-network test through a public TURN server
+  is deferred (ADR 0017): Firefox over `turns:` and relaying across real networks are untested.
 - A Quick Tunnel address changes on every `cloudflared` start, and the demo reads the signaling
   address at startup: restart the demo with the new address after restarting tunnel 1.
 - The demo accepts every session request and mints a token for any user it is asked for; an

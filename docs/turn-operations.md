@@ -4,7 +4,8 @@ How to run a TURN server for BlindSignal (roadmap Phase 8, ADR 0017). TURN is op
 sessions connect wherever a direct path exists, and `rtc.ice_config` carries only the STUN servers.
 With it, browsers on networks that block direct paths relay through it. The relay sees only
 DTLS-encrypted traffic, never payloads (spec §12.3). This guide uses Coturn 4.18, the version the
-tests run.
+tests run. Its configuration has not run in a deployment yet: the tests use a Coturn on loopback,
+and the cross-network test is deferred (ADR 0017).
 
 ## The shared secret
 
