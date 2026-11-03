@@ -62,7 +62,8 @@ the decisions behind them are in `docs/adr/0032-self-hosted-compose.md`.
   connections with `1001` (ADR 0031).
 - **Logs:** `docker compose logs -f server`, one JSON object per line, with no token, secret, or
   payload (`apps/server/README.md`).
-- **TURN:** run Coturn as `docs/turn-operations.md` describes, and set `BLINDSIGNAL_TURN_URLS` and
+- **TURN:** the `turn` profile runs Coturn on this host (`docs/vps.md`), or run it elsewhere as
+  `docs/turn-operations.md` describes; either way, set `BLINDSIGNAL_TURN_URLS` and
   `BLINDSIGNAL_TURN_SECRET` in `.env`.
 - **Backups:** keep `.env` and `registry.json` off the host, and dump the `postgres-data` volume's
   database daily; `docs/backup-and-recovery.md` has the commands and the restore.
