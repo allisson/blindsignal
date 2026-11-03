@@ -48,7 +48,8 @@ instance (ADR 0024); a session whose peer's instance fails ends once the peer re
 hide from every role but their owner (ADR 0027). Phase 10 has started: `/metrics` reports
 whether PostgreSQL and Redis answer, while readiness stays independent of them (ADR 0028); a
 maximum connection lifetime keeps connections under a hosting platform's request timeout
-(ADR 0029), and a cap bounds the connections of each instance (ADR 0030). The workspace uses
+(ADR 0029), a cap bounds the connections of each instance (ADR 0030), and a shutdown fails
+readiness before closing connections and ends within a deadline (ADR 0031). The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey). Do not add a tool outside those ADRs without a new ADR.

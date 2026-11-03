@@ -205,7 +205,7 @@ async function main(): Promise<void> {
 
   const shutdown = async () => {
     logger.log('info', 'server.draining');
-    await server.drain();
+    await server.drain(config.shutdownDelayMs);
     await server.close();
     stopSweep();
     await stopFollowing();
@@ -214,7 +214,14 @@ async function main(): Promise<void> {
     admin.server.close();
   };
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
-    process.once(signal, () => void shutdown().finally(() => process.exit(0)));
+    process.once(signal, () => {
+      // A client or an adapter that never finishes must not outlast the platform's grace period.
+      setTimeout(() => {
+        logger.log('error', 'server.shutdown_timeout');
+        process.exit(1);
+      }, config.shutdownTimeoutMs).unref();
+      void shutdown().finally(() => process.exit(0));
+    });
   }
 }
 

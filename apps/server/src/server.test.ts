@@ -498,6 +498,20 @@ describe('SignalingServer', () => {
     expect(await http('/healthz')).toBe(200);
     expect(await refusedUpgrade()).toBe(503);
   });
+
+  it('drains with a delay: fails readiness at once, closes connections after (ADR 0031)', async () => {
+    const { server, client, refusedUpgrade, http } = await start();
+    const alice = await client();
+    await alice.authenticate({ sub: 'u1', device_id: 'd1', namespaces: ['notes:a'] });
+    const draining = server.drain(300);
+    expect(await http('/readyz')).toBe(503);
+    expect(await refusedUpgrade()).toBe(503);
+    // The open connection still works while load balancers stop routing here.
+    alice.send('namespace.join', { namespace: 'notes:a' });
+    await alice.next('ack');
+    await draining;
+    expect(await alice.closed).toBe(GOING_AWAY);
+  });
 });
 
 describe('connectionLifetime', () => {

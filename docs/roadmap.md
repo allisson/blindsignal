@@ -471,7 +471,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [ ] Extend the Phase 3 Docker Compose setup for self-hosted deployment.
 - [x] Implement production health and readiness checks: liveness, readiness, and dependency
   probes on `/metrics` (ADR 0028).
-- [ ] Configure graceful shutdown.
+- [x] Configure graceful shutdown: a delay before the closures and a deadline (ADR 0031).
 - [x] Define WebSocket connection limits: a connection cap per instance (ADR 0030).
 - [x] Define reconnect behavior for hosting request timeouts: a maximum connection lifetime
   (ADR 0029).

@@ -128,6 +128,10 @@ const environment = z
     BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS: seconds.positive().default(60),
     // How long a scrape of /metrics waits for each dependency's probe (ADR 0028).
     BLINDSIGNAL_DEPENDENCY_PROBE_TIMEOUT_SECONDS: seconds.positive().default(2),
+    // On SIGTERM, readiness fails this long before the connections close (ADR 0031).
+    BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS: seconds.default(0),
+    // Exits with status 1 when the shutdown, delay included, takes longer (ADR 0031).
+    BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS: seconds.positive().default(8),
     // Before authentication, keyed by client IP or global; no application can override them.
     BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS: seconds.positive().default(10),
     BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: count.default(20),
@@ -187,6 +191,13 @@ const environment = z
       message: `must be at least ${MIN_TURN_SECRET_BYTES} bytes`,
     },
   )
+  .refine(
+    (vars) => vars.BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS > vars.BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS,
+    {
+      path: ['BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS'],
+      message: 'must exceed BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS',
+    },
+  )
   // Each set stays valid until the next auth.refresh brings a new one (ADR 0009).
   .refine(
     (vars) =>
@@ -229,6 +240,10 @@ export interface ServerConfig {
   readonly redis?: { readonly url: string };
   readonly registrySyncIntervalMs: number;
   readonly dependencyProbeTimeoutMs: number;
+  /** On SIGTERM, how long readiness fails before the connections close (ADR 0031). */
+  readonly shutdownDelayMs: number;
+  /** The shutdown's deadline, delay included; past it the process exits with status 1. */
+  readonly shutdownTimeoutMs: number;
   readonly preAuthentication: PreAuthentication;
   readonly maxMessageBytes: number;
   readonly maxQueuedMessages: number;
@@ -299,6 +314,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       deviceSweepIntervalMs: vars.BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS * 1000,
       registrySyncIntervalMs: vars.BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS * 1000,
       dependencyProbeTimeoutMs: vars.BLINDSIGNAL_DEPENDENCY_PROBE_TIMEOUT_SECONDS * 1000,
+      shutdownDelayMs: vars.BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS * 1000,
+      shutdownTimeoutMs: vars.BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS * 1000,
       ...(vars.BLINDSIGNAL_DATABASE_URL === ''
         ? {}
         : {
