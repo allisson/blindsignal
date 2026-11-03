@@ -764,7 +764,7 @@ BlindSignal does not store application payloads.
 
 However, signaling and connectivity require some metadata processing, including IP addresses, device identifiers, presence, session participants, timing, and ICE diagnostics.
 
-The system should minimize collection, define retention policies, avoid logging raw credentials, and document operator visibility.
+The system should minimize collection, define retention policies, avoid logging raw credentials, and document operator visibility. What the server holds, for how long, and what operators see are in `docs/adr/0012-metadata-retention.md`.
 
 ## 18. Observability
 

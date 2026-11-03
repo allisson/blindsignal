@@ -1,6 +1,6 @@
 # BlindSignal threat model
 
-**Status:** Draft, MVP scope  
+**Status:** MVP scope, reviewed after the Phase 5 and 6 MVP subsets, before external testing (Phase 7)  
 **Reference:** `docs/spec.md` §4, §5, §6, §8, §16, §17; `docs/protocol.md`; `docs/adr/`
 
 What BlindSignal protects in the MVP, against whom, and which risks it accepts. Each mitigation
@@ -62,6 +62,8 @@ Application payloads are not an asset of the server: they never reach it (spec �
 | Pre-authentication flooding | Per-IP connection and authentication limits, unauthenticated connection cap, authentication deadline, HTTP `429` at the upgrade | spec §8.4, ADR 0011 |
 | Post-authentication flooding or resource exhaustion | Token buckets per connection and session, application and device quotas, maximum message size | ADR 0011 |
 | Forged forwarding headers to evade IP limits | Headers honored only from configured trusted proxies | ADR 0011 |
+| Behind a tunnel or proxy (Phase 7), every client shares one address and its pre-authentication limits | The tunnel's connector listed as a trusted proxy, with its forwarding header (`cf-connecting-ip` for Cloudflare) | ADR 0011 |
+| Metrics reached by clients | The admin port binds to loopback by default and serves only aggregates | ADR 0012 |
 | Internal details leaked through errors | Fixed error codes with no free text | protocol §9 |
 
 ### 4.2 Issuer ↔ server
@@ -81,6 +83,8 @@ Application payloads are not an asset of the server: they never reach it (spec �
 | A revoked application is brought back | Reactivation of a revoked application is rejected | ADR 0005 |
 | Control plane reached with an application token | The control plane has no network surface | ADR 0005 |
 | Development issuers trusted in production | Development issuers and test keys isolated from production configuration | spec §14.1 |
+| A suspended or revoked application, or a revoked device, keeps its open connections | A registry reload closes the affected connections and ends their sessions | ADR 0005, spec §6.4 |
+| Metadata kept beyond its use, or identifiers written to logs | State held only while the protocol needs it; logs with fixed fields and no user, device, or token; IP logs kept at most 14 days | ADR 0012 |
 
 ### 4.4 Device ↔ device
 
@@ -109,13 +113,18 @@ Application payloads are not an asset of the server: they never reach it (spec �
 4. **Namespace removal is not immediate.** It takes effect at the next `auth.refresh` or
    reconnect, within the maximum token lifetime; device revocation is the fast path (ADR 0007).
 5. **The server sees metadata** (spec §4.4): identifiers, IP addresses, timing, presence, and
-   session participants. BlindSignal provides no anonymity, and operators can see this metadata.
+   session participants. BlindSignal provides no anonymity, and operators can see this metadata
+   while the server holds it, and client IPs in logs for up to 14 days (ADR 0012).
 6. **Peers see each other's network addresses** through ICE candidates, inherent to WebRTC.
 7. **In-memory adapters are single-instance** and lose device records, presence, and `jti`
    history on restart. Tokens issued before the restart are rejected, so the lost `jti` history
    allows no replay (ADR 0006); revocations survive in the registry file.
 8. **A flooding connection is answered, not closed** (ADR 0011); closing on repeated violations
    and abuse-triggered suspension are post-MVP.
+9. **The unauthenticated-connection caps are per instance** (`apps/server/README.md`): each
+   instance behind a load balancer admits its own share.
+10. **A device record past its TTL may stay in memory** until its application's next new device
+    or a restart; it no longer counts toward any quota (ADR 0012).
 
 ## 6. Out of scope
 
