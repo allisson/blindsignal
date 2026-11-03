@@ -6,6 +6,7 @@ import { parseTrustedProxies, type ForwardedHeader } from './domain/client-ip.ts
 import type { AbuseAlertPolicy } from './domain/abuse.ts';
 import type { Limits } from './domain/limits.ts';
 import type { AllowedOrigins } from './domain/origin.ts';
+import type { TurnPolicy } from './domain/turn.ts';
 
 const seconds = z.coerce.number().int().nonnegative();
 const port = z.coerce.number().int().min(0).max(65_535);
@@ -38,10 +39,23 @@ const isOrigin = (entry: string) => {
   }
 };
 
-// STUN only: TURN credentials arrive with Phase 8 (docs/adr/0009-ice-configuration.md).
+// STUN only, so no static TURN credential can be configured (ADR 0017).
 const iceServers = z.array(
   z.strictObject({ urls: z.array(z.string().regex(/^stuns?:\S+$/)).min(1) }),
 );
+
+// TURN servers get temporary credentials minted per message (docs/adr/0017-turn-credentials.md).
+const turnUrls = z
+  .string()
+  .default('')
+  .transform(list)
+  .refine(
+    (entries) => entries.every((entry) => /^turns?:\S+$/.test(entry)),
+    'each entry must be a turn: or turns: URL',
+  );
+
+// The TURN server checks a credential with it; a short secret is guessed offline (ADR 0017).
+const MIN_TURN_SECRET_BYTES = 32;
 
 const json = z.string().transform((value, context) => {
   try {
@@ -84,6 +98,9 @@ const environment = z
       .enum(['x-forwarded-for', 'cf-connecting-ip'])
       .default('x-forwarded-for'),
     BLINDSIGNAL_ICE_SERVERS: json.pipe(iceServers).default([]),
+    BLINDSIGNAL_TURN_URLS: turnUrls,
+    BLINDSIGNAL_TURN_SECRET: z.string().default(''),
+    BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS: seconds.positive().default(900),
     BLINDSIGNAL_TOKEN_MAX_LIFETIME_SECONDS: seconds.positive().default(600),
     BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS: seconds.default(60),
     BLINDSIGNAL_TOKEN_MAX_NAMESPACES: seconds.positive().default(100),
@@ -127,6 +144,29 @@ const environment = z
       path: ['BLINDSIGNAL_ALLOWED_ORIGINS'],
       message: 'required in production; use * to allow every origin',
     },
+  )
+  .refine(
+    (vars) => vars.BLINDSIGNAL_TURN_URLS.length > 0 === (vars.BLINDSIGNAL_TURN_SECRET !== ''),
+    { path: ['BLINDSIGNAL_TURN_SECRET'], message: 'set together with BLINDSIGNAL_TURN_URLS' },
+  )
+  .refine(
+    (vars) =>
+      vars.BLINDSIGNAL_TURN_SECRET === '' ||
+      Buffer.byteLength(vars.BLINDSIGNAL_TURN_SECRET) >= MIN_TURN_SECRET_BYTES,
+    {
+      path: ['BLINDSIGNAL_TURN_SECRET'],
+      message: `must be at least ${MIN_TURN_SECRET_BYTES} bytes`,
+    },
+  )
+  // Each set stays valid until the next auth.refresh brings a new one (ADR 0009).
+  .refine(
+    (vars) =>
+      vars.BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS >=
+      vars.BLINDSIGNAL_TOKEN_MAX_LIFETIME_SECONDS + vars.BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS,
+    {
+      path: ['BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS'],
+      message: 'must be at least the maximum token lifetime plus the clock skew',
+    },
   );
 
 export interface ServerConfig {
@@ -138,6 +178,8 @@ export interface ServerConfig {
   readonly allowedOrigins: AllowedOrigins;
   readonly proxyTrust: { readonly proxies: BlockList; readonly header: ForwardedHeader };
   readonly iceServers: readonly { readonly urls: readonly string[] }[];
+  /** Absent when no TURN server is configured. */
+  readonly turn?: TurnPolicy;
   readonly token: {
     readonly maxLifetimeSeconds: number;
     readonly clockSkewSeconds: number;
@@ -194,6 +236,15 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
         header: vars.BLINDSIGNAL_FORWARDED_HEADER,
       },
       iceServers: vars.BLINDSIGNAL_ICE_SERVERS,
+      ...(vars.BLINDSIGNAL_TURN_URLS.length === 0
+        ? {}
+        : {
+            turn: {
+              urls: vars.BLINDSIGNAL_TURN_URLS,
+              secret: vars.BLINDSIGNAL_TURN_SECRET,
+              credentialTtlSeconds: vars.BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS,
+            },
+          }),
       token: {
         maxLifetimeSeconds: vars.BLINDSIGNAL_TOKEN_MAX_LIFETIME_SECONDS,
         clockSkewSeconds: vars.BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS,

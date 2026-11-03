@@ -3,6 +3,12 @@ import { loadConfig } from './config.ts';
 
 const required = { BLINDSIGNAL_REGISTRY_PATH: '/etc/blindsignal/registry.json' };
 const production = { ...required, BLINDSIGNAL_ALLOWED_ORIGINS: 'https://app.example' };
+const SECRET = '0123456789abcdef0123456789abcdef';
+const turn = {
+  ...production,
+  BLINDSIGNAL_TURN_URLS: 'turn:turn.example',
+  BLINDSIGNAL_TURN_SECRET: SECRET,
+};
 
 function config(env: Record<string, string>) {
   const result = loadConfig(env);
@@ -76,6 +82,9 @@ describe('loadConfig', () => {
       BLINDSIGNAL_TRUSTED_PROXIES: '10.0.0.0/8, ::1',
       BLINDSIGNAL_FORWARDED_HEADER: 'cf-connecting-ip',
       BLINDSIGNAL_ICE_SERVERS: '[{"urls":["stun:stun.example:3478","stuns:stun.example"]}]',
+      BLINDSIGNAL_TURN_URLS: 'turn:turn.example:3478, turns:turn.example:443?transport=tcp',
+      BLINDSIGNAL_TURN_SECRET: SECRET,
+      BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS: '300',
       BLINDSIGNAL_TOKEN_MAX_LIFETIME_SECONDS: '300',
       BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS: '0',
       BLINDSIGNAL_TOKEN_MAX_NAMESPACES: '5',
@@ -113,6 +122,11 @@ describe('loadConfig', () => {
       registryPath: 'registry.json',
       allowedOrigins: new Set(['https://a.example', 'http://localhost:5173']),
       iceServers: [{ urls: ['stun:stun.example:3478', 'stuns:stun.example'] }],
+      turn: {
+        urls: ['turn:turn.example:3478', 'turns:turn.example:443?transport=tcp'],
+        secret: SECRET,
+        credentialTtlSeconds: 300,
+      },
       token: { maxLifetimeSeconds: 300, clockSkewSeconds: 0, maxNamespaces: 5 },
       heartbeatIntervalMs: 10_000,
       presenceLeaseMs: 25_000,
@@ -221,6 +235,55 @@ describe('loadConfig', () => {
     ['BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS', '0'],
   ])('rejects %s=%s', (name, value) => {
     expect(error({ ...production, [name]: value })).toContain(name);
+  });
+
+  describe('TURN', () => {
+    it('is off by default', () => {
+      expect(config(production).turn).toBeUndefined();
+    });
+
+    it('defaults the credential lifetime to 900 seconds', () => {
+      expect(config(turn).turn).toEqual({
+        urls: ['turn:turn.example'],
+        secret: SECRET,
+        credentialTtlSeconds: 900,
+      });
+    });
+
+    it.each([
+      ['urls without a secret', { BLINDSIGNAL_TURN_SECRET: '' }],
+      ['a secret without urls', { BLINDSIGNAL_TURN_URLS: '' }],
+      ['a secret of 31 bytes', { BLINDSIGNAL_TURN_SECRET: SECRET.slice(1) }],
+    ])('rejects %s', (_, vars) => {
+      expect(error({ ...turn, ...vars })).toContain('BLINDSIGNAL_TURN_SECRET');
+    });
+
+    it('measures the secret in bytes', () => {
+      const secret = 'é'.repeat(16);
+      expect(config({ ...turn, BLINDSIGNAL_TURN_SECRET: secret }).turn?.secret).toBe(secret);
+    });
+
+    it.each(['stun:turn.example', 'turn:', 'https://turn.example', 'turn:a, stun:b'])(
+      'rejects the TURN URL %s',
+      (urls) => {
+        expect(error({ ...turn, BLINDSIGNAL_TURN_URLS: urls })).toContain('BLINDSIGNAL_TURN_URLS');
+      },
+    );
+
+    it('requires the lifetime to cover the maximum token lifetime plus the skew', () => {
+      expect(
+        config({ ...turn, BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS: '660' }).turn,
+      ).toMatchObject({ credentialTtlSeconds: 660 });
+      for (const ttl of ['659', '0']) {
+        const env = { ...turn, BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS: ttl };
+        expect(error(env)).toContain('BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS');
+      }
+    });
+
+    it('never echoes the secret', () => {
+      const secret = 'short-secret-value';
+      expect(error({ ...turn, BLINDSIGNAL_TURN_SECRET: secret })).not.toContain(secret);
+    });
   });
 
   it('names invalid variables without their values', () => {

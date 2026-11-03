@@ -389,9 +389,9 @@ Cloudflare Quick Tunnel is a development ingress mechanism, not a WebRTC transpo
 
 - [ ] Finalize ICE configuration API.
 - [ ] Validate the Phase 4 `rtc.ice_config` TURN handling against a real TURN service.
-- [ ] Implement authenticated temporary TURN credential issuance, with the shared-secret scheme of `docs/adr/0017-turn-credentials.md`.
-- [ ] Ensure credentials are short-lived and scoped appropriately.
-- [ ] Never embed permanent TURN credentials in client code.
+- [x] Implement authenticated temporary TURN credential issuance, with the shared-secret scheme of `docs/adr/0017-turn-credentials.md`.
+- [x] Ensure credentials are short-lived and scoped appropriately: one application, at most `BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS` (ADR 0017).
+- [x] Never embed permanent TURN credentials in client code: `BLINDSIGNAL_ICE_SERVERS` and the SDK's `iceServers` accept STUN only (ADR 0017).
 - [ ] Deploy a test Coturn instance or use a managed TURN provider.
 - [ ] Test TURN relay connectivity.
 - [ ] Test configured UDP and TCP/TLS transports.
@@ -630,6 +630,6 @@ The MVP is complete: every capability in the MVP definition is delivered. The po
 Phase 6 are done too: bounded queues and backpressure (ADR 0013), the maximum session duration
 (ADR 0014), per-application usage metrics (ADR 0015), and abuse alerts with operator-driven
 suspension (ADR 0016). Next is Phase 8, whose TURN credentials, configuration, test setup, and
-relay metrics are decided in ADR 0017. The post-MVP tasks
+relay metrics are decided in ADR 0017; the server issues TURN credentials. The post-MVP tasks
 of Phase 5 (proof-of-possession, session authorization, and pairing) each start with an ADR and
 are not scheduled yet.

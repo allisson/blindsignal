@@ -564,6 +564,49 @@ describe('Connection', () => {
       expect(client.closes).toEqual([]);
     });
 
+    it('adds a TURN server with a credential for the application, and counts it', async () => {
+      const turn = {
+        urls: ['turn:turn.example:3478'],
+        secret: '0123456789abcdef0123456789abcdef',
+        credentialTtlSeconds: 900,
+      };
+      const { connect, metrics } = await setup(undefined, { turn });
+      const client = connect();
+      await client.authenticate();
+      // Expiry and password as in domain/turn.test.ts, at START plus 900 seconds.
+      const minted = {
+        urls: turn.urls,
+        username: '1793578500:notes',
+        credential: 'Lxc4OCwln1z5YNY7jOmDviiIpwU=',
+      };
+      expect(client.sent[1]).toEqual({
+        version: 1,
+        type: 'rtc.ice_config',
+        payload: { iceServers: [...ICE, minted] },
+      });
+      await vi.advanceTimersByTimeAsync(100_000);
+      await client.refresh();
+      expect(client.last()).toEqual({
+        version: 1,
+        type: 'rtc.ice_config',
+        payload: {
+          iceServers: [
+            ...ICE,
+            { ...minted, username: '1793578600:notes', credential: 'rQg22C8gusOPcAH0uUT1NNgMFGU=' },
+          ],
+        },
+      });
+      expect(metrics.render()).toContain(
+        'blindsignal_turn_credentials_issued_total{app_id="notes"} 2\n',
+      );
+    });
+
+    it('counts no TURN credential when none is configured', async () => {
+      const { connect, metrics } = await setup();
+      await connect().authenticate();
+      expect(metrics.render()).not.toContain('blindsignal_turn_credentials_issued_total{');
+    });
+
     it('sends an empty ICE configuration when none is configured', async () => {
       const { connect } = await setup(undefined, { iceServers: [] });
       const client = connect();

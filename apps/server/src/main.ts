@@ -58,6 +58,7 @@ async function main(): Promise<void> {
       coordination,
       sessions,
       iceServers: config.iceServers.map(({ urls }) => ({ urls: [...urls] })),
+      ...(config.turn === undefined ? {} : { turn: config.turn }),
       clockSkewSeconds: config.token.clockSkewSeconds,
       authenticationTimeoutMs: config.preAuthentication.authenticationTimeoutMs,
       authenticationAttempts: config.preAuthentication.authenticationAttempts,
