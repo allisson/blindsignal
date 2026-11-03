@@ -147,6 +147,8 @@ const environment = z
     BLINDSIGNAL_MAX_SESSIONS_PER_APP: count.default(10_000),
     BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE: count.default(16),
     BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE: count.default(100),
+    // Open connections on this instance, upgrades in progress included; 0 sets no limit (ADR 0030).
+    BLINDSIGNAL_MAX_CONNECTIONS: z.coerce.number().int().nonnegative().default(0),
     // 0 sets no limit; set it below the hosting platform's request timeout (ADR 0029).
     BLINDSIGNAL_MAX_CONNECTION_SECONDS: seconds.default(0),
     // 0 sets no limit: a session already ends with either connection (ADR 0014).
@@ -215,6 +217,8 @@ export interface ServerConfig {
   readonly heartbeatIntervalMs: number;
   /** 0 when connections have no maximum lifetime. */
   readonly maxConnectionMs: number;
+  /** 0 when the instance has no connection cap. */
+  readonly maxConnections: number;
   readonly presenceLeaseMs: number;
   readonly negotiationTimeoutMs: number;
   readonly deviceTtlMs: number;
@@ -288,6 +292,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       },
       heartbeatIntervalMs: vars.BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS * 1000,
       maxConnectionMs: vars.BLINDSIGNAL_MAX_CONNECTION_SECONDS * 1000,
+      maxConnections: vars.BLINDSIGNAL_MAX_CONNECTIONS,
       presenceLeaseMs: vars.BLINDSIGNAL_PRESENCE_LEASE_SECONDS * 1000,
       negotiationTimeoutMs: vars.BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS * 1000,
       deviceTtlMs: vars.BLINDSIGNAL_DEVICE_TTL_DAYS * 86_400_000,

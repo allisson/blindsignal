@@ -472,7 +472,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Implement production health and readiness checks: liveness, readiness, and dependency
   probes on `/metrics` (ADR 0028).
 - [ ] Configure graceful shutdown.
-- [ ] Define WebSocket connection limits.
+- [x] Define WebSocket connection limits: a connection cap per instance (ADR 0030).
 - [x] Define reconnect behavior for hosting request timeouts: a maximum connection lifetime
   (ADR 0029).
 - [ ] Add OpenTelemetry instrumentation.

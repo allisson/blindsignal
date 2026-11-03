@@ -63,6 +63,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS` | `10` | A connection not authenticated this long after it opened is closed with `1008`. |
 | `BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP` | `20` | Concurrent unauthenticated connections per client IP; more get HTTP `429` at the upgrade. |
 | `BLINDSIGNAL_MAX_UNAUTHENTICATED` | `1000` | Concurrent unauthenticated connections in all; more get HTTP `429` at the upgrade. |
+| `BLINDSIGNAL_MAX_CONNECTIONS` | `0` (none) | Open connections on this instance, authenticated or not; more get HTTP `503` at the upgrade. Set it at or below the platform's concurrency per instance, such as Cloud Run's (ADR 0030). |
 | `BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS` | `5,20` | Connection attempts per client IP, as `rate,burst`; more get HTTP `429` with `Retry-After`. |
 | `BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION` | `1,10` | `auth.authenticate` and `auth.refresh` per client IP, as `rate,burst`; more get `rate_limited`. |
 | `BLINDSIGNAL_MAX_QUEUED_MESSAGES` | `1024` | Frames and events waiting on one connection, at least `2`; reading pauses at half, and a full queue closes with `1013` (ADR 0013). |

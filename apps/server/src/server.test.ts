@@ -38,6 +38,7 @@ interface Options {
   readonly allowedOrigins?: AllowedOrigins;
   readonly heartbeatIntervalMs?: number;
   readonly maxConnectionMs?: number;
+  readonly maxConnections?: number;
   readonly presenceLeaseMs?: number;
   readonly maxMessageBytes?: number;
   readonly trustedProxies?: BlockList;
@@ -75,6 +76,7 @@ async function start(options: Options = {}) {
     },
     heartbeatIntervalMs: options.heartbeatIntervalMs ?? 60_000,
     maxConnectionMs: options.maxConnectionMs,
+    maxConnections: options.maxConnections,
     preAuthentication,
     coordination,
     connection: {
@@ -236,6 +238,61 @@ describe('SignalingServer', () => {
       alice.ws.close();
       await alice.closed;
       await vi.waitFor(() => client());
+    });
+
+    it('caps open connections on the instance, authenticated or not, with 503 (ADR 0030)', async () => {
+      const { server, client, refusal, logs } = await start({
+        trustedProxies: proxied,
+        maxConnections: 2,
+      });
+      const alice = await client(from('203.0.113.1'));
+      await alice.authenticate(claims);
+      await client(from('203.0.113.2'));
+      const refused = await refusal(ip('203.0.113.3'));
+      expect(refused.statusCode).toBe(503);
+      expect(refused.headers['retry-after']).toBeUndefined();
+      expect(server.connections).toBe(2);
+      expect(logs.filter((l) => l.event === 'connection.opened')).toHaveLength(2);
+      alice.ws.close();
+      await alice.closed;
+      await vi.waitFor(() => client(from('203.0.113.3')));
+      expect((await refusal(ip('203.0.113.4'))).statusCode).toBe(503);
+    });
+
+    it('counts upgrades in progress against the cap', async () => {
+      // Upgrades wait on the connection-attempt rate limit until the gate opens.
+      const coordination = new InMemoryCoordinationAdapter();
+      const consume = coordination.consumeRateLimit.bind(coordination);
+      let open = () => {};
+      const gate = new Promise<void>((resolve) => (open = resolve));
+      let reached = () => {};
+      const waiting = new Promise<void>((resolve) => (reached = resolve));
+      coordination.consumeRateLimit = async (...args) => {
+        reached();
+        await gate;
+        return consume(...args);
+      };
+      const { client, refusedUpgrade } = await start({ coordination, maxConnections: 1 });
+      const pending = client();
+      await waiting;
+      expect(await refusedUpgrade()).toBe(503);
+      open();
+      await pending;
+    });
+
+    it('frees the slot of an upgrade refused after it was counted', async () => {
+      const { client, refusedUpgrade } = await start({
+        trustedProxies: proxied,
+        maxConnections: 2,
+        preAuthentication: { maxUnauthenticatedPerIp: 1 },
+      });
+      await client(from('203.0.113.1'));
+      // The server frees a refused slot when the socket closes, just after the client reads 429.
+      for (let i = 0; i < 2; i++) {
+        await vi.waitFor(async () => expect(await refusedUpgrade(ip('203.0.113.1'))).toBe(429));
+      }
+      await vi.waitFor(() => client(from('203.0.113.2')));
+      expect(await refusedUpgrade(ip('203.0.113.3'))).toBe(503);
     });
 
     it('caps unauthenticated connections in all', async () => {
