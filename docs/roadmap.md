@@ -426,6 +426,7 @@ Operating TURN is not required to complete the initial local MVP.
 
 ### Tasks
 
+- [x] Choose the PostgreSQL driver, the migration mechanism, the Redis-compatible client, and the test services (`docs/adr/0019-persistence-dependencies.md`).
 - [ ] Finalize `StorageAdapter`.
 - [ ] Implement PostgreSQL adapter.
 - [ ] Validate migrations and schema.

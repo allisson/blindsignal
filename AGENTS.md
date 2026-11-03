@@ -39,8 +39,8 @@ per-application usage metrics (ADR 0015), and abuse alerts with operator-driven 
 browsers relay through a test Coturn, the SDK closes a session that never connects (ADR 0018), and
 `docs/turn-operations.md` documents operating Coturn; see the roadmap's "After the MVP". The workspace uses the toolchain in
 `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
-`jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a
-new ADR.
+`jose`, `ws`, Vitest, Playwright), extended for Phase 9 by `docs/adr/0019-persistence-dependencies.md`
+(`pg`, `redis`, Valkey). Do not add a tool outside those ADRs without a new ADR.
 
 TypeScript stays on 6.0.x until `typescript-eslint` supports 7: type-aware linting is required.
 
