@@ -36,3 +36,5 @@ codegen on both sides, and every message schema is written against the validatio
   `no-floating-promises` and `no-misused-promises` matter in an async message handler, where a
   forgotten promise can silently skip an authorization check. Biome was rejected for weaker
   type-aware rules.
+- **Persistence and coordination:** `pg` with hand-written SQL migrations, and the `redis` client
+  tested against Valkey, each inside its adapter package (ADR 0019).
