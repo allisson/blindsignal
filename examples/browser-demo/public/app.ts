@@ -6,6 +6,8 @@ const user = params.get('user') ?? 'alice';
 const device = params.get('device') ?? crypto.randomUUID().slice(0, 8);
 // `?relay` connects through TURN only, when the server configures it.
 const relay = params.has('relay');
+// `?connectTimeout=<ms>` shortens the SDK's connection timeout (ADR 0018).
+const connectTimeout = params.get('connectTimeout');
 
 const $ = (id: string) => document.getElementById(id)!;
 const log = (line: string) =>
@@ -25,6 +27,7 @@ const client = new BlindSignalClient({
     return response.text();
   },
   ...(relay && { iceTransportPolicy: 'relay' as const }),
+  ...(connectTimeout && { connectTimeoutMs: Number(connectTimeout) }),
 });
 
 let session: Session | undefined;

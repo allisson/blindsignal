@@ -306,7 +306,8 @@ configurable default.
   reconnect) keeps a DataChannel that is already open, and closes one still negotiating.
 - **ICE restart.** When a session's WebRTC connection fails, the requester applies the latest
   `rtc.ice_config` and sends a new `rtc.offer` with ICE restarted, up to 3 times in a row; the
-  target only answers. Without signaling for the session, or past that limit, the connection
+  target only answers. A connection not connected 30 s after an offer/answer exchange counts as
+  failed (ADR 0018). Without signaling for the session, or past that limit, the connection
   closes and the session ends.
 - **Hosting time limits.** A connection the platform or the server closes for exceeding a hosting
   time limit reconnects like any other abnormal or retryable closure.

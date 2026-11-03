@@ -25,7 +25,7 @@ then press **Connect to bob/phone** in the first tab. The demo accepts every ses
 `BLINDSIGNAL_DEMO_PORT` and `BLINDSIGNAL_DEMO_SIGNALING_URL` change the demo's port and the
 signaling server it uses; `&server=<url>` picks another one for a single page. Add `&relay` to a
 page's URL to connect through TURN only (`iceTransportPolicy: 'relay'`); the signaling server must
-configure TURN (ADR 0017).
+configure TURN (ADR 0017). `&connectTimeout=<ms>` sets the SDK's `connectTimeoutMs` (ADR 0018).
 
 ## Tests
 
@@ -39,4 +39,4 @@ offering one TURN transport: UDP, TCP, and TLS. Chromium accepts the self-signed
 through `--ignore-certificate-errors`; Firefox has no such switch, so its TLS test is skipped. The
 same run tests the fallback to the relay, in a Firefox that gathers no host candidates, and a
 fourth signaling server whose TURN URL nothing listens on, with which sessions still connect
-directly. CI runs the suite this way.
+directly, and a session forced to that relay closes once the connection timeout runs out. CI runs the suite this way.

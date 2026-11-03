@@ -35,7 +35,8 @@ browsers on separate networks connect through Cloudflare Quick Tunnels (`docs/ex
 bounded queues and backpressure (ADR 0013), the maximum session duration (ADR 0014),
 per-application usage metrics (ADR 0015), and abuse alerts with operator-driven suspension
 (ADR 0016). Phase 8 (TURN support), decided in ADR 0017, is in progress: the server issues TURN
-credentials, and browsers relay through a test Coturn; see the roadmap's "After the MVP". The workspace uses the toolchain in
+credentials, browsers relay through a test Coturn, and the SDK closes a session that never
+connects (ADR 0018); see the roadmap's "After the MVP". The workspace uses the toolchain in
 `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
 `jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a
 new ADR.

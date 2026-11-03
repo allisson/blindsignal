@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakePeerConnection } from '../testing/fake-peer.ts';
 import { PeerLink } from './peer.ts';
 
@@ -17,6 +17,7 @@ function link(role: 'requester' | 'target') {
     relay: (type, payload) => relayed.push({ type, payload }),
     signaling: () => control.signaling,
     maxIceRestarts: 2,
+    connectTimeoutMs: 1_000,
     createPeerConnection: (configuration) => {
       pc = new FakePeerConnection(configuration);
       return pc as unknown as RTCPeerConnection;
@@ -36,6 +37,10 @@ const message = (type: string, payload: object) =>
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('PeerLink', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('creates the DataChannel and sends the offer as the requester', async () => {
     const { peer, pc, relayed, events } = link('requester');
     expect(pc.configuration).toEqual({ iceServers: [{ urls: 'stun:stun.example' }] });
@@ -197,6 +202,72 @@ describe('PeerLink', () => {
     requester.pc.state('failed');
     expect(requester.pc.iceRestarts).toBe(0);
     expect(requester.events).toEqual(['close']);
+  });
+
+  it('treats a connection not connected in time after the answer as failed', async () => {
+    vi.useFakeTimers();
+    const { peer, pc, relayed, events } = link('requester');
+    peer.offer();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(pc.iceRestarts).toBe(0);
+    for (const restarts of [1, 2]) {
+      peer.receive(message('rtc.answer', { sdp: 'answer sdp' }));
+      await vi.advanceTimersByTimeAsync(999);
+      expect(pc.iceRestarts).toBe(restarts - 1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(pc.iceRestarts).toBe(restarts);
+      expect(relayed.at(-1)?.type).toBe('rtc.offer');
+    }
+    peer.receive(message('rtc.answer', { sdp: 'answer sdp' }));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(pc.iceRestarts).toBe(2);
+    expect(events).toEqual(['close']);
+  });
+
+  it('stops the connect timer on connected, failed, and close', async () => {
+    vi.useFakeTimers();
+    const answered = async () => {
+      const requester = link('requester');
+      requester.peer.offer();
+      requester.peer.receive(message('rtc.answer', { sdp: 'answer sdp' }));
+      await vi.advanceTimersByTimeAsync(0);
+      return requester;
+    };
+    const connected = await answered();
+    connected.pc.state('connected');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(connected.pc.iceRestarts).toBe(0);
+
+    // The browser's own failure restarts once; the restart's answer starts a new clock.
+    const failed = await answered();
+    failed.pc.state('failed');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(failed.pc.iceRestarts).toBe(1);
+
+    const closed = await answered();
+    closed.peer.close();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(closed.pc.iceRestarts).toBe(0);
+    expect(closed.events).toEqual(['close']);
+  });
+
+  it('times out as the target after the offer, closing only without signaling', async () => {
+    vi.useFakeTimers();
+    const { peer, pc, events, control } = link('target');
+    await vi.advanceTimersByTimeAsync(5_000);
+    peer.receive(message('rtc.offer', { sdp: 'offer sdp' }));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(pc.iceRestarts).toBe(0);
+    expect(events).toEqual([]);
+    // A new offer before the clock runs out starts it again.
+    peer.receive(message('rtc.offer', { sdp: 'offer sdp' }));
+    await vi.advanceTimersByTimeAsync(500);
+    peer.receive(message('rtc.offer', { sdp: 'offer sdp' }));
+    control.signaling = false;
+    await vi.advanceTimersByTimeAsync(999);
+    expect(events).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(events).toEqual(['close']);
   });
 
   it('reports the connection type from the selected candidate pair', async () => {
