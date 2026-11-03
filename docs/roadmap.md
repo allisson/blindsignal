@@ -269,7 +269,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 ### Tasks
 
-- [ ] Design, review, and implement device proof-of-possession (`docs/adr/0006-token-profile-and-device-identity.md`).
+- [ ] Design, review, and implement device proof-of-possession (`docs/adr/0006-token-profile-and-device-identity.md`). *(Designed, and the server verifies proofs: ADR 0041. The SDK's device key is next.)*
 - [x] Finalize namespace authorization. *(MVP)*
 - [x] Implement session authorization: `session.create` and `session.accept` per namespace from
   the token's `permissions` claim (ADR 0040).
@@ -644,5 +644,6 @@ suspension (ADR 0016). Phase 8 is complete: the server issues TURN
 credentials (ADR 0017), browsers relay through a test Coturn over UDP, TCP, and TLS, the SDK closes
 a session that never connects (ADR 0018), and `docs/turn-operations.md` is the TURN operations
 guide. A cross-network test through a TURN server reachable from other networks is deferred, with
-no date (ADR 0017). Session authorization, a post-MVP task of Phase 5, is done (ADR 0040); proof-of-possession and
-pairing each start with an ADR and are not scheduled yet.
+no date (ADR 0017). Session authorization, a post-MVP task of Phase 5, is done (ADR 0040); proof-of-possession is
+designed and verified by the server (ADR 0041), with the SDK's device key next; pairing starts
+with an ADR and is not scheduled yet.

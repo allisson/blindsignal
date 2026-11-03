@@ -29,6 +29,7 @@ The BlindSignal operator registers the application in the registry file
 | `jwksUri`    | An HTTPS URL serving the public keys as a JWK Set, or else:                 |
 | `publicKeys` | The public JWKs, each with a unique `kid`.                                  |
 | `algorithms` | `EdDSA`, `ES256`, or both.                                                  |
+| `requireProofOfPossession` | Optional. `true` rejects tokens without `cnf`; see [Proof of possession](#proof-of-possession). |
 
 ## Keys
 
@@ -55,6 +56,7 @@ Header: `{ "alg": "EdDSA" | "ES256", "kid": "<key id>" }`.
 | `jti`        | A new random value for every token, such as a UUID.                                      |
 | `namespaces` | An array, possibly empty, of at most 100 namespace IDs the device may join.             |
 | `permissions` | Optional. Narrows the session permissions per namespace; see [Session permissions](#session-permissions). |
+| `cnf`        | Optional. `{ "jkt": "<thumbprint>" }` binds the token to a device key; see [Proof of possession](#proof-of-possession). |
 | `nbf`        | Optional. Omit it or set it to `iat`.                                                    |
 
 Other claims are ignored. Example:
@@ -88,7 +90,8 @@ Other claims are ignored. Example:
   one device of one user, and is not a credential.
 - `sub` and `device_id` must not carry secrets or personal data beyond an opaque ID: they appear
   in protocol messages to other devices.
-- An `auth.refresh` token must keep the connection's `sub` and `device_id`.
+- An `auth.refresh` token must keep the connection's `sub` and `device_id`, and its `cnf.jkt` or
+  the absence of one.
 
 ### Namespaces
 
@@ -116,6 +119,25 @@ Other claims are ignored. Example:
 - A request to a device without `session.accept` reaches the requester as `session.rejected`.
   Withdrawing a permission takes effect at the next refresh and ends no session already open.
 
+### Proof of possession
+
+A token with `cnf.jkt` works only for a client that proves it holds the device key with that
+thumbprint (`docs/adr/0041-proof-of-possession.md`): a stolen token alone is useless.
+
+- `jkt` is the key's JWK thumbprint (RFC 7638, SHA-256, base64url), as in DPoP (RFC 9449 §6.1).
+  The client generates the key and sends the backend its thumbprint; the private key never leaves
+  the client.
+- Record the thumbprint per device when the device enrolls, under the user's session, and bind
+  every later token of that `device_id` to it. A thumbprint the client could change on any call
+  would let anyone holding the user's session bind tokens to its own key.
+- A device that loses its key, after its site data is cleared, enrolls a new one: the server keeps
+  no key, so nothing else changes.
+- To require it, bind every device's tokens first, then ask the operator to set
+  `requireProofOfPossession`.
+
+The SDK does not hold a device key yet: until it does, bind tokens only for clients that send the
+proof themselves (`docs/protocol.md` §5).
+
 ## Token endpoint
 
 - Require the user's authenticated session, and protect it from cross-site requests as any other
@@ -138,7 +160,7 @@ The client sees these codes on `auth.authenticate` (`docs/protocol.md` §9):
 
 | Code                      | Backend-side cause                                                          |
 | ------------------------- | --------------------------------------------------------------------------- |
-| `invalid_token`           | Wrong key, `kid`, algorithm, issuer, audience, or `app_id`; a missing or malformed claim; a namespace of another application or too many; lifetime above the maximum; `iat` ahead of the server clock or before its start; a reused `jti`. |
+| `invalid_token`           | Wrong key, `kid`, algorithm, issuer, audience, or `app_id`; a missing or malformed claim; a namespace of another application or too many; lifetime above the maximum; `iat` ahead of the server clock or before its start; a reused `jti`; a `cnf` without a valid proof, or no `cnf` where the application requires one. |
 | `token_expired`           | Expired on arrival: check the backend clock and that tokens are not cached. |
 | `application_unavailable` | The application is suspended or revoked in the registry.                    |
 | `device_revoked`          | The operator revoked this user's device.                                    |

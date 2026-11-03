@@ -208,6 +208,7 @@ export class SignalingServer {
     );
     const { logger } = this.#options.connection;
     logger.log('info', 'connection.opened', { connectionId: connection.id, ip });
+    connection.challenge();
     this.#connections.add(connection);
     this.#alive.add(ws);
     const { maxConnectionMs = 0 } = this.#options;

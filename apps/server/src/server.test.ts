@@ -385,7 +385,9 @@ describe('SignalingServer', () => {
     const alice = await client();
     alice.ws.send(Buffer.from('{}'), { binary: true });
     expect(await alice.closed).toBe(4002);
-    expect(alice.received).toEqual([
+    // The challenge comes first, sent on open (ADR 0041).
+    expect(alice.received).toMatchObject([
+      { version: 1, type: 'auth.challenge' },
       { version: 1, type: 'error', payload: { code: 'malformed_frame' } },
     ]);
   });
@@ -396,6 +398,7 @@ describe('SignalingServer', () => {
     alice.send('connection.ping', { pad: 'x'.repeat(300) });
     expect(await alice.closed).toBe(4002);
     expect(alice.received).toMatchObject([
+      { type: 'auth.challenge' },
       { type: 'error', payload: { code: 'message_too_large' } },
     ]);
   });

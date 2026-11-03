@@ -5,13 +5,16 @@ import type {
   CoordinationAdapter,
   IssuerKeys,
 } from '@blindsignal/core';
+import { createHash } from 'node:crypto';
 import { deviceId, namespaceId, userId } from '@blindsignal/protocol';
 import {
+  calculateJwkThumbprint,
   createLocalJWKSet,
   createRemoteJWKSet,
   customFetch,
   decodeJwt,
   decodeProtectedHeader,
+  EmbeddedJWK,
   errors,
   jwtVerify,
   type FetchImplementation,
@@ -43,7 +46,38 @@ const claims = z.object({
   permissions: z
     .record(namespaceId, z.array(z.enum(['session.create', 'session.accept'])))
     .optional(),
+  cnf: z.object({ jkt: z.string().min(1) }).optional(),
 });
+
+const PROOF_TYPE = 'blindsignal-pop+jwt';
+
+/** The connection's challenge, and the proof sent with the token, if any (ADR 0041). */
+export interface Possession {
+  readonly nonce: string;
+  readonly proof?: string | undefined;
+}
+
+/**
+ * The proof is signed by the key `jkt` names, for this connection's nonce and this token, in the
+ * shape of a DPoP proof (RFC 9449 §4.2) without its HTTP claims.
+ */
+async function proves(token: string, jkt: string, possession?: Possession): Promise<boolean> {
+  if (possession?.proof === undefined) return false;
+  try {
+    // EmbeddedJWK refuses a private or symmetric key in the header.
+    const { payload, protectedHeader } = await jwtVerify(possession.proof, EmbeddedJWK, {
+      typ: PROOF_TYPE,
+      algorithms: ['ES256', 'EdDSA'],
+    });
+    return (
+      payload.nonce === possession.nonce &&
+      payload.ath === createHash('sha256').update(token).digest('base64url') &&
+      (await calculateJwkThumbprint(protectedHeader.jwk as JWK, 'sha256')) === jkt
+    );
+  } catch {
+    return false;
+  }
+}
 
 export interface TokenVerifierOptions {
   readonly applications: Pick<ApplicationRepository, 'getByIssuer'>;
@@ -111,7 +145,7 @@ export class TokenVerifier {
     this.#now = options.now ?? (() => new Date());
   }
 
-  async verify(token: string): Promise<VerifyResult> {
+  async verify(token: string, possession?: Possession): Promise<VerifyResult> {
     const { clockSkewSeconds: skew, maxLifetimeSeconds, maxNamespaces } = this.#options;
 
     // 1. Header and issuer, unverified, only to pick the application and its keys. The algorithm
@@ -149,7 +183,7 @@ export class TokenVerifier {
     // 3. Claims against the application.
     const parsed = claims.safeParse(payload);
     if (!parsed.success) return fail('invalid_token');
-    const { sub, app_id, device_id, iat, exp, jti, namespaces, permissions } = parsed.data;
+    const { sub, app_id, device_id, iat, exp, jti, namespaces, permissions, cnf } = parsed.data;
     const prefix = `${application.appId}:`;
     if (
       app_id !== application.appId ||
@@ -171,11 +205,20 @@ export class TokenVerifier {
       return fail('invalid_token');
     }
 
-    // 5–6. Only a verified token learns the application's or device's status.
+    // 5. A token bound to a device key needs its proof; the application may require the binding.
+    if (
+      cnf === undefined
+        ? application.requireProofOfPossession === true
+        : !(await proves(token, cnf.jkt, possession))
+    ) {
+      return fail('invalid_token');
+    }
+
+    // 6–7. Only a verified token learns the application's or device's status.
     const unavailable = unavailability(application, { userId: sub, deviceId: device_id });
     if (unavailable !== undefined) return fail(unavailable);
 
-    // 7. Single use, tracked until the token can no longer pass the `exp` check.
+    // 8. Single use, tracked until the token can no longer pass the `exp` check.
     const ttlMs = (exp + skew) * 1000 - now.getTime();
     if (!(await this.#options.coordination.claimJti(application.issuer, jti, ttlMs))) {
       return fail('invalid_token');
@@ -191,6 +234,7 @@ export class TokenVerifier {
           deviceId: device_id,
           namespaces,
           ...(permissions === undefined ? {} : { permissions }),
+          ...(cnf === undefined ? {} : { keyThumbprint: cnf.jkt }),
           tokenExpiresAt: new Date(exp * 1000),
         },
       },

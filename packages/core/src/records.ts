@@ -52,6 +52,8 @@ export interface ApplicationRecord {
   readonly quotas: Partial<Quotas>;
   readonly rateLimits: Partial<Record<ApplicationRateLimit, RateLimitPolicy>>;
   readonly revokedDevices: readonly Omit<DeviceIdentity, 'appId'>[];
+  /** Rejects tokens not bound to a device key with `cnf.jkt` (ADR 0041). */
+  readonly requireProofOfPossession?: boolean;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -74,6 +76,8 @@ export interface ConnectionContext extends DeviceIdentity {
    * unlisted one grants both (ADR 0040).
    */
   readonly permissions?: Readonly<Record<string, readonly SessionPermission[]>>;
+  /** The current token's `cnf.jkt`: the device key it is bound to, kept on refresh (ADR 0041). */
+  readonly keyThumbprint?: string;
   readonly tokenExpiresAt: Date;
   readonly protocolVersion: number;
 }

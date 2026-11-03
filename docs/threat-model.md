@@ -51,6 +51,7 @@ Application payloads are not an asset of the server: they never reach it (spec �
 | Replayed token | Single-use `(iss, jti)`, tracked until `exp` + skew; tokens issued before a restart rejected while tracking is in memory | ADR 0006 |
 | Token leaked through URLs or logs | Token only in the `auth.*` payload after the socket opens; never logged | spec §16 |
 | A user takes over another user's device | Device identified by `(app_id, sub, device_id)`; `auth.refresh` cannot change identity | ADR 0006 |
+| A stolen token used from another machine | For tokens bound with `cnf.jkt`: a proof signed by the device key, for the connection's nonce and that token; the key is non-extractable | ADR 0041 |
 | Access to another application's namespaces | Namespace IDs carry the `<app_id>:` prefix; a foreign prefix rejects the token | ADR 0007 |
 | Enumeration of namespaces, devices, or their load | Uniform `not_authorized` and `peer_unavailable` | protocol §6, §7, ADR 0011 |
 | Unsolicited signaling to a device | `rtc.*` relayed only within a session the target accepted | protocol §7 |
@@ -104,9 +105,11 @@ Application payloads are not an asset of the server: they never reach it (spec �
 
 ## 5. Accepted risks
 
-1. **A stolen token works until its `exp`,** from anywhere, for one connection. Short lifetimes,
-   single use, and TLS bound it; proof-of-possession is post-MVP (ADR 0006). Script injection in
-   the application exposes `accessTokenProvider` and is equivalent to this.
+1. **A stolen token works until its `exp`,** from anywhere, for one connection, unless it is
+   bound to a device key. Short lifetimes, single use, and TLS bound it; binding with `cnf.jkt`
+   makes it useless without the key (ADR 0041), and is the application's choice. Script injection
+   in the application exposes `accessTokenProvider` and, while it runs, the device key, which it
+   can use in the page but not export.
 2. **Device identity is backend-asserted.** A user can claim any `device_id` under its own `sub`,
    but never another user's device (ADR 0006).
 3. **Established P2P sessions outlive revocation.** A modified client can keep a DataChannel
@@ -140,4 +143,5 @@ Application payloads are not an asset of the server: they never reach it (spec �
 - A compromised server host, operator, or issuer signing key; their protection is the deployer's.
 - Cross-instance propagation of status changes, handled with distributed adapters (roadmap
   Phase 9).
-- Pairing and proof-of-possession, threat-modeled when designed (spec §7.4, roadmap Phase 5).
+- Pairing, threat-modeled when designed (spec §7.4, roadmap Phase 5).
+- How the backend binds a device to its key; `docs/token-issuance.md` states what it must do.

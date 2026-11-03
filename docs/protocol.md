@@ -2,7 +2,7 @@
 
 **Status:** Draft, protocol version 1  
 **Reference:** `docs/spec.md` §11, §13; `docs/adr/0003-one-to-one-sessions.md`;
-`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`; `docs/adr/0009-ice-configuration.md`; `docs/adr/0011-quotas-and-rate-limits.md`; `docs/adr/0013-bounded-queues-and-backpressure.md`; `docs/adr/0014-maximum-session-duration.md`
+`docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`; `docs/adr/0009-ice-configuration.md`; `docs/adr/0011-quotas-and-rate-limits.md`; `docs/adr/0013-bounded-queues-and-backpressure.md`; `docs/adr/0014-maximum-session-duration.md`; `docs/adr/0041-proof-of-possession.md`
 
 JSON text messages over one WebSocket per connection. The protocol carries no application
 payload: application data travels only through WebRTC DataChannels. Administrative operations
@@ -44,10 +44,11 @@ and the error catalog in §9; server and SDK parse frames with it.
 ## 2. Versioning
 
 - `version` is a single integer major version. This document defines version `1`.
-- Within a major version, the only allowed change is adding an **optional** payload field.
-  Receivers ignore payload fields they do not know.
-- A new message type, a new required field, a removed field, or a change in meaning requires the
-  next major version.
+- Within a major version, the allowed changes are adding an **optional** payload field and adding a
+  server-to-client message type that a client may ignore (ADR 0041). Receivers ignore payload
+  fields they do not know, and clients ignore server message types they do not know.
+- Any other new message type, a new required field, a removed field, or a change in meaning
+  requires the next major version.
 - The version of a connection is the `version` of its `auth.authenticate`. A server that does not
   support it answers `error` `unsupported_version` and closes the connection (terminal). Any later
   message with a different `version` is rejected the same way.
@@ -76,8 +77,9 @@ rebuilt by the server for the other session participant.
 
 | Type | Direction | Payload | Permission (server-side) |
 |---|---|---|---|
-| `auth.authenticate` | C→S | `{ token }` | — |
-| `auth.refresh` | C→S | `{ token }` | — |
+| `auth.challenge` | S→C | `{ nonce }` | — |
+| `auth.authenticate` | C→S | `{ token, proof? }` | — |
+| `auth.refresh` | C→S | `{ token, proof? }` | — |
 | `auth.result` | S→C | `{ userId, deviceId, expiresInMs }` | — |
 | `namespace.join` | C→S | `{ namespace }` | `namespace.join` |
 | `namespace.leave` | C→S | `{ namespace }` | — |
@@ -119,6 +121,15 @@ sender, such as a client-sent `session.request` or `rtc.ice_config`.
 - Before `auth.authenticate` succeeds, the only accepted message is `auth.authenticate`. Any other
   message gets `error` `not_authenticated` and the connection closes (terminal). This includes
   `connection.ping`.
+- The server sends `auth.challenge` first on every connection, before reading any message. Its
+  `nonce`, 32 random bytes in base64url, is the connection's for its whole life (ADR 0041).
+- A token whose `cnf.jkt` binds it to a device key needs a `proof` in the same `auth.authenticate`
+  or `auth.refresh`: a JWT with header `typ` `blindsignal-pop+jwt`, `alg` `ES256` or `EdDSA`, and
+  `jwk`, the device's public key; and claims `nonce`, the connection's, and `ath`, the base64url
+  SHA-256 of the token. The server checks the signature with `jwk`, that the thumbprint of `jwk`
+  (RFC 7638, SHA-256) is `cnf.jkt`, `nonce`, and `ath`; any failure is `invalid_token`. An
+  application may require bound tokens; otherwise a `proof` with an unbound token is ignored.
+  A client that holds no device key ignores `auth.challenge`.
 - A connection authenticates once. A later `auth.authenticate` gets `error` `invalid_message`
   and the connection stays open; `auth.refresh` renews the credential.
 - The server checks the permission in §4 on every protected message, deny by default. Permissions
@@ -264,9 +275,9 @@ Initial catalog:
 | `session_unavailable` | retryable | no | Unknown session, wrong state, or sender not a participant. |
 | `rate_limited` | retryable | no | Rate limit exceeded; carries `retryAfterMs`. |
 | `quota_exceeded` | retryable | on `auth.authenticate` | Application connection or device-count quota on authentication; application or device session quota on `session.create`; joined-namespace quota on `namespace.join` (ADR 0011). |
-| `invalid_token` | retryable | on `auth.authenticate` | Bad signature, header, or claims (including a namespace without the application's prefix); lifetime above the maximum; future `iat`; `iat` before the server started (ADR 0006); replayed `jti`; unknown issuer or application. |
+| `invalid_token` | retryable | on `auth.authenticate` | Bad signature, header, or claims (including a namespace without the application's prefix); lifetime above the maximum; future `iat`; `iat` before the server started (ADR 0006); replayed `jti`; unknown issuer or application; a `cnf` without a valid `proof`, or no `cnf` where the application requires one (ADR 0041). |
 | `token_expired` | retryable | except on `auth.refresh` | Token past `exp` plus the clock-skew tolerance, at authentication or on an open connection. |
-| `identity_mismatch` | retryable | no | `auth.refresh` token with a different `app_id`, `sub`, or `device_id`. |
+| `identity_mismatch` | retryable | no | `auth.refresh` token with a different `app_id`, `sub`, `device_id`, or `cnf.jkt`, or one that adds or drops `cnf`. |
 | `application_unavailable` | terminal | yes | Application suspended, revoked, or, on an open connection, removed from the registry. |
 | `device_revoked` | terminal | yes | Device revoked. |
 | `superseded` | superseded | yes | The same device authenticated a newer connection (ADR 0008). |

@@ -289,7 +289,7 @@ Where supported, private keys should be non-exportable and protected by the plat
 
 Device-key possession verification should complement JWT authentication. A device identifier alone is never proof of device identity.
 
-In the MVP, a device is identified by `(app_id, sub, device_id)` as asserted in the application-issued token, without proof-of-possession, and its record is created on its first successful authentication (`docs/adr/0006-token-profile-and-device-identity.md`). The proof-of-possession protocol must be designed and reviewed before it is implemented (post-MVP).
+A device is identified by `(app_id, sub, device_id)` as asserted in the application-issued token, and its record is created on its first successful authentication (`docs/adr/0006-token-profile-and-device-identity.md`). A token may also be bound to a device key with `cnf.jkt`, and the client then proves it holds that key by signing the connection's challenge; an application may require it (`docs/adr/0041-proof-of-possession.md`). The server stores no device key: the application's backend binds each device to its key.
 
 ### 6.3 Device revocation
 
@@ -566,7 +566,7 @@ Initial message categories:
 
 | Category | Example messages |
 |---|---|
-| Authentication | `auth.authenticate`, `auth.refresh`, `auth.result` |
+| Authentication | `auth.challenge`, `auth.authenticate`, `auth.refresh`, `auth.result` |
 | Namespace | `namespace.join`, `namespace.leave` |
 | Presence | `presence.changed` |
 | Discovery | `discovery.request`, `discovery.result` |
@@ -913,6 +913,7 @@ client.on("sessionRequest", async (request) => {
 - Valid application-issued token acceptance.
 - Credential renewal with `auth.refresh` without reconnecting.
 - `auth.refresh` rejection when the new token's `app_id`, `sub`, or `device_id` differs from the connection's.
+- Proof-of-possession rejections: a bound token without a proof, or with a proof for another nonce, token, or key; an unbound token where the application requires binding; an `auth.refresh` that changes, adds, or drops `cnf.jkt` (`docs/adr/0041-proof-of-possession.md`).
 - A token naming another user's `device_id` identifying a different device, without affecting that user's connection or presence.
 - Token expiry on an open connection without `auth.refresh`, according to the token profile.
 - Duplicate connection handling according to the selected policy, including two tabs sharing one device identity without a reconnect loop.

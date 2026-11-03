@@ -63,7 +63,9 @@ Coturn on the same host (ADR 0036); logs take a level, crashes are logged as JSO
 reports the process (ADR 0037); metrics go through OpenTelemetry, pushed over OTLP when an endpoint
 is set (ADR 0038); `docs/cloud-run.md` configures Cloud Run, not yet tested there (ADR 0039). Of Phase 5's post-MVP
 tasks, session authorization is done: the token's `permissions` claim narrows `session.create` and
-`session.accept` per namespace (ADR 0040). The workspace uses
+`session.accept` per namespace (ADR 0040); proof-of-possession is designed, and the server
+verifies the proof that a token's device key signs (ADR 0041), while the SDK does not hold a key
+yet. The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
