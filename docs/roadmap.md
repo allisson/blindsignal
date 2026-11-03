@@ -351,7 +351,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 
 ### Tasks
 
-- [ ] Document local Docker Compose workflow.
+- [x] Document local Docker Compose workflow.
 - [ ] Expose the local signaling server using Cloudflare Quick Tunnel.
 - [ ] Test WebSocket connections through the tunnel.
 - [ ] Verify that pre-authentication limits see each client's IP through the tunnel, with the tunnel configured as a trusted proxy (spec §8.1).
