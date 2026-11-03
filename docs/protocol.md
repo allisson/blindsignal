@@ -98,7 +98,7 @@ rebuilt by the server for the other session participant.
 | `session.terminated` | S→C | `{ sessionId, reason }` | — |
 | `pairing.create` | C→S | `{ namespace }` | the `pairing` claim |
 | `pairing.created` | S→C | `{ pairingId }` | — |
-| `pairing.request` | S→C | `{ pairingId, namespace, userId, deviceId }` | — |
+| `pairing.request` | S→C | `{ pairingId, namespace, userId, deviceId, jkt }` | — |
 | `pairing.approve` | C→S | `{ pairingId, approval }` | `pairing.approve` |
 | `pairing.reject` | C→S | `{ pairingId }` | — |
 | `pairing.approved` | S→C | `{ pairingId, approval }` | — |
@@ -236,7 +236,7 @@ which issues tokens with the namespace (ADR 0042). The server grants nothing and
    `pairing.created { pairingId }`.
 2. Every other device of the same `userId` present in the namespace whose token is bound to a key
    and grants `pairing.approve` there gets `pairing.request { pairingId, namespace, userId,
-   deviceId }` naming N.
+   deviceId, jkt }` naming N, with `jkt` its `cnf.jkt`.
 3. One of them, A, sends `pairing.approve { pairingId, approval }` or `pairing.reject
    { pairingId }`, and gets `ack`. N gets `pairing.approved { pairingId, approval }` or
    `pairing.rejected { pairingId }`; the other asked devices get `pairing.ended` reason

@@ -66,9 +66,10 @@ export const messages = {
   },
   'pairing.create': { direction: 'client', payload: namespace, reply: 'pairing.created' },
   'pairing.created': { direction: 'server', payload: pairing },
+  // `jkt` is the requester's `cnf.jkt`, which the approval binds (ADR 0042).
   'pairing.request': {
     direction: 'server',
-    payload: z.object({ pairingId: sessionId, ...device }),
+    payload: z.object({ pairingId: sessionId, ...device, jkt: z.string().min(1) }),
   },
   // `approval` is a JWT the approving device's key signs (ADR 0042).
   'pairing.approve': {

@@ -18,8 +18,9 @@ proof with.
   binds the new device's key, and is signed by the approver's.
 - **`pairing.create { namespace }` asks the user's own devices.** The server finds the devices of
   the same `sub` present in the namespace, other than the requester, and sends each
-  `pairing.request { pairingId, namespace, userId, deviceId }`. None present: `peer_unavailable`.
-  Inviting another user is the backend's business.
+  `pairing.request { pairingId, namespace, userId, deviceId, jkt }`, with `jkt` the requester's
+  `cnf.jkt` (amended: without it, no approver could sign the `jkt` claim). None present:
+  `peer_unavailable`. Inviting another user is the backend's business.
 - **`pairing.approve` is a third permission of the `permissions` claim** (ADR 0040), with the same
   rule: a namespace the map does not list grants it. A device without it, or without a key, never
   receives the request; one whose refresh withdrew it gets `not_authorized` on `pairing.approve`.
