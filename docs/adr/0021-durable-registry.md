@@ -48,7 +48,8 @@ device records are deleted.
 - **Closing with `1011` and no message** on a storage failure. Rejected: the client would not know
   why, and a new retryable code costs nothing to SDKs that already retry on `4001`.
 - **`/readyz` querying the database.** Rejected: an outage would take every instance out of the
-  load balancer at once, which is no better than answering `server_error`.
+  load balancer at once, which is no better than answering `server_error`; ADR 0028 reports
+  the database's state on `/metrics` instead.
 - **One instance sweeping, elected by an advisory lock.** Rejected: code for a deletion that is
   already idempotent.
 

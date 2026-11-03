@@ -101,6 +101,28 @@ describe.skipIf(url === undefined)('PostgreSQL storage', () => {
       }
     });
 
+    it('pings through the pool, and rejects once the pool has ended (ADR 0028)', async () => {
+      const opened = openPostgreSQLStorage({ url: url!, poolSize: 1, onError: () => undefined });
+      await expect(opened.ping()).resolves.toBeUndefined();
+      await opened.end();
+      await expect(opened.ping()).rejects.toThrow();
+    });
+
+    it('rejects a ping when the server is unreachable', async () => {
+      const unreachable = new URL(url!);
+      unreachable.port = '1';
+      const opened = openPostgreSQLStorage({
+        url: unreachable.href,
+        poolSize: 1,
+        onError: () => undefined,
+      });
+      try {
+        await expect(opened.ping()).rejects.toThrow();
+      } finally {
+        await opened.end();
+      }
+    });
+
     it('reports the schema version', async () => {
       const pool = await isolated();
       expect(await schemaVersion(pool)).toBe(0);

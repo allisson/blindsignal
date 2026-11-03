@@ -111,19 +111,70 @@ export class Metrics {
 }
 
 /**
+ * Renders `blindsignal_dependency_up`: 1 for each dependency whose check resolves within
+ * `timeoutMs`, 0 otherwise (ADR 0028). A check still running from an earlier scrape is awaited
+ * again rather than started twice, so a dependency that hangs holds one check, not one per scrape.
+ */
+export function dependencyProbe(
+  checks: Readonly<Record<string, () => Promise<void>>>,
+  timeoutMs: number,
+): () => Promise<string> {
+  const running = new Map<string, Promise<boolean>>();
+  const check = (name: string, run: () => Promise<void>) => {
+    let result = running.get(name);
+    if (result === undefined) {
+      result = Promise.resolve()
+        .then(run)
+        .then(
+          () => true,
+          () => false,
+        );
+      running.set(name, result);
+      void result.then(() => running.delete(name));
+    }
+    return result;
+  };
+  const within = async (result: Promise<boolean>) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<false>(
+      (resolve) => (timer = setTimeout(() => resolve(false), timeoutMs)),
+    );
+    try {
+      return await Promise.race([result, late]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  return async () => {
+    const name = 'blindsignal_dependency_up';
+    const lines = [
+      `# HELP ${name} Whether the dependency answered a probe within the timeout: 1 or 0.`,
+      `# TYPE ${name} gauge`,
+    ];
+    const results = await Promise.all(
+      Object.entries(checks).map(async ([dependency, run]) => {
+        const up = await within(check(dependency, run));
+        return `${name}${labelSet({ dependency })} ${up ? 1 : 0}`;
+      }),
+    );
+    return `${[...lines, ...results].join('\n')}\n`;
+  };
+}
+
+/**
  * Serves `GET /metrics` on the admin port, apart from the signaling port so it is never exposed
  * with it; 404 elsewhere. Resolves to the server and its bound port.
  */
 export function serveMetrics(
-  metrics: Pick<Metrics, 'render'>,
+  metrics: { render(): string | Promise<string> },
   port: number,
   host: string,
 ): Promise<{ server: Server; port: number }> {
   const server = createServer((request, response) => {
     if (request.method === 'GET' && request.url === '/metrics') {
-      response
-        .writeHead(200, { 'content-type': 'text/plain; version=0.0.4' })
-        .end(metrics.render());
+      void Promise.resolve(metrics.render()).then((text) =>
+        response.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' }).end(text),
+      );
       return;
     }
     response.writeHead(404).end();

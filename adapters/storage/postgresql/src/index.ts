@@ -15,6 +15,8 @@ export interface PostgreSQLStorage {
   readonly storage: PostgreSQLStorageAdapter;
   /** Rejects when the schema is behind this release's migrations (ADR 0019). */
   checkSchema(): Promise<void>;
+  /** Rejects when no connection of the pool can run a query (ADR 0028). */
+  ping(): Promise<void>;
   end(): Promise<void>;
 }
 
@@ -39,6 +41,9 @@ export function openPostgreSQLStorage(options: {
           `the database schema is at version ${current} and this release needs ${required}: run the migrate command`,
         );
       }
+    },
+    async ping() {
+      await pool.query('SELECT 1');
     },
     end: () => pool.end(),
   };

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Server } from 'node:http';
-import { jsonLogger, Metrics, serveMetrics } from './telemetry.ts';
+import { dependencyProbe, jsonLogger, Metrics, serveMetrics } from './telemetry.ts';
 
 describe('jsonLogger', () => {
   it('writes one JSON object per line with time, level, and event first', () => {
@@ -52,6 +52,64 @@ describe('Metrics', () => {
   });
 });
 
+describe('dependencyProbe', () => {
+  const header = [
+    '# HELP blindsignal_dependency_up Whether the dependency answered a probe within the timeout: 1 or 0.',
+    '# TYPE blindsignal_dependency_up gauge',
+  ];
+
+  it('reports 1 for a check that resolves and 0 for one that rejects or throws', async () => {
+    const probe = dependencyProbe(
+      {
+        postgresql: () => Promise.resolve(),
+        redis: () => Promise.reject(new Error('ECONNREFUSED')),
+        other: () => {
+          throw new Error('sync');
+        },
+      },
+      1_000,
+    );
+    expect(await probe()).toBe(
+      [
+        ...header,
+        'blindsignal_dependency_up{dependency="postgresql"} 1',
+        'blindsignal_dependency_up{dependency="redis"} 0',
+        'blindsignal_dependency_up{dependency="other"} 0',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('declares the gauge with no series when nothing is probed', async () => {
+    expect(await dependencyProbe({}, 1_000)()).toBe([...header, ''].join('\n'));
+  });
+
+  it('reports 0 for a check past the timeout and runs it once until it settles', async () => {
+    let calls = 0;
+    let settle = () => {};
+    const probe = dependencyProbe(
+      {
+        postgresql: () => {
+          calls++;
+          return new Promise<void>((resolve) => (settle = resolve));
+        },
+      },
+      20,
+    );
+    expect(await probe()).toContain('blindsignal_dependency_up{dependency="postgresql"} 0\n');
+    expect(await probe()).toContain('blindsignal_dependency_up{dependency="postgresql"} 0\n');
+    expect(calls).toBe(1);
+    // The check still running answers the scrape that finds it settling.
+    const pending = probe();
+    settle();
+    expect(await pending).toContain('blindsignal_dependency_up{dependency="postgresql"} 1\n');
+    expect(calls).toBe(1);
+    // Once settled, the next scrape runs a new check.
+    await probe();
+    expect(calls).toBe(2);
+  });
+});
+
 describe('serveMetrics', () => {
   let server: Server | undefined;
   afterEach(() => server?.close());
@@ -66,6 +124,12 @@ describe('serveMetrics', () => {
     expect(await metrics.text()).toBe('m 1\n');
     expect((await fetch(`${base}/`)).status).toBe(404);
     expect((await fetch(`${base}/metrics`, { method: 'POST' })).status).toBe(404);
+  });
+
+  it('serves what an asynchronous render resolves to', async () => {
+    const served = await serveMetrics({ render: () => Promise.resolve('m 2\n') }, 0, '127.0.0.1');
+    server = served.server;
+    expect(await (await fetch(`http://127.0.0.1:${served.port}/metrics`)).text()).toBe('m 2\n');
   });
 
   it('rejects when the port is taken', async () => {

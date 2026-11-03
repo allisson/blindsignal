@@ -40,6 +40,7 @@ describe('loadConfig', () => {
       deviceTtlMs: 30 * 86_400_000,
       deviceSweepIntervalMs: 3_600_000,
       registrySyncIntervalMs: 60_000,
+      dependencyProbeTimeoutMs: 2_000,
       preAuthentication: {
         authenticationTimeoutMs: 10_000,
         maxUnauthenticatedPerIp: 20,
@@ -99,6 +100,7 @@ describe('loadConfig', () => {
       BLINDSIGNAL_DATABASE_POOL_SIZE: '4',
       BLINDSIGNAL_REDIS_URL: 'rediss://default:pw@cache.example:6380',
       BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS: '20',
+      BLINDSIGNAL_DEPENDENCY_PROBE_TIMEOUT_SECONDS: '5',
       BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS: '4',
       BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: '3',
       BLINDSIGNAL_MAX_UNAUTHENTICATED: '30',
@@ -141,6 +143,7 @@ describe('loadConfig', () => {
       deviceTtlMs: 7 * 86_400_000,
       deviceSweepIntervalMs: 60_000,
       registrySyncIntervalMs: 20_000,
+      dependencyProbeTimeoutMs: 5_000,
       database: { url: 'postgresql://bs:pw@db.example:5432/bs', poolSize: 4 },
       redis: { url: 'rediss://default:pw@cache.example:6380' },
       preAuthentication: {

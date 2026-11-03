@@ -96,6 +96,8 @@ return 1`);
 
 export interface RedisCoordination {
   readonly coordination: RedisCoordinationAdapter;
+  /** Rejects when either connection is down: commands, or the subscriptions (ADR 0028). */
+  ping(): Promise<void>;
   end(): Promise<void>;
 }
 
@@ -115,6 +117,10 @@ export async function openRedisCoordination(options: {
   await Promise.all([client.connect(), subscriber.connect()]);
   return {
     coordination: new RedisCoordinationAdapter({ client, subscriber, prefix: options.prefix }),
+    async ping() {
+      if (!subscriber.isReady) throw new Error('the subscriber connection is down');
+      await client.ping();
+    },
     end: async () => {
       await Promise.all([client.close(), subscriber.close()]);
     },
