@@ -32,8 +32,10 @@ MVP subsets of Phases 5 and 6 are complete too: namespace authorization from tok
 (ADR 0007), device revocation, and the quotas and rate limits of ADR 0011. Phase 7 is complete:
 browsers on separate networks connect through Cloudflare Quick Tunnels (`docs/external-testing.md`,
 `docs/connectivity-report.md`), which completes the MVP. Next are the post-MVP tasks of Phase 6,
-then Phase 8 (TURN support); see the roadmap's "After the MVP". The workspace uses the toolchain in `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm
-workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a
+of which bounded queues and backpressure are done (ADR 0013), then Phase 8 (TURN support); see the
+roadmap's "After the MVP". The workspace uses the toolchain in
+`docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
+`jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a
 new ADR.
 
 TypeScript stays on 6.0.x until `typescript-eslint` supports 7: type-aware linting is required.

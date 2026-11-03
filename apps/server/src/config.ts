@@ -98,6 +98,10 @@ const environment = z
     BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION: rateLimit(1, 10),
     // The protocol caps it at its default (docs/protocol.md §1).
     BLINDSIGNAL_MAX_MESSAGE_BYTES: count.max(MAX_MESSAGE_BYTES).default(MAX_MESSAGE_BYTES),
+    // Per connection (ADR 0013): reading pauses at half the queue, so it holds at least two; the
+    // send buffer holds at least one message of the protocol's maximum size.
+    BLINDSIGNAL_MAX_QUEUED_MESSAGES: count.min(2).default(1_024),
+    BLINDSIGNAL_MAX_BUFFERED_BYTES: count.min(MAX_MESSAGE_BYTES).default(1_048_576),
     // Server defaults for every application; a registry entry may override each (ADR 0011). They
     // are starting values until load testing sets them (spec §8.2).
     BLINDSIGNAL_MAX_CONNECTIONS_PER_APP: count.default(10_000),
@@ -139,6 +143,8 @@ export interface ServerConfig {
   readonly deviceTtlMs: number;
   readonly preAuthentication: PreAuthentication;
   readonly maxMessageBytes: number;
+  readonly maxQueuedMessages: number;
+  readonly maxBufferedBytes: number;
   readonly limits: Limits;
 }
 
@@ -198,6 +204,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
         authenticationAttempts: vars.BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION,
       },
       maxMessageBytes: vars.BLINDSIGNAL_MAX_MESSAGE_BYTES,
+      maxQueuedMessages: vars.BLINDSIGNAL_MAX_QUEUED_MESSAGES,
+      maxBufferedBytes: vars.BLINDSIGNAL_MAX_BUFFERED_BYTES,
       limits: {
         quotas: {
           connections: vars.BLINDSIGNAL_MAX_CONNECTIONS_PER_APP,

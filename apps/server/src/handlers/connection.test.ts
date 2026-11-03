@@ -18,6 +18,7 @@ import {
   connectionTopic,
   POLICY_VIOLATION,
   presenceTopic,
+  TRY_AGAIN_LATER,
   type ConnectionDependencies,
 } from './connection.ts';
 
@@ -33,6 +34,7 @@ const defaults = loadConfig({
   BLINDSIGNAL_REGISTRY_PATH: 'unused',
 });
 if (!defaults.ok) throw new Error(defaults.error);
+const { maxQueuedMessages, maxBufferedBytes } = defaults.config;
 /** The server defaults, with a device quota. */
 const limits = (devices: number): Limits => ({
   ...defaults.config.limits,
@@ -96,6 +98,8 @@ async function setup(
     presenceLeaseMs: LEASE_MS,
     sessions: new SessionRegistry(),
     negotiationTimeoutMs: NEGOTIATION_MS,
+    maxQueuedMessages,
+    maxBufferedBytes,
     metrics,
     logger: { log: (level, event, fields) => logs.push({ level, event, ...fields }) },
     ...options,
@@ -105,12 +109,19 @@ async function setup(
   const connect = ({ reportsClose = true, clientIp = '192.0.2.1' } = {}) => {
     const sent: ServerMessage[] = [];
     const closes: number[] = [];
+    const flow: string[] = [];
+    let buffered = 0;
     let authenticated = 0;
     const connection: Connection = new Connection(
       {
         clientIp,
         send: (message) => sent.push(message),
         authenticated: () => authenticated++,
+        get bufferedBytes() {
+          return buffered;
+        },
+        pause: () => flow.push('pause'),
+        resume: () => flow.push('resume'),
         close: (code) => {
           closes.push(code);
           if (reportsClose) void connection.closed();
@@ -146,6 +157,9 @@ async function setup(
       errors,
       presence,
       last,
+      flow,
+      /** Sets what the transport reports as waiting in its send buffer. */
+      buffer: (bytes: number) => (buffered = bytes),
       authenticated: () => authenticated,
     };
   };
@@ -291,6 +305,89 @@ describe('Connection', () => {
       const other = connect();
       await other.authenticate();
       expect(other.connection.context).toBeDefined();
+    });
+  });
+
+  describe('backpressure', () => {
+    it('pauses reading at half the queue and resumes once it drains', async () => {
+      const { connect } = await setup(undefined, { maxQueuedMessages: 4 });
+      const client = connect();
+      await client.authenticate();
+      const first = client.request('connection.ping');
+      expect(client.flow).toEqual([]);
+      const second = client.request('connection.ping');
+      expect(client.flow).toEqual(['pause']);
+      await Promise.all([first, second]);
+      expect(client.flow).toEqual(['pause', 'resume']);
+      expect(client.sent.filter((m) => m.type === 'connection.pong')).toHaveLength(2);
+      expect(client.closes).toEqual([]);
+    });
+
+    it('closes with 1013 and no error when the queue is full, then releases', async () => {
+      const { connect, coordination, logs, metrics } = await setup(undefined, {
+        maxQueuedMessages: 4,
+      });
+      const client = connect();
+      await client.authenticate({ namespaces: ['notes:a'] });
+      await client.request('namespace.join', { namespace: 'notes:a' });
+      const before = client.sent.length;
+      const frames = Array.from({ length: 5 }, () => client.request('connection.ping'));
+      expect(client.closes).toEqual([TRY_AGAIN_LATER]);
+      await Promise.all(frames);
+      // The queued frames are dropped with the connection; nothing waits behind the backlog.
+      expect(client.sent).toHaveLength(before);
+      expect(await coordination.listPresence('notes:a')).toEqual([]);
+      expect(logs).toContainEqual({
+        level: 'warn',
+        event: 'connection.overloaded',
+        connectionId: client.connection.id,
+        appId: 'notes',
+        limit: 'queued_messages',
+      });
+      expect(metrics.render()).toContain(
+        'blindsignal_overloaded_connections_total{limit="queued_messages"} 1',
+      );
+    });
+
+    it('counts events toward the queue', async () => {
+      const { connect, coordination } = await setup(undefined, { maxQueuedMessages: 2 });
+      const client = connect();
+      await client.authenticate();
+      const topic = connectionTopic(client.connection.id);
+      const pong = { type: 'deliver', message: { type: 'connection.pong', payload: {} } };
+      await coordination.publish(topic, pong);
+      await coordination.publish(topic, pong);
+      await coordination.publish(topic, pong);
+      expect(client.closes).toEqual([TRY_AGAIN_LATER]);
+    });
+
+    it('closes with 1013 once the send buffer passes the limit', async () => {
+      const { connect, logs } = await setup(undefined, { maxBufferedBytes: 1000 });
+      // The socket is still closing: frames read meanwhile are not handled.
+      const client = connect({ reportsClose: false });
+      await client.authenticate();
+      client.buffer(1000);
+      await client.request('connection.ping');
+      expect(client.closes).toEqual([]);
+      client.buffer(1001);
+      await client.request('connection.ping');
+      expect(client.closes).toEqual([TRY_AGAIN_LATER]);
+      expect(client.sent.filter((m) => m.type === 'connection.pong')).toHaveLength(2);
+      expect(logs).toContainEqual(
+        expect.objectContaining({ event: 'connection.overloaded', limit: 'buffered_bytes' }),
+      );
+      await client.request('connection.ping');
+      expect(client.sent.filter((m) => m.type === 'connection.pong')).toHaveLength(2);
+    });
+
+    it('closes once when an error overflows the buffer', async () => {
+      const { connect, logs } = await setup(undefined, { maxBufferedBytes: 1000 });
+      const client = connect();
+      client.buffer(1001);
+      await client.request('namespace.join', { namespace: 'notes:a' });
+      expect(client.errors()).toEqual(['not_authenticated']);
+      expect(client.closes).toEqual([TRY_AGAIN_LATER]);
+      expect(logs.filter((l) => 'event' in l && l.event === 'connection.error')).toEqual([]);
     });
   });
 

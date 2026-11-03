@@ -30,10 +30,18 @@ export interface ConnectionPort {
   close(code: number): void;
   /** The connection authenticated: it no longer counts as unauthenticated (spec §8.4). */
   authenticated?(): void;
+  /** Bytes sent but not yet written to the network (ADR 0013). */
+  readonly bufferedBytes?: number;
+  /** Stops reading frames, and starts again: backpressure on the client (ADR 0013). */
+  pause?(): void;
+  resume?(): void;
 }
 
 /** Close code for a connection that missed the authentication deadline (RFC 6455). */
 export const POLICY_VIOLATION = 1008;
+
+/** Close code for a connection whose queue or send buffer is full (RFC 6455; ADR 0013). */
+export const TRY_AGAIN_LATER = 1013;
 
 export interface ConnectionDependencies {
   readonly verifier: Pick<TokenVerifier, 'verify'>;
@@ -68,6 +76,10 @@ export interface ConnectionDependencies {
   /** How long a session may stay `pending` (docs/protocol.md §7). */
   readonly negotiationTimeoutMs: number;
   readonly maxMessageBytes?: number;
+  /** Frames and events waiting on one connection; reading pauses at half (ADR 0013). */
+  readonly maxQueuedMessages: number;
+  /** Bytes waiting in one connection's send buffer (ADR 0013). */
+  readonly maxBufferedBytes: number;
   readonly metrics: Pick<Metrics, 'count'>;
   readonly logger: Logger;
 }
@@ -124,9 +136,10 @@ export class Connection {
   readonly id: string;
   readonly #port: ConnectionPort;
   readonly #deps: ConnectionDependencies;
-  // shortcut: unbounded per-connection queue; a rate-limited frame costs one bucket lookup, and
-  // the post-MVP bounded-queue task (docs/roadmap.md, Phase 6) caps the queue's length.
   #queue: Promise<void> = Promise.resolve();
+  /** Tasks in the queue, the running one included; bounded by `maxQueuedMessages`. */
+  #pending = 0;
+  #paused = false;
   #closed = false;
   /** What the other participants of this connection's sessions are told when it ends. */
   #endReason: TerminationReason = 'peer_disconnected';
@@ -197,7 +210,44 @@ export class Connection {
   }
 
   #enqueue(task: () => Promise<void>): Promise<void> {
-    return (this.#queue = this.#queue.then(() => (this.#closed ? undefined : task())));
+    if (this.#pending >= this.#deps.maxQueuedMessages) {
+      this.#overloaded('queued_messages');
+      return this.#queue;
+    }
+    this.#pending++;
+    this.#backpressure();
+    return (this.#queue = this.#queue
+      .then(() => (this.#closed ? undefined : task()))
+      .finally(() => {
+        this.#pending--;
+        this.#backpressure();
+      }));
+  }
+
+  /**
+   * Stops reading frames while half the queue is taken, so a fast client waits; frames already
+   * read and events still fill the other half (ADR 0013).
+   */
+  #backpressure(): void {
+    const full = this.#pending >= this.#deps.maxQueuedMessages / 2;
+    if (full === this.#paused) return;
+    this.#paused = full;
+    if (full) this.#port.pause?.();
+    else this.#port.resume?.();
+  }
+
+  /** Closed without `error`, which would wait behind the backlog (ADR 0013). */
+  #overloaded(limit: 'queued_messages' | 'buffered_bytes'): void {
+    if (this.#closed) return;
+    this.#deps.logger.log('warn', 'connection.overloaded', {
+      connectionId: this.id,
+      appId: this.#context?.appId,
+      limit,
+    });
+    this.#deps.metrics.count('blindsignal_overloaded_connections_total', { limit });
+    this.#port.close(TRY_AGAIN_LATER);
+    this.#closed = true;
+    clearTimeout(this.#expiryTimer);
   }
 
   async #release(): Promise<void> {
@@ -616,7 +666,11 @@ export class Connection {
   }
 
   #send(message: Outbound): void {
-    if (!this.#closed) this.#port.send({ version: PROTOCOL_VERSION, ...message } as ServerMessage);
+    if (this.#closed) return;
+    this.#port.send({ version: PROTOCOL_VERSION, ...message } as ServerMessage);
+    if ((this.#port.bufferedBytes ?? 0) > this.#deps.maxBufferedBytes) {
+      this.#overloaded('buffered_bytes');
+    }
   }
 
   /**
@@ -630,7 +684,8 @@ export class Connection {
       payload: { code },
     });
     this.#deps.metrics.count('blindsignal_errors_total', { code });
-    if (!close && errorClasses[code] === 'retryable') return;
+    // Already closed, by this error's own send overflowing the buffer, for one.
+    if (this.#closed || (!close && errorClasses[code] === 'retryable')) return;
     // Only closing errors are logged; the counter covers the rest. No `sub` or `device_id` (Q12).
     this.#deps.logger.log('info', 'connection.error', {
       connectionId: this.id,

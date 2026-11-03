@@ -157,6 +157,11 @@ export class SignalingServer {
         send: (message) => ws.send(JSON.stringify(message)),
         close: (code) => ws.close(code),
         authenticated,
+        get bufferedBytes() {
+          return ws.bufferedAmount;
+        },
+        pause: () => ws.pause(),
+        resume: () => ws.resume(),
       },
       this.#options.connection,
     );
