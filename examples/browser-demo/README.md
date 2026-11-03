@@ -36,5 +36,7 @@ on their own ports. Install the browsers once with
 `BLINDSIGNAL_TEST_TURN=1 pnpm test:browser` also runs the relay tests: it starts the Coturn of
 `compose.yaml` with Docker, on loopback, and three signaling servers with its test secret, each
 offering one TURN transport: UDP, TCP, and TLS. Chromium accepts the self-signed TLS certificate
-through `--ignore-certificate-errors`; Firefox has no such switch, so its TLS test is skipped. CI
-runs the suite this way.
+through `--ignore-certificate-errors`; Firefox has no such switch, so its TLS test is skipped. The
+same run tests the fallback to the relay, in a Firefox that gathers no host candidates, and a
+fourth signaling server whose TURN URL nothing listens on, with which sessions still connect
+directly. CI runs the suite this way.

@@ -395,8 +395,10 @@ Cloudflare Quick Tunnel is a development ingress mechanism, not a WebRTC transpo
 - [x] Deploy a test Coturn instance or use a managed TURN provider: Coturn under the `turn` profile of `compose.yaml`, on loopback.
 - [x] Test TURN relay connectivity: the Playwright relay tests (`BLINDSIGNAL_TEST_TURN=1`).
 - [x] Test configured UDP and TCP/TLS transports: one relay test per transport, TLS in Chromium only (ADR 0017).
-- [ ] Test direct-to-relay fallback behavior.
-- [ ] Test TURN unavailable and credential expiration.
+- [x] Test direct-to-relay fallback behavior: Firefox without host candidates relays under the default policy (ADR 0017).
+- [x] Test TURN unavailable: direct sessions still connect.
+- [ ] Close a session that never connects: with the relay forced and TURN unavailable, no candidate is gathered and the peer connection never reaches `failed`.
+- [ ] Test credential expiration: an established allocation outlives its credential in Coturn 4.18.
 - [ ] Add relay usage metrics: credentials issued per application, relay traffic from the TURN server (ADR 0017).
 - [ ] Document TURN operational requirements.
 
