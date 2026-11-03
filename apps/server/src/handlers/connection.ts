@@ -806,7 +806,8 @@ export class Connection {
         void this.#enqueue(() => Promise.resolve(this.#send({ type: 'pairing.ended', payload })));
       });
       const { userId, deviceId } = pairing.requester.device;
-      const payload = { pairingId, namespace: pairing.namespace, userId, deviceId };
+      const { namespace, keyThumbprint: jkt } = pairing;
+      const payload = { pairingId, namespace, userId, deviceId, jkt };
       return this.#send({ type: 'pairing.request', payload });
     }
     const { pairingId } = event;

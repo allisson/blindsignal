@@ -147,6 +147,16 @@ describe('parseServerMessage', () => {
     expect(parseServerMessage(text).ok).toBe(true);
   });
 
+  it("keeps the requester's key thumbprint on a pairing request (ADR 0042)", () => {
+    const device = { pairingId: sessionId, namespace: 'chat:room-1', userId: 'u', deviceId: 'd' };
+    const request = (payload: object) => frame({ version: 1, type: 'pairing.request', payload });
+    const result = parseServerMessage(request({ ...device, jkt: 'k' }));
+    expect(result.ok && result.message.payload).toEqual({ ...device, jkt: 'k' });
+    for (const jkt of [undefined, '']) {
+      expect(parseServerMessage(request({ ...device, jkt }))).toMatchObject({ ok: false });
+    }
+  });
+
   it.each([
     ['a client-only type', frame({ version: 1, type: 'auth.refresh', payload: { token: 't' } })],
     ['an unknown error code', frame({ version: 1, type: 'error', payload: { code: 'oops' } })],

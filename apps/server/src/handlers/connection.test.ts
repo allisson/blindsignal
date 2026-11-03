@@ -2405,7 +2405,7 @@ describe('pairing (ADR 0042)', () => {
   it("asks the user's devices, and relays the first approval to the requester", async () => {
     const { approver, other, requester, keys, metrics, logs } = await devices();
     const pairingId = await request(requester);
-    const asked = { pairingId, namespace: NS, userId: 'u1', deviceId: 'd2' };
+    const asked = { pairingId, namespace: NS, userId: 'u1', deviceId: 'd2', jkt: keys.d2.cnf.jkt };
     for (const client of [approver, other]) {
       expect(of(client, 'pairing.request').map((m) => m.payload)).toEqual([asked]);
     }
