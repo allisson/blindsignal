@@ -80,8 +80,9 @@ Revocation is terminal. Set `"status": "revoked"` and apply: clients see what a 
 and the application can never return to `active` or `suspended`. A reload that tries is rejected,
 and with PostgreSQL storage an instance whose file tries does not start (ADR 0021).
 
-- Keep the entry, with `"status": "revoked"`, in the file. With PostgreSQL storage the revocation
-  survives its removal, but an instance without storage forgets it on restart.
+- Keep the entry, with `"status": "revoked"`, in the file for good. Removed from the file, the
+  application is removed from the stored registry at the next load too, and only the processes
+  that saw it revoked keep refusing it until they restart (ADR 0021, `docs/backup-and-recovery.md`).
 - To serve the same team again, register a new `appId` with a new issuer.
 
 ## Revoking a device

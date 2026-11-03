@@ -64,8 +64,8 @@ the decisions behind them are in `docs/adr/0032-self-hosted-compose.md`.
   payload (`apps/server/README.md`).
 - **TURN:** run Coturn as `docs/turn-operations.md` describes, and set `BLINDSIGNAL_TURN_URLS` and
   `BLINDSIGNAL_TURN_SECRET` in `.env`.
-- **Backups:** the `postgres-data` volume holds the device records and the stored registry. This
-  guide does not cover backing it up yet.
+- **Backups:** keep `.env` and `registry.json` off the host, and dump the `postgres-data` volume's
+  database daily; `docs/backup-and-recovery.md` has the commands and the restore.
 
 ## Limits
 
