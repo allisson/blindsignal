@@ -449,7 +449,7 @@ Implement:
 - Graceful cleanup after disconnect.
 - Per-application metrics and usage reporting.
 
-TURN bandwidth and relay costs must be monitored separately when TURN is deployed.
+TURN bandwidth and relay costs must be monitored separately when TURN is deployed: the TURN server's own metrics give relay traffic, and the server counts credentials issued per application (`docs/adr/0017-turn-credentials.md`).
 
 ## 9. High-level architecture
 
@@ -624,6 +624,8 @@ Requirements:
 - TURN URLs and credentials reach the SDK only through `rtc.ice_config` from the server, never through client-side configuration. STUN URLs may be configured on the client (§20).
 - Support for configured UDP and TCP/TLS relay transports.
 - Reporting of direct versus relay connectivity.
+
+The server mints credentials with the TURN REST shared-secret scheme, scoped to one application and valid for a configured lifetime (`docs/adr/0017-turn-credentials.md`).
 
 ICE/WebRTC selects the viable candidate pair.
 
