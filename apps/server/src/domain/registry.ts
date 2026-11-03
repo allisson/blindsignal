@@ -48,6 +48,7 @@ const applicationEntry = z
         sessions: positiveInt,
         sessionsPerDevice: positiveInt,
         namespacesPerDevice: positiveInt,
+        sessionDurationSeconds: positiveInt,
       })
       .partial()
       .default({}),

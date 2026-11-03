@@ -63,13 +63,13 @@ describe('parseRegistry', () => {
       jwksUri: undefined,
       publicKeys: [okpKey, ecKey],
       algorithms: ['EdDSA', 'ES256'],
-      quotas: { devices: 50 },
+      quotas: { devices: 50, sessionDurationSeconds: 3600 },
       rateLimits: { discovery: { ratePerSecond: 2, burst: 5 } },
       revokedDevices: [{ userId: 'u1', deviceId: 'd1' }],
     });
     expect(load(file(entry)).applications[0]).toMatchObject({
       keys: { publicKeys: [okpKey, ecKey] },
-      quotas: { devices: 50 },
+      quotas: { devices: 50, sessionDurationSeconds: 3600 },
       rateLimits: { discovery: { ratePerSecond: 2, burst: 5 } },
       revokedDevices: [{ userId: 'u1', deviceId: 'd1' }],
     });
@@ -116,6 +116,11 @@ describe('parseRegistry', () => {
     ['no algorithms', file(app({ algorithms: [] })), 'algorithms'],
     ['a disallowed algorithm', file(app({ algorithms: ['RS256'] })), 'algorithms.0'],
     ['a zero quota', file(app({ quotas: { sessions: 0 } })), 'quotas.sessions'],
+    [
+      'a zero session duration',
+      file(app({ quotas: { sessionDurationSeconds: 0 } })),
+      'quotas.sessionDurationSeconds',
+    ],
     ['an unknown quota', file(app({ quotas: { calls: 1 } })), 'calls'],
     [
       'an unknown rate limit',
