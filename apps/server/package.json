@@ -13,6 +13,7 @@
     "@blindsignal/core": "workspace:*",
     "@blindsignal/protocol": "workspace:*",
     "@blindsignal/storage-memory": "workspace:*",
+    "@blindsignal/storage-postgresql": "workspace:*",
     "jose": "^6.2.14",
     "ws": "^8.22.1",
     "zod": "^4.6.7"

@@ -38,6 +38,7 @@ describe('loadConfig', () => {
       presenceLeaseMs: 90_000,
       negotiationTimeoutMs: 30_000,
       deviceTtlMs: 30 * 86_400_000,
+      deviceSweepIntervalMs: 3_600_000,
       preAuthentication: {
         authenticationTimeoutMs: 10_000,
         maxUnauthenticatedPerIp: 20,
@@ -92,6 +93,9 @@ describe('loadConfig', () => {
       BLINDSIGNAL_PRESENCE_LEASE_SECONDS: '25',
       BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS: '15',
       BLINDSIGNAL_DEVICE_TTL_DAYS: '7',
+      BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS: '60',
+      BLINDSIGNAL_DATABASE_URL: 'postgresql://bs:pw@db.example:5432/bs',
+      BLINDSIGNAL_DATABASE_POOL_SIZE: '4',
       BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS: '4',
       BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: '3',
       BLINDSIGNAL_MAX_UNAUTHENTICATED: '30',
@@ -132,6 +136,8 @@ describe('loadConfig', () => {
       presenceLeaseMs: 25_000,
       negotiationTimeoutMs: 15_000,
       deviceTtlMs: 7 * 86_400_000,
+      deviceSweepIntervalMs: 60_000,
+      database: { url: 'postgresql://bs:pw@db.example:5432/bs', poolSize: 4 },
       preAuthentication: {
         authenticationTimeoutMs: 4_000,
         maxUnauthenticatedPerIp: 3,
@@ -284,6 +290,15 @@ describe('loadConfig', () => {
       const secret = 'short-secret-value';
       expect(error({ ...turn, BLINDSIGNAL_TURN_SECRET: secret })).not.toContain(secret);
     });
+  });
+
+  it('accepts only a postgres:// database URL, and never echoes it', () => {
+    expect(
+      config({ ...production, BLINDSIGNAL_DATABASE_URL: 'postgres://db/bs' }).database,
+    ).toEqual({ url: 'postgres://db/bs', poolSize: 10 });
+    const message = error({ ...production, BLINDSIGNAL_DATABASE_URL: 'mysql://u:secret-pw@db/bs' });
+    expect(message).toContain('BLINDSIGNAL_DATABASE_URL');
+    expect(message).not.toContain('secret-pw');
   });
 
   it('names invalid variables without their values', () => {

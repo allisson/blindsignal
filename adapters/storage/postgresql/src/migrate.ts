@@ -69,3 +69,15 @@ export async function migrate(pool: Pool, migrations?: readonly Migration[]): Pr
     client.release();
   }
 }
+
+/** The last migration applied, 0 when none ran. */
+export async function schemaVersion(pool: Pool): Promise<number> {
+  const table = await pool.query<{ exists: boolean }>(
+    "SELECT to_regclass('schema_migrations') IS NOT NULL AS exists",
+  );
+  if (table.rows[0]?.exists !== true) return 0;
+  const { rows } = await pool.query<{ version: number }>(
+    'SELECT coalesce(max(version), 0)::integer AS version FROM schema_migrations',
+  );
+  return rows[0]?.version ?? 0;
+}

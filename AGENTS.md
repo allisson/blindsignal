@@ -38,8 +38,8 @@ per-application usage metrics (ADR 0015), and abuse alerts with operator-driven 
 (ADR 0016). Phase 8 (TURN support) is complete: the server issues TURN credentials (ADR 0017),
 browsers relay through a test Coturn, the SDK closes a session that never connects (ADR 0018), and
 `docs/turn-operations.md` documents operating Coturn; see the roadmap's "After the MVP". Phase 9
-has started: `adapters/storage/postgresql` implements the storage contract (ADR 0020), not yet
-wired into the server. The workspace uses the toolchain in
+has started: with `BLINDSIGNAL_DATABASE_URL` set, the server keeps device records and the last
+accepted registry in PostgreSQL (`adapters/storage/postgresql`, ADR 0020, ADR 0021). The workspace uses the toolchain in
 `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
 `jose`, `ws`, Vitest, Playwright), extended for Phase 9 by `docs/adr/0019-persistence-dependencies.md`
 (`pg`, `redis`, Valkey). Do not add a tool outside those ADRs without a new ADR.

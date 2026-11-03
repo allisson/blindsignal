@@ -11,6 +11,8 @@ export interface ApplicationRepository {
   replaceAll(applications: readonly ApplicationRecord[]): Promise<void>;
   getById(appId: string): Promise<ApplicationRecord | undefined>;
   getByIssuer(issuer: string): Promise<ApplicationRecord | undefined>;
+  /** Every application, in no particular order. */
+  getAll(): Promise<readonly ApplicationRecord[]>;
 }
 
 export type DeviceTouchResult =

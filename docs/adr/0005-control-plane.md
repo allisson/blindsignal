@@ -64,5 +64,7 @@ application-issued access token can never reach it.
 
 - On hosts without signals (Cloud Run), a registry change is a new deployment, which restarts the
   instance and drops all connections; SDKs reconnect.
+- With PostgreSQL storage, the file is checked against the registry stored by any instance, so
+  timestamps and revocation survive restarts (ADR 0021).
 - Phase 9 revisits this with durable storage, where an admin API or CLI may replace the file
   through a new ADR.

@@ -259,6 +259,7 @@ Initial catalog:
 | `application_unavailable` | terminal | yes | Application suspended, revoked, or, on an open connection, removed from the registry. |
 | `device_revoked` | terminal | yes | Device revoked. |
 | `superseded` | superseded | yes | The same device authenticated a newer connection (ADR 0008). |
+| `server_error` | retryable | yes | The server could not handle the message, such as when its storage is unreachable (ADR 0021). The SDK reconnects with backoff. |
 
 Connection attempts above the rate limit or the unauthenticated connection cap are refused with
 HTTP `429` before the WebSocket upgrade, so they get no `error` message (ADR 0011).

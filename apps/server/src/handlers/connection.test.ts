@@ -682,6 +682,27 @@ describe('Connection', () => {
       });
     });
 
+    it('closes with server_error when storage fails, and logs no detail', async () => {
+      const failure = Object.assign(new Error('connect ECONNREFUSED 10.0.0.5:5432'), {
+        code: 'ECONNREFUSED',
+      });
+      const { connect, logs } = await setup(undefined, {
+        devices: { touch: () => Promise.reject(failure) },
+      });
+      const client = connect();
+      await client.authenticate();
+      expect(client.errors()).toEqual(['server_error']);
+      expect(client.closes).toEqual([4001]);
+      expect(logs).toContainEqual(
+        expect.objectContaining({
+          level: 'error',
+          event: 'connection.failed',
+          reason: 'ECONNREFUSED',
+        }),
+      );
+      expect(JSON.stringify(logs)).not.toContain('10.0.0.5');
+    });
+
     it("takes the application's device quota over the server's", async () => {
       const { connect } = await setup([{ ...devApplication('notes'), quotas: { devices: 1 } }]);
       await connect().authenticate();
