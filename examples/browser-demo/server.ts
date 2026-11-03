@@ -50,11 +50,18 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   if (url.pathname === '/token') {
     const sub = url.searchParams.get('user');
     const device_id = url.searchParams.get('device');
+    const jkt = url.searchParams.get('jkt');
     if (!sub || !device_id) {
       response.writeHead(400).end();
       return;
     }
-    const token = await mintDevToken({ app_id: 'notes', sub, device_id, namespaces: [NAMESPACE] });
+    const token = await mintDevToken({
+      app_id: 'notes',
+      sub,
+      device_id,
+      namespaces: [NAMESPACE],
+      ...(jkt && { cnf: { jkt } }),
+    });
     response
       .writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'no-store' })
       .end(token);

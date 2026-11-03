@@ -38,6 +38,8 @@ export default tseslint.config(
   },
   {
     files: ['packages/sdk/src/**'],
+    // Tests may check the SDK's proofs with jose, as the server does.
+    ignores: ['**/*.test.ts'],
     rules: {
       'no-restricted-imports': [
         'error',

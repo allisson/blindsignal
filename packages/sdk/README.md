@@ -40,6 +40,7 @@ session.on("open", () => session.send("hello"));
 |---|---|---|
 | `serverUrl` | required | `wss://`, or `ws://` on `localhost`, `127.0.0.1`, or `[::1]`. |
 | `accessTokenProvider` | required | Returns a new token from the application backend. |
+| `deviceKey` | none | A `DeviceKey`: proves possession on every authentication, for tokens bound with `cnf.jkt` (ADR 0041). |
 | `iceServers` | `[]` | STUN servers only; TURN comes from the server's `rtc.ice_config`. |
 | `refreshMarginMs` | `60000` | How long before expiry `auth.refresh` is sent. |
 | `backoff` | `{ baseMs: 1000, maxMs: 30000 }` | Reconnect and refresh retry delays, with full jitter. |
@@ -66,6 +67,30 @@ session.on("open", () => session.send("hello"));
 | `sessionRequest` | A `SessionRequest`: the peer, `sessionId`, `accept()`, and `reject()`. |
 
 `on(event, listener)` returns the function that removes the listener.
+
+## DeviceKey
+
+A token bound to a device key with `cnf.jkt` works only for the device holding that key
+(`docs/token-issuance.md#proof-of-possession`). `DeviceKey.load()` returns this origin's P-256
+key, generated non-extractable on first use and kept in IndexedDB; a reload, or another tab, gets
+the same one.
+
+```typescript
+import { BlindSignalClient, DeviceKey } from "@blindsignal/sdk";
+
+const deviceKey = await DeviceKey.load();
+// The backend records the thumbprint for this device and puts it in each token's cnf.jkt.
+const client = new BlindSignalClient({
+  serverUrl: "wss://signal.example.com",
+  accessTokenProvider: () =>
+    fetch(`/blindsignal-token?jkt=${deviceKey.thumbprint}`).then((response) => response.text()),
+  deviceKey,
+});
+```
+
+With `deviceKey`, the client waits for the server's `auth.challenge`, up to `heartbeat.timeoutMs`,
+and signs a proof for each token. Clearing the site's data loses the key: the backend then binds
+the new one. `DeviceKey.from(keyPair)` wraps a P-256 ECDSA pair kept elsewhere.
 
 ## Session
 

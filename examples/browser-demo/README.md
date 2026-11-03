@@ -25,7 +25,9 @@ then press **Connect to bob/phone** in the first tab. The demo accepts every ses
 `BLINDSIGNAL_DEMO_PORT` and `BLINDSIGNAL_DEMO_SIGNALING_URL` change the demo's port and the
 signaling server it uses; `&server=<url>` picks another one for a single page. Add `&relay` to a
 page's URL to connect through TURN only (`iceTransportPolicy: 'relay'`); the signaling server must
-configure TURN (ADR 0017). `&connectTimeout=<ms>` sets the SDK's `connectTimeoutMs` (ADR 0018).
+configure TURN (ADR 0017). `&connectTimeout=<ms>` sets the SDK's `connectTimeoutMs` (ADR 0018). `&pop` loads the origin's
+device key and binds the page's tokens to it, as `cnf.jkt` (ADR 0041); the page shows the key's
+thumbprint.
 
 ## Tests
 
@@ -40,3 +42,6 @@ through `--ignore-certificate-errors`; Firefox has no such switch, so its TLS te
 same run tests the fallback to the relay, in a Firefox that gathers no host candidates, and a
 fourth signaling server whose TURN URL nothing listens on, with which sessions still connect
 directly, and a session forced to that relay closes once the connection timeout runs out. CI runs the suite this way.
+
+The proof-of-possession tests run in both browsers: pages with `&pop` authenticate with a device
+key that a reload keeps, and a page whose proof is stripped on its way to the server is refused.

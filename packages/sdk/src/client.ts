@@ -1,5 +1,6 @@
 import { closeCodes, errorClasses, type Payload, type ServerMessage } from '@blindsignal/protocol';
 import { backoffDelay, defaultBackoff, type BackoffOptions } from './backoff.ts';
+import type { DeviceKey } from './device-key.ts';
 import { Emitter } from './emitter.ts';
 import { BlindSignalError } from './errors.ts';
 import { Session, type Peer } from './session.ts';
@@ -19,6 +20,12 @@ export interface BlindSignalClientOptions {
   serverUrl: string | URL;
   /** Returns a new access token from the application backend; called for every authentication. */
   accessTokenProvider: () => Promise<string>;
+  /**
+   * Proves on every authentication that this device holds the key its tokens are bound to
+   * (ADR 0041): the backend puts `deviceKey.thumbprint` in each token's `cnf.jkt`. The client then
+   * waits up to `heartbeat.timeoutMs` for the server's challenge before authenticating.
+   */
+  deviceKey?: DeviceKey;
   /** How long before the token expires `auth.refresh` is sent. Defaults to 60 s. */
   refreshMarginMs?: number;
   /** Retry delays for reconnects and failed refreshes. Defaults to 1 s doubling up to 30 s. */
@@ -208,7 +215,9 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
       if (generation !== this.#generation) return;
       opened.on('message', (message) => this.#receive(message));
       opened.on('close', ({ code, error }) => this.#lost(opened, code, error));
-      const result = await opened.request('auth.authenticate', { token });
+      const proof = await this.#prove(opened, token);
+      if (generation !== this.#generation) return;
+      const result = await opened.request('auth.authenticate', { token, ...proof });
       if (generation !== this.#generation) return;
       signaling = undefined;
       this.#signaling = opened;
@@ -231,6 +240,22 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
     } finally {
       // An attempt that did not become the connection never keeps its socket.
       signaling?.close();
+    }
+  }
+
+  /** With a device key, the proof for `token` on this connection, once its challenge arrives. */
+  async #prove(signaling: Signaling, token: string): Promise<{ proof?: string }> {
+    const key = this.#options.deviceKey;
+    if (key === undefined) return {};
+    const { timeoutMs } = this.#options.heartbeat ?? defaultHeartbeat;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new BlindSignalError('connection_closed')), timeoutMs);
+    });
+    try {
+      return { proof: await key.proof(token, await Promise.race([signaling.challenge, timeout])) };
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -390,7 +415,8 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
     if (signaling === undefined) return;
     try {
       const token = await this.#options.accessTokenProvider();
-      const result = await signaling.request('auth.refresh', { token });
+      const proof = await this.#prove(signaling, token);
+      const result = await signaling.request('auth.refresh', { token, ...proof });
       if (this.#signaling === signaling) this.#scheduleRefresh(result.payload.expiresInMs);
     } catch (error) {
       if (this.#signaling !== signaling) return;

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { backoffDelay } from './backoff.ts';
 import { BlindSignalClient, type BlindSignalClientOptions, type SessionRequest } from './client.ts';
+import type { DeviceKey } from './device-key.ts';
 import { BlindSignalError } from './errors.ts';
 import { FakePeerConnection } from './testing/fake-peer.ts';
 import { FakeSocket } from './testing/fake-socket.ts';
@@ -399,6 +400,83 @@ describe('BlindSignalClient heartbeat', () => {
     harness.client.close();
     await vi.advanceTimersByTimeAsync(100_000);
     expect(harness.sent('connection.ping')).toHaveLength(0);
+  });
+});
+
+describe('BlindSignalClient device key', () => {
+  const challenge = (harness: Harness, nonce: string) =>
+    harness.socket().receive({ version: 1, type: 'auth.challenge', payload: { nonce } });
+
+  function deviceKey() {
+    const proof = vi.fn((token: string, nonce: string) => Promise.resolve(`${token}@${nonce}`));
+    return { proof, deviceKey: { thumbprint: 'jkt', proof } as unknown as DeviceKey };
+  }
+
+  it('waits for the challenge and proves possession for every token', async () => {
+    const harness = setup(deviceKey());
+    const connecting = harness.client.connect();
+    await flush();
+    expect(harness.socket().sent).toEqual([]);
+    challenge(harness, 'n1');
+    await authenticate(harness);
+    await connecting;
+    expect(harness.sent('auth.authenticate')).toMatchObject([
+      { payload: { token: 't1', proof: 't1@n1' } },
+    ]);
+    // The refresh and the heartbeat: the challenge's timeout is gone.
+    expect(vi.getTimerCount()).toBe(2);
+    await vi.advanceTimersByTimeAsync(240_000);
+    expect(harness.last()).toMatchObject({
+      type: 'auth.refresh',
+      payload: { token: 't2', proof: 't2@n1' },
+    });
+  });
+
+  it('gives up on a connection whose challenge does not come in time', async () => {
+    const harness = setup(deviceKey());
+    void harness.client.connect();
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(harness.socket().closedWith).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(harness.socket().closedWith).toBe(1000);
+    expect(harness.socket().sent).toEqual([]);
+    expect(harness.client.state).toBe('connecting');
+    await vi.advanceTimersByTimeAsync(4);
+    expect(harness.sockets).toHaveLength(2);
+    challenge(harness, 'n2');
+    await authenticate(harness);
+    expect(harness.client.state).toBe('connected');
+  });
+
+  it('reconnects at once when the connection closes before its challenge', async () => {
+    const harness = setup(deviceKey());
+    void harness.client.connect();
+    await flush();
+    harness.socket().drop(1006);
+    await vi.advanceTimersByTimeAsync(4);
+    expect(harness.sockets).toHaveLength(2);
+  });
+
+  it('drops an attempt closed while it waits for the challenge', async () => {
+    const harness = setup(deviceKey());
+    const connecting = harness.client.connect();
+    await flush();
+    harness.client.close();
+    await expect(connecting).rejects.toThrow('connection_closed');
+    challenge(harness, 'n1');
+    await flush();
+    expect(harness.socket().sent).toEqual([]);
+    expect(harness.socket().closedWith).toBe(1000);
+  });
+
+  it('ignores the challenge without a device key', async () => {
+    const harness = setup();
+    void harness.client.connect();
+    await flush();
+    challenge(harness, 'n1');
+    await authenticate(harness);
+    expect(harness.sent('auth.authenticate')).toMatchObject([{ payload: { token: 't1' } }]);
+    expect(harness.sent('auth.authenticate')[0]).not.toHaveProperty('payload.proof');
   });
 });
 

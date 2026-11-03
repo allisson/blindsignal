@@ -13,6 +13,12 @@ accepted risk 1). This ADR binds a token to a key the device holds and the token
   IndexedDB, one per origin. It exposes the public key's JWK thumbprint (RFC 7638, SHA-256,
   base64url) for the application to send its backend. ES256 is the one algorithm every target
   browser supports for a non-extractable key.
+- **The application hands the key to the client (amended with the SDK):** `DeviceKey.load()`
+  returns this origin's key, creating it on first use; tabs loading it at once keep the first one
+  stored. `deviceKey.thumbprint` goes to the backend, and `new BlindSignalClient({ deviceKey })`
+  waits for each connection's `auth.challenge`, up to `heartbeat.timeoutMs`, then reconnects with
+  backoff, and signs a proof for every `auth.authenticate` and `auth.refresh`. A client without
+  `deviceKey` sends no proof.
 - **The backend binds the token to that key with `cnf.jkt`** (RFC 7800, RFC 9449 §6.1): the
   thumbprint of the device's key. Which thumbprint belongs to which device is the backend's
   record, as the device itself is (ADR 0006); the server stores no key.
@@ -52,6 +58,11 @@ accepted risk 1). This ADR binds a token to a key the device holds and the token
 - **Protocol version 2 for `auth.challenge`.** Rejected: the server and the SDK would keep two
   versions for one message that the current SDK already ignores.
 - **A fresh nonce after every proof.** Not needed: `ath` makes each proof single-use already.
+- **The client creates and keeps the key itself, behind a flag.** Rejected: the application needs
+  the thumbprint before its first token anyway, and the client's tests would need an IndexedDB in
+  Node.js, a dependency outside ADR 0001.
+- **A signing callback the application implements.** Rejected: every application would build the
+  proof itself, and get it wrong in its own way.
 
 ## Consequences
 
@@ -62,5 +73,6 @@ accepted risk 1). This ADR binds a token to a key the device holds and the token
   challenge being sent with the upgrade's answer.
 - A device that loses its key (cleared site data, another browser profile) needs its backend to
   bind the new one; the server notices nothing.
-- The SDK side, key storage and signing, lands apart from the server side, which accepts proofs
-  from any client.
+- The server accepts proofs from any client; the SDK is one of them. Safari keeping a
+  non-extractable `CryptoKey` in IndexedDB is untested: the Playwright tests run Chromium and
+  Firefox.
