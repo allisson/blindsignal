@@ -441,7 +441,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Implement shared rate-limit, quota, and `jti` replay state across instances (`BLINDSIGNAL_REDIS_URL`, `docs/adr/0023-multi-instance-server.md`).
 - [x] Handle instance failure and stale leases (presence and slots expire, each side's session copy times out, `docs/adr/0022-redis-coordination.md`, `docs/adr/0023-multi-instance-server.md`).
 - [x] Test multiple server instances (two servers sharing Valkey in `apps/server/src/server.test.ts`).
-- [ ] Test reconnect and session recovery across instances.
+- [x] Test reconnect and session recovery across instances (a client moved by a drain or a failed instance, through a proxy in `apps/server/src/server.test.ts`; sessions with a lost peer end on the next heartbeat, `docs/adr/0026-instance-failure-recovery.md`).
 
 ### Deliverables
 
