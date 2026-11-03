@@ -225,11 +225,14 @@ WebSocket with the close code of the code's class:
 | terminal | `4002` | Stop reconnecting and close every session (spec §6.4). |
 | superseded | `4003` | Do not reconnect automatically (spec §8.3). |
 
-Four closures carry no `error`:
+Five closures carry no `error`:
 
 - **Shutdown.** A server shutting down fails its readiness check, refuses new upgrades with HTTP
   `503`, and closes every connection with `1001` (Going Away). The SDK reconnects with backoff,
   reaching another instance or the restarted one.
+- **Maximum lifetime.** A server configured with a maximum connection lifetime closes each
+  connection with `1001` before it ends, at a random point in its last tenth (ADR 0029). The SDK
+  reconnects with backoff, as on shutdown.
 - **Oversized frame.** A frame above twice the maximum message size is cut by the WebSocket layer
   with `1009` (Message Too Big) before it is read; a smaller oversized message gets
   `message_too_large`. The SDK treats `1009` like a terminal close.

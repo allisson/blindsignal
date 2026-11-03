@@ -49,6 +49,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS` | `60` | Clock-skew tolerance on token times. |
 | `BLINDSIGNAL_TOKEN_MAX_NAMESPACES` | `100` | Maximum namespaces in one token. |
 | `BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS` | `30` | WebSocket ping interval. |
+| `BLINDSIGNAL_MAX_CONNECTION_SECONDS` | `0` (none) | Each connection is closed with `1001` between 90% and 100% of this lifetime; the SDK reconnects. Set it below the hosting platform's request timeout, such as Cloud Run's (ADR 0029). |
 | `BLINDSIGNAL_PRESENCE_LEASE_SECONDS` | `90` | Presence lease and quota-slot lease, renewed on every answered ping. |
 | `BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS` | `30` | How long a session may stay `pending`. |
 | `BLINDSIGNAL_DEVICE_TTL_DAYS` | `30` | A device record not seen for this long stops counting toward the quota. |

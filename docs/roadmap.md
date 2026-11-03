@@ -473,7 +473,8 @@ Operating TURN is not required to complete the initial local MVP.
   probes on `/metrics` (ADR 0028).
 - [ ] Configure graceful shutdown.
 - [ ] Define WebSocket connection limits.
-- [ ] Define reconnect behavior for hosting request timeouts.
+- [x] Define reconnect behavior for hosting request timeouts: a maximum connection lifetime
+  (ADR 0029).
 - [ ] Add OpenTelemetry instrumentation.
 - [ ] Extend the Phase 3 structured logs and metrics for production use.
 - [ ] Define secret and signing-key management.
