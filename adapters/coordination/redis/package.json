@@ -1,0 +1,15 @@
+{
+  "name": "@blindsignal/coordination-redis",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@blindsignal/core": "workspace:*",
+    "@redis/client": "^6.3.1"
+  }
+}

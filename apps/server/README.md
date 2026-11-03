@@ -49,7 +49,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS` | `60` | Clock-skew tolerance on token times. |
 | `BLINDSIGNAL_TOKEN_MAX_NAMESPACES` | `100` | Maximum namespaces in one token. |
 | `BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS` | `30` | WebSocket ping interval. |
-| `BLINDSIGNAL_PRESENCE_LEASE_SECONDS` | `90` | Presence lease, renewed on every answered ping. |
+| `BLINDSIGNAL_PRESENCE_LEASE_SECONDS` | `90` | Presence lease and quota-slot lease, renewed on every answered ping. |
 | `BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS` | `30` | How long a session may stay `pending`. |
 | `BLINDSIGNAL_DEVICE_TTL_DAYS` | `30` | A device record not seen for this long stops counting toward the quota. |
 | `BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS` | `3600` | How often expired device records are deleted (ADR 0012). |

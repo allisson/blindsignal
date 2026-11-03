@@ -42,14 +42,19 @@ export interface CoordinationAdapter {
   consumeRateLimit(key: string, policy: RateLimitPolicy): Promise<RateLimitDecision>;
 
   /**
-   * Takes one slot under each key's limit for `holder`, all or none: a session takes the
-   * application's and both devices' slots together (ADR 0011). True when all were free.
+   * Takes one slot under each key's limit for `holder` for `ttlMs`, all or none: a session takes
+   * the application's and both devices' slots together (ADR 0011). True when all were free.
+   * Acquiring again renews the holder's slots; a slot not renewed expires, so a lost instance
+   * leaves no slot held (ADR 0022).
    */
-  acquireSlots(holder: string, slots: readonly Slot[]): Promise<boolean>;
+  acquireSlots(holder: string, slots: readonly Slot[], ttlMs: number): Promise<boolean>;
   /** Releases `holder`'s slots under these keys; releasing twice has no effect. */
   releaseSlots(holder: string, keys: readonly string[]): Promise<void>;
 
-  /** Delivers an event to every subscriber of the topic, on any instance. */
+  /**
+   * Delivers an event to every subscriber of the topic, on any instance, at most once. Events are
+   * JSON values: a subscriber receives a copy (ADR 0022).
+   */
   publish(topic: string, event: unknown): Promise<void>;
   /** Resolves once subscribed, to a function that unsubscribes. */
   subscribe(topic: string, handler: (event: unknown) => void): Promise<() => Promise<void>>;

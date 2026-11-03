@@ -38,8 +38,8 @@ export class InMemoryCoordinationAdapter implements CoordinationAdapter {
   readonly #presence = new Map<string, Map<string, Lease>>();
   readonly #topics = new Map<string, Set<Subscription>>();
   readonly #buckets = new Map<string, Bucket>();
-  /** The holders of each key's slots. */
-  readonly #slots = new Map<string, Set<string>>();
+  /** The holders of each key's slots, with when each slot expires. */
+  readonly #slots = new Map<string, Map<string, number>>();
   #lastSweep: number;
 
   constructor({ now = Date.now }: { now?: () => number } = {}) {
@@ -131,17 +131,22 @@ export class InMemoryCoordinationAdapter implements CoordinationAdapter {
     return Promise.resolve({ allowed: true });
   }
 
-  acquireSlots(holder: string, slots: readonly Slot[]): Promise<boolean> {
+  acquireSlots(holder: string, slots: readonly Slot[], ttlMs: number): Promise<boolean> {
+    const now = this.#now();
+    this.#sweep(now);
     // A slot the holder already has stays its own, without taking a second one.
     const free = slots.every(({ key, limit }) => {
       const holders = this.#slots.get(key);
-      return holders === undefined || holders.has(holder) || holders.size < limit;
+      if (holders === undefined) return true;
+      let live = 0;
+      for (const expiresAt of holders.values()) if (expiresAt > now) live++;
+      return (holders.get(holder) ?? 0) > now || live < limit;
     });
     if (!free) return Promise.resolve(false);
     for (const { key } of slots) {
       let holders = this.#slots.get(key);
-      if (holders === undefined) this.#slots.set(key, (holders = new Set<string>()));
-      holders.add(holder);
+      if (holders === undefined) this.#slots.set(key, (holders = new Map<string, number>()));
+      holders.set(holder, now + ttlMs);
     }
     return Promise.resolve(true);
   }
@@ -186,6 +191,10 @@ export class InMemoryCoordinationAdapter implements CoordinationAdapter {
       if (leases.size === 0) this.#presence.delete(namespace);
     }
     for (const [key, bucket] of this.#buckets) if (bucket.fullAt <= now) this.#buckets.delete(key);
+    for (const [key, holders] of this.#slots) {
+      for (const [holder, expiresAt] of holders) if (expiresAt <= now) holders.delete(holder);
+      if (holders.size === 0) this.#slots.delete(key);
+    }
   }
 
   /** Tracked pairs, expired ones not yet swept included; for tests. */
@@ -205,7 +214,7 @@ export class InMemoryCoordinationAdapter implements CoordinationAdapter {
     return this.#buckets.size;
   }
 
-  /** Keys with at least one slot held; for tests. */
+  /** Keys with at least one slot held, expired ones not yet swept included; for tests. */
   get heldSlotKeys(): number {
     return this.#slots.size;
   }

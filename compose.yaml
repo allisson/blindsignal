@@ -50,3 +50,16 @@ services:
       retries: 15
     ports:
       - 127.0.0.1:5432:5432
+
+  # Valkey for the coordination adapter's tests (ADR 0019): `docker compose --profile valkey up
+  # --wait valkey`, then BLINDSIGNAL_TEST_REDIS_URL=redis://127.0.0.1:6379. No password: it listens
+  # on loopback only, and holds nothing but test state.
+  valkey:
+    image: valkey/valkey:9.1.3-alpine
+    profiles: [valkey]
+    healthcheck:
+      test: [CMD, valkey-cli, ping]
+      interval: 2s
+      retries: 15
+    ports:
+      - 127.0.0.1:6379:6379

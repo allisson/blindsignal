@@ -49,13 +49,14 @@ adapter:
   it was allowed and, if not, when to retry.
 - **Concurrency slots**: acquire slots under their limits, all or none, and release them, for the
   concurrent connection and session quotas. A session takes the application's slot and both
-  devices' slots in one call (ADR 0011).
+  devices' slots in one call (ADR 0011). Slots are leases that their holder renews (ADR 0022).
 - **Releases name the holder**: the connection that holds a device claim or a presence lease, or
   the holder of a slot. A release by a stale holder, such as a superseded connection closing after
   its replacement joined, has no effect, and releasing twice is harmless. Releasing a presence
   lease reports whether it removed one, so a stale holder never announces the device as gone.
 - **`publish(topic, event)` / `subscribe(topic, handler)`**: signaling event delivery to the
-  instance holding a connection, and application status propagation.
+  instance holding a connection, and application status propagation. Events are JSON values,
+  delivered at most once (ADR 0022).
 
 ## Rules
 

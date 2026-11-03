@@ -6,6 +6,7 @@ import type {
   DeviceIdentity,
   DeviceRepository,
   RateLimitPolicy,
+  Slot,
 } from '@blindsignal/core';
 import {
   closeCodeFor,
@@ -73,7 +74,7 @@ export interface ConnectionDependencies {
   readonly deviceTtlMs: number;
   /** Server defaults; an application's registry entry overrides each limit it sets (ADR 0011). */
   readonly limits: Limits;
-  /** Renewed on every heartbeat, so it outlives a few missed ones. */
+  /** Presence leases and quota slots last this long, renewed on every heartbeat (ADR 0022). */
   readonly presenceLeaseMs: number;
   /** Shared by every connection of the process. */
   readonly sessions: SessionRegistry;
@@ -103,11 +104,21 @@ const connectionSlot = (appId: string) => `connections:${appId}`;
  * A session holds a slot of its application's session quota and one of each device's, from
  * creation to its end (ADR 0011): the application's, the requester's, and the target's keys.
  */
-const sessionSlots = (requester: DeviceIdentity, target: DeviceIdentity) =>
+const sessionSlots = (
+  requester: DeviceIdentity,
+  target: DeviceIdentity,
+  { sessions, sessionsPerDevice }: Limits['quotas'],
+) =>
   [
-    `sessions:${requester.appId}`,
-    `device_sessions:${JSON.stringify([requester.appId, requester.userId, requester.deviceId])}`,
-    `device_sessions:${JSON.stringify([target.appId, target.userId, target.deviceId])}`,
+    { key: `sessions:${requester.appId}`, limit: sessions },
+    {
+      key: `device_sessions:${JSON.stringify([requester.appId, requester.userId, requester.deviceId])}`,
+      limit: sessionsPerDevice,
+    },
+    {
+      key: `device_sessions:${JSON.stringify([target.appId, target.userId, target.deviceId])}`,
+      limit: sessionsPerDevice,
+    },
   ] as const;
 
 const SUPERSEDED = { type: 'superseded' } as const;
@@ -210,10 +221,24 @@ export class Connection {
     });
   }
 
-  /** The transport saw the client alive: renews the presence leases (docs/protocol.md §8). */
+  /**
+   * The transport saw the client alive: renews the presence leases (docs/protocol.md §8) and the
+   * quota slots of the connection and its sessions (ADR 0022). A slot that expired meanwhile and
+   * was taken is not renewed: the quota counts the newer holder.
+   */
   heartbeat(): Promise<void> {
     return this.#enqueue(async () => {
+      if (this.#context === undefined) return;
       for (const namespace of this.#joined.keys()) await this.#acquirePresence(namespace);
+      await this.#acquireConnectionSlot();
+      for (const session of this.#deps.sessions.of(this.id)) {
+        const slots = sessionSlots(
+          session.requester.device,
+          session.target.device,
+          this.#limits.quotas,
+        );
+        await this.#acquireSessionSlots(session.id, slots);
+      }
     });
   }
 
@@ -335,11 +360,7 @@ export class Connection {
     // Released with the connection, whether or not the authentication completes.
     this.#slot = connectionSlot(context.appId);
     this.#limits = applicationLimits(this.#deps.limits, application);
-    const limit = this.#limits.quotas.connections;
-    if (
-      !(await this.#deps.coordination.acquireSlots(this.id, [{ key: this.#slot, limit }])) ||
-      !(await this.#touch(context))
-    ) {
+    if (!(await this.#acquireConnectionSlot()) || !(await this.#touch(context))) {
       return this.#rejectAuthentication('quota_exceeded', requestId);
     }
     this.#deps.metrics.count('blindsignal_authentications_total', { result: 'ok' });
@@ -505,19 +526,13 @@ export class Connection {
     }
     const requester: Participant = { connectionId: this.id, device: identityOf(self) };
     const sessionId = crypto.randomUUID();
-    const [app, own, peer] = sessionSlots(requester.device, target);
-    const { sessions, sessionsPerDevice } = this.#limits.quotas;
-    const { coordination } = this.#deps;
-    const ownSlots = [
-      { key: app, limit: sessions },
-      { key: own, limit: sessionsPerDevice },
-    ];
-    if (!(await coordination.acquireSlots(sessionId, ownSlots))) {
+    const [app, own, peer] = sessionSlots(requester.device, target, this.#limits.quotas);
+    if (!(await this.#acquireSessionSlots(sessionId, [app, own]))) {
       return this.#error('quota_exceeded', requestId);
     }
     // A busy target looks unreachable, so its load is not revealed.
-    if (!(await coordination.acquireSlots(sessionId, [{ key: peer, limit: sessionsPerDevice }]))) {
-      await coordination.releaseSlots(sessionId, [app, own]);
+    if (!(await this.#acquireSessionSlots(sessionId, [peer]))) {
+      await this.#deps.coordination.releaseSlots(sessionId, [app.key, own.key]);
       return this.#error('peer_unavailable', requestId);
     }
     this.#deps.sessions.create(
@@ -593,8 +608,15 @@ export class Connection {
   /** Removes the session and frees its quota slots; true for the one caller that ended it. */
   async #end(session: Session): Promise<boolean> {
     if (!this.#deps.sessions.end(session.id)) return false;
-    const slots = sessionSlots(session.requester.device, session.target.device);
-    await this.#deps.coordination.releaseSlots(session.id, slots);
+    const slots = sessionSlots(
+      session.requester.device,
+      session.target.device,
+      this.#limits.quotas,
+    );
+    await this.#deps.coordination.releaseSlots(
+      session.id,
+      slots.map(({ key }) => key),
+    );
     return true;
   }
 
@@ -610,6 +632,15 @@ export class Connection {
 
   #publish(connectionId: string, message: Outbound): Promise<void> {
     return this.#deps.coordination.publish(connectionTopic(connectionId), deliver(message));
+  }
+
+  #acquireConnectionSlot(): Promise<boolean> {
+    const slot = { key: this.#slot as string, limit: this.#limits.quotas.connections };
+    return this.#deps.coordination.acquireSlots(this.id, [slot], this.#deps.presenceLeaseMs);
+  }
+
+  #acquireSessionSlots(sessionId: string, slots: readonly Slot[]): Promise<boolean> {
+    return this.#deps.coordination.acquireSlots(sessionId, slots, this.#deps.presenceLeaseMs);
   }
 
   #acquirePresence(namespace: string): Promise<void> {
@@ -714,10 +745,6 @@ export class Connection {
   }
 
   /**
-   * Sends `error`, then closes with the code's class when `close` is set or the code is terminal
-   * (docs/protocol.md §9).
-   */
-  /**
    * A task rejected, such as when storage is unreachable: the connection closes with
    * `server_error`, and the queue keeps running for the tasks already in it (ADR 0021).
    */
@@ -732,6 +759,10 @@ export class Connection {
     if (!this.#closed) this.#error('server_error', undefined, true);
   }
 
+  /**
+   * Sends `error`, then closes with the code's class when `close` is set or the code is terminal
+   * (docs/protocol.md §9).
+   */
   #error(code: ErrorCode, requestId?: string, close = false): void {
     this.#send({
       type: 'error',
