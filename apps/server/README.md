@@ -53,7 +53,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS` | `30` | How long a session may stay `pending`. |
 | `BLINDSIGNAL_DEVICE_TTL_DAYS` | `30` | A device record not seen for this long stops counting toward the quota. |
 | `BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS` | `3600` | How often expired device records are deleted (ADR 0012). |
-| `BLINDSIGNAL_DATABASE_URL` | unset | A `postgres://` URL: device records and the last accepted registry go to PostgreSQL, shared by every instance. Unset keeps them in memory, for one instance (ADR 0021). |
+| `BLINDSIGNAL_DATABASE_URL` | unset | A `postgres://` URL: device records and the last accepted registry go to PostgreSQL, shared by every instance. Unset keeps them in memory, for one instance (ADR 0021). Connect as the role that owns the tables, as the migration command does (ADR 0027); for Supabase, see `docs/supabase.md`. |
 | `BLINDSIGNAL_DATABASE_POOL_SIZE` | `10` | Connections in the PostgreSQL pool. |
 | `BLINDSIGNAL_REDIS_URL` | unset | A `redis://` or `rediss://` URL: presence, sessions, quotas, rate limits, and `jti` claims are shared by every instance through Redis or Valkey. Requires `BLINDSIGNAL_DATABASE_URL`. Unset keeps them in memory, for one instance (ADR 0023). |
 | `BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS` | `60` | With `BLINDSIGNAL_REDIS_URL`, how often each instance rereads the stored registry, in case it missed another instance's reload (ADR 0024). |

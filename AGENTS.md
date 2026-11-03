@@ -19,6 +19,7 @@ server. Initial target: browser / PWA.
 - `docs/token-issuance.md`: what an application backend must do to issue accepted tokens.
 - `docs/external-testing.md`: the Compose workflow and the cross-network test setup (Phase 7).
 - `docs/turn-operations.md`: running Coturn for BlindSignal (Phase 8).
+- `docs/supabase.md`: Supabase as the PostgreSQL provider (Phase 9).
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
 raise it; do not silently diverge. A change that alters a documented contract updates the spec,
@@ -43,7 +44,8 @@ accepted registry in PostgreSQL (`adapters/storage/postgresql`, ADR 0020, ADR 00
 with `BLINDSIGNAL_REDIS_URL` set too, instances share coordination through Redis or Valkey
 (`adapters/coordination/redis`, ADR 0022, ADR 0023), and a registry reload reaches every
 instance (ADR 0024); a session whose peer's instance fails ends once the peer reconnects
-(ADR 0026). The workspace uses the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
+(ADR 0026). PostgreSQL works behind a transaction-mode pooler, such as Supabase's, and its tables
+hide from every role but their owner (ADR 0027). The workspace uses the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey). Do not add a tool outside those ADRs without a new ADR.
 
@@ -61,7 +63,7 @@ pnpm test             # Vitest across all packages
 pnpm test:coverage    # Vitest with V8 coverage and the floors below
 pnpm test:browser     # Playwright, Chromium and Firefox, against examples/browser-demo
 BLINDSIGNAL_TEST_TURN=1 pnpm test:browser  # also the relay tests, with the compose.yaml Coturn (Docker)
-BLINDSIGNAL_TEST_POSTGRES_URL=<url> pnpm test  # also the PostgreSQL adapter, with the compose.yaml PostgreSQL
+BLINDSIGNAL_TEST_POSTGRES_URL=<url> pnpm test  # also the PostgreSQL adapter, with the compose.yaml PostgreSQL (port 6432: through its PgBouncer)
 BLINDSIGNAL_TEST_REDIS_URL=<url> pnpm test     # also the Redis adapter and two server instances, with the compose.yaml Valkey
 BLINDSIGNAL_DATABASE_URL=<url> pnpm --filter @blindsignal/storage-postgresql migrate  # apply migrations
 pnpm format:check     # Prettier (pnpm format to fix)

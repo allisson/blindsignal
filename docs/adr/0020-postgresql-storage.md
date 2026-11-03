@@ -28,9 +28,9 @@ or the database, is decided when the server is wired to it.
   and returns how many. Durable adapters delete expired device records on a schedule (ADR 0012);
   the server calls it, so the schedule is the server's configuration, not each adapter's timer.
   The in-memory adapter implements it too.
-- **Advisory locks** use the key `(0x42534947, n)`: `n = 0` for migrations, `n = 1` for registry
-  writes (ADR 0025), `hashtext(app_id)` for device enrollment. A hash collision only makes two
-  operations take turns.
+- **Advisory locks** use the key `(0x42534947, n)`, always transaction-scoped (ADR 0027): `n = 0`
+  for migrations, `n = 1` for registry writes (ADR 0025), `hashtext(app_id)` for device
+  enrollment. A hash collision only makes two operations take turns.
 - **Testing:** one contract suite in `@blindsignal/core/testing` runs against the in-memory
   adapter on every `pnpm test` and against PostgreSQL when `BLINDSIGNAL_TEST_POSTGRES_URL` is set,
   each test in a schema of its own; tests of the PostgreSQL adapter alone cover concurrency and the

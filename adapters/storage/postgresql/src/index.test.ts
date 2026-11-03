@@ -34,6 +34,11 @@ async function isolated(): Promise<pg.Pool> {
   return pool;
 }
 
+async function currentSchema(pool: pg.Pool): Promise<string> {
+  const { rows } = await pool.query<{ schema: string }>('SELECT current_schema() AS schema');
+  return rows[0]!.schema;
+}
+
 async function adapter(): Promise<PostgreSQLStorageAdapter> {
   const pool = await isolated();
   await migrate(pool);
@@ -104,6 +109,40 @@ describe.skipIf(url === undefined)('PostgreSQL storage', () => {
     });
   });
 
+  it('lets no role but the owner read or write the tables (ADR 0027)', async () => {
+    const pool = await isolated();
+    const storage = new PostgreSQLStorageAdapter(pool);
+    await migrate(pool);
+    await storage.devices.touch(device('u1'), now, { maxDevices: 10, ttlMs: 60_000 });
+    // Stands for a role a provider's API runs as, with every privilege on the tables.
+    const role = `test_${randomUUID().replaceAll('-', '')}`;
+    await pool.query(`CREATE ROLE ${role} NOLOGIN`);
+    try {
+      await pool.query(`GRANT USAGE ON SCHEMA ${await currentSchema(pool)} TO ${role}`);
+      await pool.query(`GRANT ALL ON applications, devices, schema_migrations TO ${role}`);
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(`SET LOCAL ROLE ${role}`);
+        for (const table of ['applications', 'devices', 'schema_migrations']) {
+          const { rowCount } = await client.query(`SELECT 1 FROM ${table}`);
+          expect([table, rowCount]).toEqual([table, 0]);
+        }
+        await expect(
+          client.query(`INSERT INTO applications VALUES ('x', 'https://x.invalid', '{}')`),
+        ).rejects.toThrow('row-level security');
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+      }
+      const { rows } = await pool.query<{ n: number }>('SELECT count(*)::int AS n FROM devices');
+      expect(rows[0]?.n).toBe(1);
+    } finally {
+      await pool.query(`DROP OWNED BY ${role}`);
+      await pool.query(`DROP ROLE ${role}`);
+    }
+  });
+
   describe('migrate', () => {
     it('applies each migration once, also when runs overlap', async () => {
       const pool = await isolated();
@@ -115,6 +154,30 @@ describe.skipIf(url === undefined)('PostgreSQL storage', () => {
         'SELECT version FROM schema_migrations ORDER BY version',
       );
       expect(rows.map(({ version }) => version)).toEqual(versions);
+    });
+
+    it('applies a slow migration once when runs overlap on separate connections', async () => {
+      const schema = await createSchema();
+      // A pool per run, as separate migration commands would open.
+      const runners = [1, 2, 3, 4].map(() => {
+        const pool = new pg.Pool({ connectionString: url, options: `-c search_path=${schema}` });
+        pools.push(pool);
+        return pool;
+      });
+      const migrations = [
+        {
+          version: 1,
+          name: '0001_a.sql',
+          sql: 'CREATE TABLE a (id integer); SELECT pg_sleep(0.1)',
+        },
+        {
+          version: 2,
+          name: '0002_b.sql',
+          sql: 'CREATE TABLE b (id integer); SELECT pg_sleep(0.1)',
+        },
+      ];
+      const runs = await Promise.all(runners.map((pool) => migrate(pool, migrations)));
+      expect(runs.flat().sort()).toEqual([1, 2]);
     });
 
     it('rolls a failed migration back and applies nothing after it', async () => {
