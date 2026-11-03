@@ -23,8 +23,9 @@ Open `http://127.0.0.1:3000/?user=alice&device=laptop` and `http://127.0.0.1:300
 then press **Connect to bob/phone** in the first tab. The demo accepts every session request.
 
 `BLINDSIGNAL_DEMO_PORT` and `BLINDSIGNAL_DEMO_SIGNALING_URL` change the demo's port and the
-signaling server it uses. Add `&relay` to a page's URL to connect through TURN only
-(`iceTransportPolicy: 'relay'`); the signaling server must configure TURN (ADR 0017).
+signaling server it uses; `&server=<url>` picks another one for a single page. Add `&relay` to a
+page's URL to connect through TURN only (`iceTransportPolicy: 'relay'`); the signaling server must
+configure TURN (ADR 0017).
 
 ## Tests
 
@@ -32,6 +33,8 @@ signaling server it uses. Add `&relay` to a page's URL to connect through TURN o
 on their own ports. Install the browsers once with
 `pnpm --filter @blindsignal/browser-demo exec playwright install chromium firefox`.
 
-`BLINDSIGNAL_TEST_TURN=1 pnpm test:browser` also runs the relay test: it starts the Coturn of
-`compose.yaml` with Docker, on loopback, and gives the signaling server its test secret. CI runs
-it this way.
+`BLINDSIGNAL_TEST_TURN=1 pnpm test:browser` also runs the relay tests: it starts the Coturn of
+`compose.yaml` with Docker, on loopback, and three signaling servers with its test secret, each
+offering one TURN transport: UDP, TCP, and TLS. Chromium accepts the self-signed TLS certificate
+through `--ignore-certificate-errors`; Firefox has no such switch, so its TLS test is skipped. CI
+runs the suite this way.

@@ -13,7 +13,10 @@ const log = (line: string) =>
 const name = (peer: Pick<Peer, 'userId' | 'deviceId'>) => `${peer.userId}/${peer.deviceId}`;
 $('me').textContent = `${user}/${device}`;
 
-const { serverUrl } = (await (await fetch('/config')).json()) as { serverUrl: string };
+// `?server=<url>` picks another signaling server than the demo's own.
+const serverUrl =
+  params.get('server') ??
+  ((await (await fetch('/config')).json()) as { serverUrl: string }).serverUrl;
 const client = new BlindSignalClient({
   serverUrl,
   accessTokenProvider: async () => {

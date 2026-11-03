@@ -4,15 +4,22 @@ import { defineConfig, devices } from '@playwright/test';
 const signalingPort = 8787;
 const demoPort = 3787;
 const development = { BLINDSIGNAL_ENV: 'development' };
-// BLINDSIGNAL_TEST_TURN=1 starts the compose.yaml Coturn, with Docker, and hands its secret to the
-// signaling server; the relay test runs only then.
+// BLINDSIGNAL_TEST_TURN=1 starts the compose.yaml Coturn, with Docker, and one signaling server per
+// TURN transport, each offering only that URL; the relay tests run only then.
 const turn = !!process.env.BLINDSIGNAL_TEST_TURN;
-const turnEnv: Record<string, string> = turn
-  ? {
-      BLINDSIGNAL_TURN_URLS: 'turn:127.0.0.1:3478?transport=udp',
-      BLINDSIGNAL_TURN_SECRET: 'blindsignal-test-turn-secret-never-in-production',
-    }
-  : {};
+const turnUrls = {
+  [signalingPort]: 'turn:127.0.0.1:3478?transport=udp',
+  [signalingPort + 1]: 'turn:127.0.0.1:3478?transport=tcp',
+  [signalingPort + 2]: 'turns:localhost:5349?transport=tcp',
+};
+const turnEnv = (port: number): Record<string, string> =>
+  turn
+    ? {
+        BLINDSIGNAL_TURN_URLS: turnUrls[port]!,
+        BLINDSIGNAL_TURN_SECRET: 'blindsignal-test-turn-secret-never-in-production',
+      }
+    : {};
+const signalingPorts = turn ? Object.keys(turnUrls).map(Number) : [signalingPort];
 
 export default defineConfig({
   testDir: 'tests',
@@ -24,8 +31,14 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        // Host candidates as IPs: headless CI has no mDNS to resolve `.local` names.
-        launchOptions: { args: ['--disable-features=WebRtcHideLocalIpsWithMdns'] },
+        launchOptions: {
+          args: [
+            // Host candidates as IPs: headless CI has no mDNS to resolve `.local` names.
+            '--disable-features=WebRtcHideLocalIpsWithMdns',
+            // Accepts the test TURN server's self-signed certificate; the pages are plain HTTP.
+            '--ignore-certificate-errors',
+          ],
+        },
       },
     },
     {
@@ -55,18 +68,18 @@ export default defineConfig({
           },
         ]
       : []),
-    {
+    ...signalingPorts.map((port) => ({
       command: 'node ../../apps/server/src/main.ts',
-      url: `http://127.0.0.1:${signalingPort}/readyz`,
+      url: `http://127.0.0.1:${port}/readyz`,
       env: {
         ...development,
-        ...turnEnv,
-        BLINDSIGNAL_PORT: String(signalingPort),
+        ...turnEnv(port),
+        BLINDSIGNAL_PORT: String(port),
         BLINDSIGNAL_ADMIN_PORT: '0',
         BLINDSIGNAL_REGISTRY_PATH: '../registry.dev.json',
       },
       reuseExistingServer: !process.env.CI,
-    },
+    })),
     {
       command: 'node server.ts',
       url: `http://127.0.0.1:${demoPort}/config`,

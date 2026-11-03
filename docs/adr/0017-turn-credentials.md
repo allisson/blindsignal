@@ -46,8 +46,12 @@ call to another service on the authentication path.
   one machine reach it on loopback and relay between two addresses inside its container, so it
   needs no `allow-loopback-peers`; Firefox needs `media.peerconnection.ice.loopback` to reach it.
   The Playwright suite starts it with `BLINDSIGNAL_TEST_TURN=1`, as CI does, and uses it with
-  `iceTransportPolicy: 'relay'`. A TURN server reachable from other networks, for the
-  cross-network test, is set up only with the operator's explicit approval.
+  `iceTransportPolicy: 'relay'`, once per transport: a signaling server for each of UDP, TCP, and
+  TLS offers only that URL, so a relayed session proves the transport. TLS uses a self-signed
+  certificate the container makes at startup; Chromium accepts it with
+  `--ignore-certificate-errors`, and Firefox, which has no such switch, tests TLS only against a
+  TURN server with a trusted certificate, in the cross-network test. A TURN server reachable from
+  other networks, for that test, is set up only with the operator's explicit approval.
 - **Operating TURN** (the deployment guide): `denied-peer-ip` for private, loopback, link-local,
   and cloud metadata ranges, since a relay otherwise reaches the network that hosts it; never
   `allow-loopback-peers`; `turns:` on port 443 for networks that block everything

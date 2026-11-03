@@ -53,7 +53,7 @@ pnpm typecheck        # tsc --noEmit in every package
 pnpm test             # Vitest across all packages
 pnpm test:coverage    # Vitest with V8 coverage and the floors below
 pnpm test:browser     # Playwright, Chromium and Firefox, against examples/browser-demo
-BLINDSIGNAL_TEST_TURN=1 pnpm test:browser  # also the relay test, with the compose.yaml Coturn (Docker)
+BLINDSIGNAL_TEST_TURN=1 pnpm test:browser  # also the relay tests, with the compose.yaml Coturn (Docker)
 pnpm format:check     # Prettier (pnpm format to fix)
 pnpm build            # tsc in every package
 ```
