@@ -64,6 +64,17 @@ describe('TokenVerifier', () => {
     expect(result.ok && result.token.application.appId).toBe('notes');
   });
 
+  it('returns the permissions claim, when present, in the context (ADR 0040)', async () => {
+    const { verifier } = await setup();
+    const permissions = { 'notes:a': ['session.accept'] };
+    const token = await mintDevToken(
+      { ...identity, namespaces: ['notes:a', 'notes:b'], permissions },
+      { now },
+    );
+    const result = await verifier.verify(token);
+    expect(result.ok && result.token.context.permissions).toEqual(permissions);
+  });
+
   describe('rejects with invalid_token', () => {
     const cases: [string, Parameters<typeof mintDevToken>[0], Date?][] = [
       ['an unknown issuer', { ...identity, iss: 'https://unknown.example' }],
@@ -78,6 +89,15 @@ describe('TokenVerifier', () => {
       ['a malformed sub', { ...identity, sub: '' }],
       ['a malformed namespace', { ...identity, namespaces: ['not a namespace'] }],
       ['a namespace of another application', { ...identity, namespaces: ['other:a'] }],
+      [
+        'permissions for a namespace the token does not list',
+        { ...identity, namespaces: ['notes:a'], permissions: { 'notes:b': [] } },
+      ],
+      [
+        'an unknown permission',
+        { ...identity, namespaces: ['notes:a'], permissions: { 'notes:a': ['session.signal'] } },
+      ],
+      ['a permissions claim that is not a map', { ...identity, permissions: ['session.create'] }],
       [
         'a lifetime above the maximum',
         { ...identity, exp: Math.floor(now.getTime() / 1000) + 601 },

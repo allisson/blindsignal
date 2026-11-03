@@ -1335,6 +1335,89 @@ describe('Connection', () => {
       expect(await create(alice)).not.toBe(await create(alice));
     });
 
+    describe('session permissions (ADR 0040)', () => {
+      const oneSession = [{ ...devApplication('notes'), quotas: { sessionsPerDevice: 1 } }];
+      const requests = (client: Client) =>
+        client.sent.filter((message) => message.type === 'session.request');
+
+      async function members(alicePermissions?: object, bobPermissions?: object) {
+        const context = await setup(oneSession);
+        const alice = await member(context.connect, { ...d1, permissions: alicePermissions });
+        const bob = await member(context.connect, { ...bobClaims, permissions: bobPermissions });
+        return { ...context, alice, bob };
+      }
+
+      it('opens a session when both hold the listed permission', async () => {
+        const { alice, bob } = await members(
+          { 'notes:a': ['session.create'] },
+          { 'notes:a': ['session.accept'] },
+        );
+        const sessionId = await create(alice);
+        await bob.request('session.accept', { sessionId });
+        await settle();
+        expect(alice.last()).toEqual({
+          version: 1,
+          type: 'session.accepted',
+          payload: { sessionId },
+        });
+      });
+
+      it('refuses session.create without the permission, asking no one', async () => {
+        const { alice, bob } = await members({ 'notes:a': ['session.accept'] });
+        await alice.request('session.create', bobDevice);
+        await settle();
+        expect(alice.errors()).toEqual(['not_authorized']);
+        expect(requests(bob)).toEqual([]);
+      });
+
+      it('refuses session.create when the namespace lists no permission', async () => {
+        const { alice } = await members({ 'notes:a': [] });
+        await alice.request('session.create', bobDevice);
+        expect(alice.errors()).toEqual(['not_authorized']);
+      });
+
+      it('applies a namespace list to that namespace only', async () => {
+        const context = await setup(oneSession);
+        const alice = await member(context.connect, { ...d1, permissions: { 'notes:b': [] } }, [
+          'notes:a',
+          'notes:b',
+        ]);
+        await member(context.connect, bobClaims);
+        await create(alice);
+        expect(alice.errors()).toEqual([]);
+      });
+
+      it('rejects for a target without session.accept, which never sees the request', async () => {
+        const { alice, bob } = await members(undefined, { 'notes:a': ['session.create'] });
+        await alice.request('session.create', bobDevice);
+        await settle();
+        const [created, rejected] = alice.sent.slice(-2);
+        if (created?.type !== 'session.created') throw new Error(`no session: ${created?.type}`);
+        const { sessionId } = created.payload;
+        expect(rejected).toEqual({ version: 1, type: 'session.rejected', payload: { sessionId } });
+        expect(requests(bob)).toEqual([]);
+        // The rejection released the slots: the one-session quota allows another.
+        await alice.request('session.create', bobDevice);
+        await settle();
+        expect(alice.errors()).toEqual([]);
+        expect(alice.sent.filter((message) => message.type === 'session.created')).toHaveLength(2);
+      });
+
+      it('refuses session.accept once a refresh withdrew the permission', async () => {
+        const { alice, bob } = await members();
+        const sessionId = await create(alice);
+        await bob.refresh({
+          ...bobClaims,
+          namespaces: ['notes:a'],
+          permissions: { 'notes:a': ['session.create'] },
+        });
+        await bob.request('session.accept', { sessionId });
+        await settle();
+        expect(bob.errors()).toEqual(['not_authorized']);
+        expect(alice.sent.some((message) => message.type === 'session.accepted')).toBe(false);
+      });
+    });
+
     describe('session quotas', () => {
       const quotas = (q: object) => [{ ...devApplication('notes'), quotas: q }];
       const carolClaims = { sub: 'u3', device_id: 'd3' };

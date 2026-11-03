@@ -62,10 +62,18 @@ export interface DeviceRecord extends DeviceIdentity {
   readonly lastAuthenticatedAt: Date;
 }
 
+/** Session permissions a token may restrict per namespace (ADR 0040). */
+export type SessionPermission = 'session.create' | 'session.accept';
+
 /** What an authenticated connection is, replaced whole on every successful `auth.refresh`. */
 export interface ConnectionContext extends DeviceIdentity {
   /** The current token's `namespaces` claim (ADR 0007). */
   readonly namespaces: readonly string[];
+  /**
+   * The current token's `permissions` claim: a listed namespace grants only its permissions, an
+   * unlisted one grants both (ADR 0040).
+   */
+  readonly permissions?: Readonly<Record<string, readonly SessionPermission[]>>;
   readonly tokenExpiresAt: Date;
   readonly protocolVersion: number;
 }
