@@ -5,7 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/testing/storage.ts"
+    "./testing": "./src/testing/index.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

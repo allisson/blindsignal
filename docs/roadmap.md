@@ -431,10 +431,10 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Implement PostgreSQL adapter (`adapters/storage/postgresql`, `docs/adr/0020-postgresql-storage.md`).
 - [x] Validate migrations and schema (the contract suite and the migration runner's tests, against the `compose.yaml` PostgreSQL in CI).
 - [ ] Evaluate Supabase as an optional managed PostgreSQL provider.
-- [ ] Finalize `CoordinationAdapter`.
-- [ ] Implement Redis-compatible coordination.
-- [ ] Implement TTL-based presence leases.
-- [ ] Implement ownership and lease renewal.
+- [x] Finalize `CoordinationAdapter` (slots as leases, events as JSON delivered at most once, `docs/adr/0022-redis-coordination.md`).
+- [x] Implement Redis-compatible coordination (`adapters/coordination/redis`, `docs/adr/0022-redis-coordination.md`).
+- [x] Implement TTL-based presence leases (expiring in the server's clock, `docs/adr/0022-redis-coordination.md`).
+- [x] Implement ownership and lease renewal (releases by holder; connections renew presence and slots on every heartbeat, `docs/adr/0022-redis-coordination.md`).
 - [ ] Implement cross-instance signaling event propagation.
 - [ ] Implement cross-instance application suspension and revocation propagation, building on the Phase 3 single-instance handling.
 - [ ] Implement shared rate-limit, quota, and `jti` replay state across instances.

@@ -39,7 +39,9 @@ per-application usage metrics (ADR 0015), and abuse alerts with operator-driven 
 browsers relay through a test Coturn, the SDK closes a session that never connects (ADR 0018), and
 `docs/turn-operations.md` documents operating Coturn; see the roadmap's "After the MVP". Phase 9
 has started: with `BLINDSIGNAL_DATABASE_URL` set, the server keeps device records and the last
-accepted registry in PostgreSQL (`adapters/storage/postgresql`, ADR 0020, ADR 0021). The workspace uses the toolchain in
+accepted registry in PostgreSQL (`adapters/storage/postgresql`, ADR 0020, ADR 0021), and
+`adapters/coordination/redis` shares coordination through Redis or Valkey (ADR 0022), not yet
+wired to the server. The workspace uses the toolchain in
 `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
 `jose`, `ws`, Vitest, Playwright), extended for Phase 9 by `docs/adr/0019-persistence-dependencies.md`
 (`pg`, `redis`, Valkey). Do not add a tool outside those ADRs without a new ADR.
@@ -59,6 +61,7 @@ pnpm test:coverage    # Vitest with V8 coverage and the floors below
 pnpm test:browser     # Playwright, Chromium and Firefox, against examples/browser-demo
 BLINDSIGNAL_TEST_TURN=1 pnpm test:browser  # also the relay tests, with the compose.yaml Coturn (Docker)
 BLINDSIGNAL_TEST_POSTGRES_URL=<url> pnpm test  # also the PostgreSQL adapter, with the compose.yaml PostgreSQL
+BLINDSIGNAL_TEST_REDIS_URL=<url> pnpm test     # also the Redis adapter, with the compose.yaml Valkey
 BLINDSIGNAL_DATABASE_URL=<url> pnpm --filter @blindsignal/storage-postgresql migrate  # apply migrations
 pnpm format:check     # Prettier (pnpm format to fix)
 pnpm build            # tsc in every package

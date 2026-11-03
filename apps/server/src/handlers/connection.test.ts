@@ -530,6 +530,22 @@ describe('Connection', () => {
       expect(third.errors()).toEqual([]);
     });
 
+    it('renews the slot on every heartbeat, and frees it once heartbeats stop', async () => {
+      const { connect } = await setup(oneConnection);
+      const first = connect();
+      await first.authenticate();
+      await vi.advanceTimersByTimeAsync(LEASE_MS - 1_000);
+      await first.connection.heartbeat();
+      await vi.advanceTimersByTimeAsync(LEASE_MS - 1_000);
+      const second = connect();
+      await second.authenticate({ device_id: 'd2' });
+      expect(second.errors()).toEqual(['quota_exceeded']);
+      await vi.advanceTimersByTimeAsync(2_000);
+      const third = connect();
+      await third.authenticate({ device_id: 'd2' });
+      expect(third.errors()).toEqual([]);
+    });
+
     it('takes no slot for a token that fails verification', async () => {
       const { connect } = await setup(oneConnection);
       await connect().authenticate({ aud: 'other' });
@@ -1176,6 +1192,12 @@ describe('Connection', () => {
       ]);
     });
 
+    it('renews nothing on a heartbeat before authentication', async () => {
+      const { connect, coordination } = await setup();
+      await connect().connection.heartbeat();
+      expect(coordination.heldSlotKeys).toBe(0);
+    });
+
     it('renews the leases on every heartbeat', async () => {
       const { connect, coordination } = await setup();
       const alice = await joined(connect, d1, ['notes:a', 'notes:b']);
@@ -1329,6 +1351,20 @@ describe('Connection', () => {
         await create(alice);
         await vi.advanceTimersByTimeAsync(NEGOTIATION_MS);
         await create(alice);
+      });
+
+      it("renews a session's slots on every heartbeat, and frees them once heartbeats stop", async () => {
+        const { connect, alice } = await active(quotas({ sessions: 1 }));
+        const carol = await member(connect, carolClaims);
+        await vi.advanceTimersByTimeAsync(LEASE_MS - 1_000);
+        await alice.connection.heartbeat();
+        await vi.advanceTimersByTimeAsync(LEASE_MS - 1_000);
+        await member(connect, { sub: 'u4', device_id: 'd4' });
+        await carol.request('session.create', to('u4', 'd4'));
+        expect(carol.errors()).toEqual(['quota_exceeded']);
+        await vi.advanceTimersByTimeAsync(2_000);
+        await carol.request('session.create', to('u4', 'd4'));
+        expect(carol.last()?.type).toBe('session.created');
       });
 
       it('frees the slots of the sessions of a connection that closes', async () => {

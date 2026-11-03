@@ -20,7 +20,8 @@ Initial values are set through load testing (spec §8.2).
 | Server | Maximum message size | every frame |
 
 - **A session takes a slot from creation,** while still `pending`, for the application and for
-  both devices, and releases them when it ends. A target with no free slot gets the requester
+  both devices, and releases them when it ends; connections and sessions renew their slots on
+  every heartbeat, so a lost instance frees them (ADR 0022). A target with no free slot gets the requester
   `peer_unavailable`, like any unreachable target, so the target's load is not revealed and
   `session.accept` never fails on a quota.
 - **Exceeding a quota returns `quota_exceeded`** (retryable, no `retryAfterMs`: a slot frees when
