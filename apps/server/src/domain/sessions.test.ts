@@ -67,4 +67,22 @@ describe('SessionRegistry', () => {
     expect(onTimeout.mock.calls).toEqual([[limited]]);
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('counts sessions by application', () => {
+    const registry = new SessionRegistry();
+    const chat = { ...alice, appId: 'chat' };
+    const requester = { connectionId: 'c1', device: alice };
+    const target = { connectionId: 'c2', device: bob };
+    registry.create('notes:a', requester, target, 1_000, vi.fn());
+    const ended = registry.create('notes:a', requester, target, 1_000, vi.fn());
+    registry.create('chat:a', { connectionId: 'c3', device: chat }, target, 1_000, vi.fn());
+    registry.create('notes:b', requester, target, 1_000, vi.fn());
+    registry.end(ended.id);
+    expect(registry.byApplication()).toEqual(
+      new Map([
+        ['notes', 2],
+        ['chat', 1],
+      ]),
+    );
+  });
 });

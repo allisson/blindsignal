@@ -40,6 +40,16 @@ describe('Metrics', () => {
     expect(text).toContain('# TYPE blindsignal_registry_reloads_total counter\n');
     expect(text).toMatch(/# TYPE blindsignal_connections gauge\nblindsignal_connections 4\n$/);
   });
+
+  it('renders a labeled gauge with one series per value', () => {
+    const metrics = new Metrics();
+    const counts = new Map([['notes', 2]]);
+    metrics.labeledGauge('blindsignal_application_sessions', 'By app.', 'app_id', () => counts);
+    counts.set('chat', 1);
+    expect(metrics.render()).toMatch(
+      /# TYPE blindsignal_application_sessions gauge\nblindsignal_application_sessions\{app_id="notes"\} 2\nblindsignal_application_sessions\{app_id="chat"\} 1\n$/,
+    );
+  });
 });
 
 describe('serveMetrics', () => {

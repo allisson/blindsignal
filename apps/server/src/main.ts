@@ -73,6 +73,18 @@ async function main(): Promise<void> {
   });
   metrics.gauge('blindsignal_connections', 'Open WebSocket connections.', () => server.connections);
   metrics.gauge('blindsignal_sessions', 'Sessions pending or active.', () => sessions.size);
+  metrics.labeledGauge(
+    'blindsignal_application_connections',
+    'Authenticated connections, by application.',
+    'app_id',
+    () => server.connectionsByApplication(),
+  );
+  metrics.labeledGauge(
+    'blindsignal_application_sessions',
+    'Sessions pending or active, by application.',
+    'app_id',
+    () => sessions.byApplication(),
+  );
   const port = await server.listen(config.port);
   const admin = await serveMetrics(metrics, config.adminPort, config.adminHost);
   logger.log('info', 'server.listening', { port, adminPort: admin.port });

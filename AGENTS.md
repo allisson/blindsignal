@@ -32,8 +32,8 @@ MVP subsets of Phases 5 and 6 are complete too: namespace authorization from tok
 (ADR 0007), device revocation, and the quotas and rate limits of ADR 0011. Phase 7 is complete:
 browsers on separate networks connect through Cloudflare Quick Tunnels (`docs/external-testing.md`,
 `docs/connectivity-report.md`), which completes the MVP. Next are the post-MVP tasks of Phase 6,
-of which bounded queues and backpressure (ADR 0013) and the maximum session duration (ADR 0014)
-are done, then Phase 8 (TURN support); see the
+of which bounded queues and backpressure (ADR 0013), the maximum session duration (ADR 0014),
+and per-application usage metrics (ADR 0015) are done, then Phase 8 (TURN support); see the
 roadmap's "After the MVP". The workspace uses the toolchain in
 `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm workspaces, Zod 4,
 `jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a

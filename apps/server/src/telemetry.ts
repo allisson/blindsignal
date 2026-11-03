@@ -30,11 +30,17 @@ const COUNTERS = {
   blindsignal_registry_reloads_total: 'Registry reloads: ok or rejected.',
   blindsignal_overloaded_connections_total:
     'Connections closed with 1013, by the limit reached: queued_messages or buffered_bytes.',
+  blindsignal_application_messages_total:
+    'Valid client messages received from authenticated connections, by application.',
+  blindsignal_application_errors_total:
+    'error messages sent once the token is verified, by application and code.',
+  blindsignal_application_sessions_created_total: 'Sessions created, by application.',
 } as const;
 
 export type CounterName = keyof typeof COUNTERS;
 
-// Label values come from closed catalogs (message types, error codes), so cardinality is bounded.
+// Label values come from closed catalogs (message types, error codes) or the registry's
+// application IDs, so cardinality is bounded (ADR 0015).
 const escape = (value: string) =>
   value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('\n', '\\n');
 
@@ -45,12 +51,16 @@ const labelSet = (labels: Readonly<Record<string, string>>) => {
 
 /**
  * Process-local counters and gauges in the Prometheus text format.
- * shortcut: no OpenTelemetry and no per-application series; Phase 10 replaces this through an ADR,
- * and Phase 6 adds per-application usage metrics.
+ * shortcut: no OpenTelemetry; Phase 10 replaces this through an ADR.
  */
 export class Metrics {
   readonly #counters = new Map<CounterName, Map<string, number>>();
-  readonly #gauges: { name: string; help: string; read: () => number }[] = [];
+  readonly #gauges: {
+    name: string;
+    help: string;
+    read: () => number | ReadonlyMap<string, number>;
+    label?: string;
+  }[] = [];
 
   count(name: CounterName, labels: Readonly<Record<string, string>> = {}): void {
     const series = this.#counters.get(name) ?? new Map<string, number>();
@@ -64,6 +74,16 @@ export class Metrics {
     this.#gauges.push({ name, help, read });
   }
 
+  /** A gauge with one series per value of `label`, read when scraped. */
+  labeledGauge(
+    name: string,
+    help: string,
+    label: string,
+    read: () => ReadonlyMap<string, number>,
+  ): void {
+    this.#gauges.push({ name, help, read, label });
+  }
+
   render(): string {
     const lines: string[] = [];
     for (const [name, help] of Object.entries(COUNTERS)) {
@@ -72,8 +92,15 @@ export class Metrics {
         lines.push(`${name}${labels} ${value}`);
       }
     }
-    for (const { name, help, read } of this.#gauges) {
-      lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} gauge`, `${name} ${read()}`);
+    for (const { name, help, read, label } of this.#gauges) {
+      lines.push(`# HELP ${name} ${help}`, `# TYPE ${name} gauge`);
+      const value = read();
+      if (typeof value === 'number') lines.push(`${name} ${value}`);
+      else {
+        for (const [key, count] of value) {
+          lines.push(`${name}${labelSet({ [label as string]: key })} ${count}`);
+        }
+      }
     }
     return `${lines.join('\n')}\n`;
   }

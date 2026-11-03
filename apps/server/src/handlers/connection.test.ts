@@ -265,7 +265,22 @@ describe('Connection', () => {
       });
       await connect().authenticate();
       await connect().authenticate({ device_id: 'd2' });
-      expect(metrics.render()).toContain('blindsignal_errors_total{code="rate_limited"} 1');
+      const text = metrics.render();
+      expect(text).toContain('blindsignal_errors_total{code="rate_limited"} 1');
+      // Before the token is verified, the application is not known.
+      expect(text).not.toContain('blindsignal_application_errors_total{');
+    });
+
+    it('counts a rate_limited error by application once authenticated', async () => {
+      const { connect, metrics } = await setup(undefined, {
+        authenticationAttempts: { ratePerSecond: 1, burst: 1 },
+      });
+      const client = connect();
+      await client.authenticate();
+      await client.refresh();
+      expect(metrics.render()).toContain(
+        'blindsignal_application_errors_total{app_id="notes",code="rate_limited"} 1\n',
+      );
     });
   });
 
@@ -1633,6 +1648,7 @@ describe('Connection', () => {
       expect(deps.sessions.size).toBe(0);
       const text = metrics.render();
       expect(text).toContain('blindsignal_sessions_created_total 1\n');
+      expect(text).toContain('blindsignal_application_sessions_created_total{app_id="notes"} 1\n');
       expect(text).toContain('blindsignal_sessions_terminated_total{reason="closed_by_peer"} 1\n');
     });
 
@@ -1726,9 +1742,13 @@ describe('Connection', () => {
         'blindsignal_authentications_total{result="invalid_token"} 1',
         'blindsignal_errors_total{code="invalid_token"} 1',
         'blindsignal_errors_total{code="not_authorized"} 1',
+        // The authenticating message comes before the context; the bad token names no application.
+        'blindsignal_application_messages_total{app_id="notes"} 1',
+        'blindsignal_application_errors_total{app_id="notes",code="not_authorized"} 1',
       ]) {
         expect(text).toContain(`${line}\n`);
       }
+      expect(text).not.toMatch(/application_errors_total\{[^}]*invalid_token/);
     });
 
     it('counts an authentication refused by the device quota', async () => {
@@ -1737,8 +1757,10 @@ describe('Connection', () => {
       });
       await connect().authenticate();
       await connect().authenticate({ sub: 'u2', device_id: 'd2' });
-      expect(metrics.render()).toContain(
-        'blindsignal_authentications_total{result="quota_exceeded"} 1\n',
+      const text = metrics.render();
+      expect(text).toContain('blindsignal_authentications_total{result="quota_exceeded"} 1\n');
+      expect(text).toContain(
+        'blindsignal_application_errors_total{app_id="notes",code="quota_exceeded"} 1\n',
       );
     });
 
