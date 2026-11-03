@@ -29,8 +29,9 @@ Phase 4 (browser SDK and local WebRTC) is complete: `packages/sdk` authenticates
 discovers devices, and opens a DataChannel per session, and `examples/browser-demo` runs it in
 Chromium and Firefox under Playwright, against the Phase 3 signaling server in `apps/server`. The
 MVP subsets of Phases 5 and 6 are complete too: namespace authorization from token claims
-(ADR 0007), device revocation, and the quotas and rate limits of ADR 0011. Next is Phase 7
-(external network testing). The workspace uses the toolchain in `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm
+(ADR 0007), device revocation, and the quotas and rate limits of ADR 0011. Phase 7 is complete:
+browsers on separate networks connect through Cloudflare Quick Tunnels (`docs/external-testing.md`,
+`docs/connectivity-report.md`). Next is Phase 8 (TURN support). The workspace uses the toolchain in `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm
 workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a
 new ADR.
 

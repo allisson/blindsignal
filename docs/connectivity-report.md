@@ -37,3 +37,27 @@ Gaps, for a later run:
   are unknown: S3 may have paired IPv6 host candidates rather than STUN-derived ones, and
   STUN-based negotiation is not yet shown.
 - The `unknown` connection type was not checked before a candidate pair was selected.
+
+## Run 2 — 2026-11-03
+
+Closes run 1's gaps, with the same setup and new tunnel addresses. Browsers: Chrome
+156.0.8078.80 and Firefox on macOS (version not recorded), Chrome 156.0.8078.79 on Android.
+
+| ID | Device A | Device B | Signaling | DataChannel | Connection type | Notes |
+|---|---|---|---|---|---|---|
+| S3 | Chrome, macOS, home Wi-Fi | Chrome, Android, mobile data | Authenticated | Open | `unknown`, then `direct` | Selected pair `srflx` ↔ `srflx`, IPv4, UDP |
+| S3 | Firefox, macOS, home Wi-Fi | Chrome, Android, mobile data | Authenticated | Open; messages both ways | Not reported | — |
+
+Findings:
+
+- **STUN-based negotiation.** The peer connection's configuration held only
+  `stun:stun.cloudflare.com:3478`, which the demo does not pass to the SDK: it came in
+  `rtc.ice_config` (ADR 0009). The selected candidate pair, read with `getStats()`, was
+  server-reflexive on both ends, IPv4 over UDP: the path came from STUN, not from host
+  candidates. The macOS side gathered `host` candidates, their addresses hidden behind mDNS, and
+  one `srflx`; the Android side sent `srflx` IPv4, `host` IPv6, and `host` IPv4.
+- **Connection type.** Sampled every 20 ms, the demo showed `unknown` while connecting and `direct`
+  once a pair was selected, before the DataChannel opened.
+- **Firefox** opened a DataChannel to Chrome on Android across networks.
+- **Backgrounded mobile page.** The Android connection closed with `1006` twice and reconnected
+  once the page was in front again, as run 1's S2 and the guide's known limitations describe.
