@@ -108,6 +108,15 @@ const environment = z
     BLINDSIGNAL_PRESENCE_LEASE_SECONDS: seconds.positive().default(90),
     BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS: seconds.positive().default(30),
     BLINDSIGNAL_DEVICE_TTL_DAYS: seconds.positive().default(30),
+    BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS: seconds.positive().default(3600),
+    // Unset keeps storage in memory, for a single instance (ADR 0021).
+    BLINDSIGNAL_DATABASE_URL: z
+      .string()
+      .default('')
+      .refine((value) => value === '' || /^postgres(ql)?:\/\//.test(value), {
+        message: 'must be a postgres:// URL',
+      }),
+    BLINDSIGNAL_DATABASE_POOL_SIZE: count.default(10),
     // Before authentication, keyed by client IP or global; no application can override them.
     BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS: seconds.positive().default(10),
     BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: count.default(20),
@@ -189,6 +198,9 @@ export interface ServerConfig {
   readonly presenceLeaseMs: number;
   readonly negotiationTimeoutMs: number;
   readonly deviceTtlMs: number;
+  readonly deviceSweepIntervalMs: number;
+  /** Absent when storage stays in memory. */
+  readonly database?: { readonly url: string; readonly poolSize: number };
   readonly preAuthentication: PreAuthentication;
   readonly maxMessageBytes: number;
   readonly maxQueuedMessages: number;
@@ -254,6 +266,15 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       presenceLeaseMs: vars.BLINDSIGNAL_PRESENCE_LEASE_SECONDS * 1000,
       negotiationTimeoutMs: vars.BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS * 1000,
       deviceTtlMs: vars.BLINDSIGNAL_DEVICE_TTL_DAYS * 86_400_000,
+      deviceSweepIntervalMs: vars.BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS * 1000,
+      ...(vars.BLINDSIGNAL_DATABASE_URL === ''
+        ? {}
+        : {
+            database: {
+              url: vars.BLINDSIGNAL_DATABASE_URL,
+              poolSize: vars.BLINDSIGNAL_DATABASE_POOL_SIZE,
+            },
+          }),
       preAuthentication: {
         authenticationTimeoutMs: vars.BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS * 1000,
         maxUnauthenticatedPerIp: vars.BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP,

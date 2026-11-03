@@ -1,7 +1,7 @@
 # BlindSignal server
 
-The signaling server: WebSocket on `node:http` (ADR 0001), in-memory adapters, and the registry
-file as control plane (ADR 0005). It runs its TypeScript sources through Node's type stripping, in
+The signaling server: WebSocket on `node:http` (ADR 0001), in-memory or PostgreSQL storage
+(ADR 0021), and the registry file as control plane (ADR 0005). It runs its TypeScript sources through Node's type stripping, in
 development and in the container image alike.
 
 ## Running
@@ -52,6 +52,9 @@ names the variable, never its value.
 | `BLINDSIGNAL_PRESENCE_LEASE_SECONDS` | `90` | Presence lease, renewed on every answered ping. |
 | `BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS` | `30` | How long a session may stay `pending`. |
 | `BLINDSIGNAL_DEVICE_TTL_DAYS` | `30` | A device record not seen for this long stops counting toward the quota. |
+| `BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS` | `3600` | How often expired device records are deleted (ADR 0012). |
+| `BLINDSIGNAL_DATABASE_URL` | unset | A `postgres://` URL: device records and the last accepted registry go to PostgreSQL, shared by every instance. Unset keeps them in memory, for one instance (ADR 0021). |
+| `BLINDSIGNAL_DATABASE_POOL_SIZE` | `10` | Connections in the PostgreSQL pool. |
 | `BLINDSIGNAL_MAX_MESSAGE_BYTES` | `65536` | Maximum message size in UTF-8 bytes, at most `65536` (docs/protocol.md §1). |
 | `BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS` | `10` | A connection not authenticated this long after it opened is closed with `1008`. |
 | `BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP` | `20` | Concurrent unauthenticated connections per client IP; more get HTTP `429` at the upgrade. |
@@ -92,6 +95,22 @@ message above a limit gets `rate_limited` with `retryAfterMs` and is dropped; th
 open. A connection reads its application's limits at `auth.authenticate` and each `auth.refresh`,
 so a reloaded registry's limits apply from its next refresh.
 
+## PostgreSQL
+
+Apply the migrations before each release, with the same `BLINDSIGNAL_DATABASE_URL`; the server
+refuses to start on a schema behind its release (ADR 0019):
+
+```sh
+BLINDSIGNAL_DATABASE_URL=postgres://... pnpm --filter @blindsignal/storage-postgresql migrate
+# In the container image:
+docker run --rm -e BLINDSIGNAL_DATABASE_URL blindsignal node adapters/storage/postgresql/src/migrate-command.ts
+```
+
+The registry file stays the control plane. At startup and on `SIGHUP` it is checked against the
+registry stored by any instance, so a revoked application cannot be reactivated after a restart
+or by another instance (ADR 0021). With the database down, authentications and `auth.refresh`
+get `server_error` and reconnect with backoff, and reloads are rejected.
+
 ## Signals
 
 - `SIGHUP` reloads the registry file, all or nothing, and closes the connections of suspended,
@@ -106,6 +125,8 @@ Logs are one JSON object per line on stdout, with `time`, `level`, and `event`, 
 connection ID, application ID, client IP, or error code where they apply. They never carry tokens,
 secrets, payloads, `sub`, or `device_id`. The server keeps no logs itself; keep those with a
 client IP (`connection.opened`) for at most 14 days (`docs/adr/0012-metadata-retention.md`).
+Storage logs `storage.ready`, `storage.connection_lost`, `connection.failed` (with the error's
+SQLSTATE or name), `devices.expired`, and `devices.sweep_failed` (ADR 0021).
 
 `GET /metrics` on the admin port serves process-local counters and gauges in the Prometheus text
 format: messages by type, authentications by result, errors by code, sessions created and

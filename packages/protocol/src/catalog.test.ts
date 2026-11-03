@@ -28,12 +28,13 @@ describe('error catalog', () => {
     ['malformed_frame', 4002],
     ['device_revoked', 4002],
     ['superseded', 4003],
+    ['server_error', 4001],
   ] as [ErrorCode, number][])('%s closes with %i', (code, closeCode) => {
     expect(closeCodeFor(code)).toBe(closeCode);
   });
 
   it('classifies every code', () => {
-    expect(Object.keys(errorClasses)).toHaveLength(17);
+    expect(Object.keys(errorClasses)).toHaveLength(18);
   });
 });
 

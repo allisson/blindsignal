@@ -1,16 +1,21 @@
 import { readFile } from 'node:fs/promises';
 import { InMemoryCoordinationAdapter } from '@blindsignal/coordination-memory';
+import type { StorageAdapter } from '@blindsignal/core';
 import {
   InMemoryApplicationRepository,
   InMemoryDeviceRepository,
 } from '@blindsignal/storage-memory';
+import { openPostgreSQLStorage } from '@blindsignal/storage-postgresql';
 import { loadConfig } from './config.ts';
 import { TokenVerifier } from './domain/auth.ts';
 import {
   parseRegistry,
+  storedRegistry,
   type ParseRegistryOptions,
+  type Registry,
   type RegistryResult,
 } from './domain/registry.ts';
+import { sweepDevices } from './domain/retention.ts';
 import { AbuseMonitor } from './domain/abuse.ts';
 import { SessionRegistry } from './domain/sessions.ts';
 import { SignalingServer } from './server.ts';
@@ -37,12 +42,37 @@ async function main(): Promise<void> {
   const startedAt = new Date();
   const { registryPath, development } = config;
 
-  const initial = await readRegistry(registryPath, { now: startedAt, development });
+  // Token verification reads the registry from this copy, never from the database (ADR 0021).
+  const applications = new InMemoryApplicationRepository();
+  let storage: StorageAdapter = { applications, devices: new InMemoryDeviceRepository() };
+  let closeStorage = () => Promise.resolve();
+  if (config.database !== undefined) {
+    const postgres = openPostgreSQLStorage({
+      ...config.database,
+      onError: () => logger.log('warn', 'storage.connection_lost'),
+    });
+    await postgres.checkSchema();
+    storage = postgres.storage;
+    closeStorage = () => postgres.end();
+  }
+  logger.log('info', 'storage.ready', {
+    storage: config.database === undefined ? 'memory' : 'postgresql',
+  });
+  // Stored first: a registry that cannot be stored is not installed.
+  const install = async (next: Registry) => {
+    await storage.applications.replaceAll(next.applications);
+    if (storage.applications !== applications) await applications.replaceAll(next.applications);
+  };
+
+  const initial = await readRegistry(registryPath, {
+    now: startedAt,
+    previous: await storedRegistry(storage.applications),
+    development,
+  });
   if (!initial.ok) throw new Error(`invalid registry: ${initial.error}`);
   let registry = initial.registry;
+  await install(registry);
 
-  const applications = new InMemoryApplicationRepository();
-  await applications.replaceAll(registry.applications);
   const coordination = new InMemoryCoordinationAdapter();
   const sessions = new SessionRegistry();
   const metrics = new Metrics();
@@ -54,7 +84,7 @@ async function main(): Promise<void> {
     coordination,
     connection: {
       verifier: new TokenVerifier({ applications, coordination, startedAt, ...config.token }),
-      devices: new InMemoryDeviceRepository(),
+      devices: storage.devices,
       coordination,
       sessions,
       iceServers: config.iceServers.map(({ urls }) => ({ urls: [...urls] })),
@@ -92,20 +122,31 @@ async function main(): Promise<void> {
   const admin = await serveMetrics(metrics, config.adminPort, config.adminHost);
   logger.log('info', 'server.listening', { port, adminPort: admin.port });
 
+  const stopSweep = sweepDevices(
+    storage.devices,
+    { intervalMs: config.deviceSweepIntervalMs, ttlMs: config.deviceTtlMs },
+    logger,
+  );
+
   // All or nothing: a rejected reload keeps the current registry (ADR 0005).
   const reload = async () => {
-    const next = await readRegistry(registryPath, {
-      now: new Date(),
-      previous: registry,
-      development,
-    });
+    let next: RegistryResult;
+    try {
+      next = await readRegistry(registryPath, {
+        now: new Date(),
+        previous: await storedRegistry(storage.applications, registry),
+        development,
+      });
+      if (next.ok) await install(next.registry);
+    } catch {
+      next = { ok: false, error: 'the registry could not be read from or written to storage' };
+    }
     metrics.count('blindsignal_registry_reloads_total', { result: next.ok ? 'ok' : 'rejected' });
     if (!next.ok) {
       logger.log('warn', 'registry.reload_rejected', { reason: next.error });
       return;
     }
     registry = next.registry;
-    await applications.replaceAll(registry.applications);
     await server.enforce(registry.applications);
     logger.log('info', 'registry.reloaded', { applications: registry.applications.length });
   };
@@ -119,6 +160,8 @@ async function main(): Promise<void> {
     logger.log('info', 'server.draining');
     await server.drain();
     await server.close();
+    stopSweep();
+    await closeStorage();
     admin.server.close();
   };
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {

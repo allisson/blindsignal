@@ -6,18 +6,29 @@ import { pathToFileURL } from 'node:url';
 import { describeStorageContract } from '@blindsignal/core/testing';
 import pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
-import { loadMigrations, migrate, PostgreSQLStorageAdapter } from './index.ts';
+import {
+  loadMigrations,
+  migrate,
+  openPostgreSQLStorage,
+  PostgreSQLStorageAdapter,
+  schemaVersion,
+} from './index.ts';
 
 // Runs only against a database: `docker compose --profile postgres up --wait postgres` (ADR 0019).
 const url = process.env.BLINDSIGNAL_TEST_POSTGRES_URL;
 const pools: pg.Pool[] = [];
 
-/** A pool on a schema of its own, so tests never see each other's rows. */
-async function isolated(): Promise<pg.Pool> {
+async function createSchema(): Promise<string> {
   const schema = `test_${randomUUID().replaceAll('-', '')}`;
   const admin = new pg.Pool({ connectionString: url, max: 1 });
   await admin.query(`CREATE SCHEMA ${schema}`);
   await admin.end();
+  return schema;
+}
+
+/** A pool on a schema of its own, so tests never see each other's rows. */
+async function isolated(): Promise<pg.Pool> {
+  const schema = await createSchema();
   const pool = new pg.Pool({ connectionString: url, options: `-c search_path=${schema}` });
   pools.push(pool);
   return pool;
@@ -59,6 +70,38 @@ describe.skipIf(url === undefined)('PostgreSQL storage', () => {
     expect(results.every((result) => result.ok)).toBe(true);
     const { rows } = await pool.query('SELECT count(*)::integer AS count FROM devices');
     expect(rows).toEqual([{ count: 1 }]);
+  });
+
+  describe('openPostgreSQLStorage', () => {
+    it('refuses a schema behind the migrations, then accepts it migrated', async () => {
+      const schema = await createSchema();
+      const options = encodeURIComponent(`-c search_path=${schema}`);
+      const opened = openPostgreSQLStorage({
+        url: `${url}?options=${options}`,
+        poolSize: 2,
+        onError: () => undefined,
+      });
+      try {
+        const required = (await loadMigrations()).at(-1)?.version;
+        await expect(opened.checkSchema()).rejects.toThrow(
+          `the database schema is at version 0 and this release needs ${required}`,
+        );
+        const pool = new pg.Pool({ connectionString: `${url}?options=${options}`, max: 1 });
+        pools.push(pool);
+        await migrate(pool);
+        await expect(opened.checkSchema()).resolves.toBeUndefined();
+        await opened.storage.applications.replaceAll([]);
+      } finally {
+        await opened.end();
+      }
+    });
+
+    it('reports the schema version', async () => {
+      const pool = await isolated();
+      expect(await schemaVersion(pool)).toBe(0);
+      await migrate(pool, [{ version: 1, name: '0001_a.sql', sql: 'SELECT 1' }]);
+      expect(await schemaVersion(pool)).toBe(1);
+    });
   });
 
   describe('migrate', () => {

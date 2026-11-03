@@ -37,6 +37,16 @@ export function describeStorageContract(name: string, create: () => Promise<Stor
       expect(await applications.getByIssuer('https://vault.example')).toBeUndefined();
     });
 
+    it('lists every application', async () => {
+      const { applications } = await create();
+      expect(await applications.getAll()).toEqual([]);
+      const notes = application('notes', 'https://notes.example');
+      const vault = application('vault', 'https://vault.example');
+      await applications.replaceAll([notes, vault]);
+      const all = [...(await applications.getAll())].sort((a, b) => a.appId.localeCompare(b.appId));
+      expect(all).toEqual([notes, vault]);
+    });
+
     it('replaces the whole registry', async () => {
       const { applications } = await create();
       await applications.replaceAll([application('notes', 'https://notes.example')]);
@@ -46,6 +56,7 @@ export function describeStorageContract(name: string, create: () => Promise<Stor
       expect(await applications.getByIssuer('https://vault.example')).toBeDefined();
       await applications.replaceAll([]);
       expect(await applications.getById('vault')).toBeUndefined();
+      expect(await applications.getAll()).toEqual([]);
     });
   });
 

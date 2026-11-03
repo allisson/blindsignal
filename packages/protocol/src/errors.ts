@@ -19,6 +19,7 @@ export const errorClasses = {
   application_unavailable: 'terminal',
   device_revoked: 'terminal',
   superseded: 'superseded',
+  server_error: 'retryable',
 } as const satisfies Record<string, ErrorClass>;
 
 export type ErrorCode = keyof typeof errorClasses;

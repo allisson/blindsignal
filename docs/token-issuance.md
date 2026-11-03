@@ -122,6 +122,7 @@ The client sees these codes on `auth.authenticate` (`docs/protocol.md` §9):
 | `token_expired`           | Expired on arrival: check the backend clock and that tokens are not cached. |
 | `application_unavailable` | The application is suspended or revoked in the registry.                    |
 | `device_revoked`          | The operator revoked this user's device.                                    |
+| `server_error`            | Not the token: the server failed, and the SDK retries with backoff.          |
 
 The server never says which check failed, so an attacker learns nothing from the code. To debug,
 compare the token against the tables above.

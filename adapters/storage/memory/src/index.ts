@@ -26,6 +26,10 @@ export class InMemoryApplicationRepository implements ApplicationRepository {
   getByIssuer(issuer: string): Promise<ApplicationRecord | undefined> {
     return Promise.resolve(this.#byIssuer.get(issuer));
   }
+
+  getAll(): Promise<readonly ApplicationRecord[]> {
+    return Promise.resolve([...this.#byId.values()]);
+  }
 }
 
 /** Single-instance only: state lives in this process and is lost on restart (ADR 0010). */

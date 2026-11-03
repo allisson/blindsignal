@@ -1,4 +1,4 @@
-import type { ApplicationRecord, IssuerKeys } from '@blindsignal/core';
+import type { ApplicationRecord, ApplicationRepository, IssuerKeys } from '@blindsignal/core';
 import { appId, deviceId, userId } from '@blindsignal/protocol';
 import { z } from 'zod';
 
@@ -93,6 +93,20 @@ export interface Registry {
   readonly applications: readonly ApplicationRecord[];
   /** Every application seen revoked in this process, removed ones included. */
   readonly revoked: ReadonlySet<string>;
+}
+
+/**
+ * What a load is checked against: the stored registry, which another instance or an earlier
+ * process may have written, plus every application this process saw revoked (ADR 0021).
+ */
+export async function storedRegistry(
+  applications: Pick<ApplicationRepository, 'getAll'>,
+  current?: Registry,
+): Promise<Registry> {
+  const stored = await applications.getAll();
+  const revoked = new Set(current?.revoked);
+  for (const app of stored) if (app.status === 'revoked') revoked.add(app.appId);
+  return { applications: stored, revoked };
 }
 
 export type RegistryResult =

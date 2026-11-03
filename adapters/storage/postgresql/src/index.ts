@@ -6,10 +6,43 @@ import type {
   DeviceTouchResult,
   StorageAdapter,
 } from '@blindsignal/core';
-import type { Pool, PoolClient } from 'pg';
-import { LOCK_CLASS } from './migrate.ts';
+import pg, { type Pool, type PoolClient } from 'pg';
+import { loadMigrations, LOCK_CLASS, schemaVersion } from './migrate.ts';
 
-export { loadMigrations, migrate, type Migration } from './migrate.ts';
+export { loadMigrations, migrate, schemaVersion, type Migration } from './migrate.ts';
+
+export interface PostgreSQLStorage {
+  readonly storage: PostgreSQLStorageAdapter;
+  /** Rejects when the schema is behind this release's migrations (ADR 0019). */
+  checkSchema(): Promise<void>;
+  end(): Promise<void>;
+}
+
+/**
+ * Opens a pool for the server. `onError` receives the errors of idle connections, which would
+ * otherwise end the process.
+ */
+export function openPostgreSQLStorage(options: {
+  readonly url: string;
+  readonly poolSize: number;
+  readonly onError: (error: Error) => void;
+}): PostgreSQLStorage {
+  const pool = new pg.Pool({ connectionString: options.url, max: options.poolSize });
+  pool.on('error', options.onError);
+  return {
+    storage: new PostgreSQLStorageAdapter(pool),
+    async checkSchema() {
+      const [current, migrations] = await Promise.all([schemaVersion(pool), loadMigrations()]);
+      const required = migrations.at(-1)?.version ?? 0;
+      if (current < required) {
+        throw new Error(
+          `the database schema is at version ${current} and this release needs ${required}: run the migrate command`,
+        );
+      }
+    },
+    end: () => pool.end(),
+  };
+}
 
 /** Durable storage on PostgreSQL (spec §10.1, ADR 0019); the schema comes from `migrate`. */
 export class PostgreSQLStorageAdapter implements StorageAdapter {
@@ -75,6 +108,13 @@ export class PostgreSQLApplicationRepository implements ApplicationRepository {
 
   getByIssuer(issuer: string): Promise<ApplicationRecord | undefined> {
     return this.#getBy('issuer', issuer);
+  }
+
+  async getAll(): Promise<readonly ApplicationRecord[]> {
+    const { rows } = await this.#pool.query<{ record: StoredApplication }>(
+      'SELECT record FROM applications',
+    );
+    return rows.map((row) => hydrate(row.record));
   }
 
   async #getBy(column: 'app_id' | 'issuer', value: string) {

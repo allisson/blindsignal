@@ -9,6 +9,7 @@ COPY apps/server/package.json apps/server/
 COPY packages/protocol/package.json packages/protocol/
 COPY packages/core/package.json packages/core/
 COPY adapters/storage/memory/package.json adapters/storage/memory/
+COPY adapters/storage/postgresql/package.json adapters/storage/postgresql/
 COPY adapters/coordination/memory/package.json adapters/coordination/memory/
 RUN pnpm install --frozen-lockfile --prod --filter '@blindsignal/server...'
 
@@ -19,10 +20,13 @@ COPY --from=deps /app ./
 COPY packages/protocol/src packages/protocol/src
 COPY packages/core/src packages/core/src
 COPY adapters/storage/memory/src adapters/storage/memory/src
+COPY adapters/storage/postgresql/src adapters/storage/postgresql/src
 COPY adapters/coordination/memory/src adapters/coordination/memory/src
 COPY apps/server/src apps/server/src
 USER node
 # Signaling (health and readiness included) and the admin port with /metrics.
 EXPOSE 8080 9090
 HEALTHCHECK CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.BLINDSIGNAL_PORT ?? 8080}/healthz`).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+# Migrations run before a release with this image and BLINDSIGNAL_DATABASE_URL (ADR 0019):
+# node adapters/storage/postgresql/src/migrate-command.ts
 CMD ["node", "apps/server/src/main.ts"]

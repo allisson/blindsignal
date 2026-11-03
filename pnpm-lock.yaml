@@ -227,6 +227,9 @@ importers:
       '@blindsignal/storage-memory':
         specifier: workspace:*
         version: link:../../adapters/storage/memory
+      '@blindsignal/storage-postgresql':
+        specifier: workspace:*
+        version: link:../../adapters/storage/postgresql
       jose:
         specifier: ^6.2.14
         version: 6.2.14

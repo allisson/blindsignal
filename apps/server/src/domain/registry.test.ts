@@ -5,7 +5,13 @@ import {
   devApplication,
   DEV_ISSUER_ORIGIN as ISSUER_ORIGIN,
 } from '@blindsignal/dev-issuer';
-import { DEV_ISSUER_ORIGIN, DEV_PUBLIC_KEY_X, parseRegistry, type Registry } from './registry.ts';
+import {
+  DEV_ISSUER_ORIGIN,
+  DEV_PUBLIC_KEY_X,
+  parseRegistry,
+  storedRegistry,
+  type Registry,
+} from './registry.ts';
 
 const t0 = new Date('2026-11-01T00:00:00Z');
 const t1 = new Date('2026-11-02T00:00:00Z');
@@ -233,5 +239,29 @@ describe('parseRegistry and the dev issuer', () => {
     expect(JSON.parse(text)).toEqual({ applications: [devApplication('notes')] });
     expect(parseRegistry(text, { now: t0, development: true }).ok).toBe(true);
     expect(parseRegistry(text, { now: t0 }).ok).toBe(false);
+  });
+});
+
+describe('storedRegistry', () => {
+  const stored = (...entries: object[]) => {
+    const { applications } = load(file(...entries));
+    return { getAll: () => Promise.resolve(applications) };
+  };
+
+  it('keeps stored dates and refuses to reactivate an application stored as revoked', async () => {
+    const previous = await storedRegistry(
+      stored(app(), app({ appId: 'vault', issuer: 'https://vault.example', status: 'revoked' })),
+    );
+    expect(load(file(app()), t1, previous).applications[0]?.createdAt).toEqual(t0);
+    expect(error(file(app({ appId: 'vault', issuer: 'https://vault.example' })), previous)).toBe(
+      'vault: a revoked application cannot be reactivated',
+    );
+  });
+
+  it("adds the process's revoked applications, removed ones included", async () => {
+    const current = load(file(app({ status: 'revoked' })));
+    const previous = await storedRegistry(stored(), current);
+    expect(previous.applications).toEqual([]);
+    expect(error(file(app()), previous)).toBe('notes: a revoked application cannot be reactivated');
   });
 });

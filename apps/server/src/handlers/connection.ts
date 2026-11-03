@@ -226,6 +226,7 @@ export class Connection {
     this.#backpressure();
     return (this.#queue = this.#queue
       .then(() => (this.#closed ? undefined : task()))
+      .catch((error: unknown) => this.#failed(error))
       .finally(() => {
         this.#pending--;
         this.#backpressure();
@@ -716,6 +717,21 @@ export class Connection {
    * Sends `error`, then closes with the code's class when `close` is set or the code is terminal
    * (docs/protocol.md §9).
    */
+  /**
+   * A task rejected, such as when storage is unreachable: the connection closes with
+   * `server_error`, and the queue keeps running for the tasks already in it (ADR 0021).
+   */
+  #failed(error: unknown): void {
+    // The SQLSTATE or the error's name only: a driver's message may quote values.
+    const code = (error as { code?: unknown } | undefined)?.code;
+    this.#deps.logger.log('error', 'connection.failed', {
+      connectionId: this.id,
+      appId: this.#context?.appId,
+      reason: typeof code === 'string' ? code : error instanceof Error ? error.name : 'unknown',
+    });
+    if (!this.#closed) this.#error('server_error', undefined, true);
+  }
+
   #error(code: ErrorCode, requestId?: string, close = false): void {
     this.#send({
       type: 'error',
