@@ -1,0 +1,7 @@
+# The image's base is pinned by digest (ADR 0033); this proposes its updates.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

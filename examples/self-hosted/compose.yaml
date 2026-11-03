@@ -28,6 +28,10 @@ services:
     restart: unless-stopped
     # Every BLINDSIGNAL_* variable set in .env reaches the server (apps/server/README.md).
     env_file: .env
+    # It writes nothing to disk and needs no capability (ADR 0033).
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     environment:
       BLINDSIGNAL_REGISTRY_PATH: /etc/blindsignal/registry.json
       BLINDSIGNAL_DATABASE_URL: postgres://blindsignal:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/blindsignal
@@ -51,6 +55,9 @@ services:
     build:
       context: ../..
     command: [node, adapters/storage/postgresql/src/migrate-command.ts]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     environment:
       BLINDSIGNAL_DATABASE_URL: postgres://blindsignal:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/blindsignal
     networks: [data]
