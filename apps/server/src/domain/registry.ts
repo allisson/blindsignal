@@ -68,6 +68,7 @@ const applicationEntry = z
       .partial()
       .default({}),
     revokedDevices: z.array(z.strictObject({ userId, deviceId })).default([]),
+    requireProofOfPossession: z.boolean().optional(),
   })
   .refine((entry) => (entry.jwksUri === undefined) !== (entry.publicKeys === undefined), {
     message: 'set exactly one of jwksUri and publicKeys',

@@ -39,6 +39,16 @@ describe('parseClientMessage', () => {
     });
   });
 
+  it('keeps an optional proof on auth messages, never an empty one (ADR 0041)', () => {
+    const result = parseClientMessage(client('auth.refresh', { token: 't', proof: 'p' }));
+    expect(result.ok && result.message.payload).toEqual({ token: 't', proof: 'p' });
+    expect(parseClientMessage(client('auth.authenticate', { token: 't', proof: '' }))).toEqual({
+      ok: false,
+      code: 'invalid_message',
+      requestId: 'r-1',
+    });
+  });
+
   it('rejects a message above the size limit', () => {
     const big = client('auth.authenticate', { token: 'x'.repeat(MAX_MESSAGE_BYTES) });
     expect(parseClientMessage(big)).toEqual({ ok: false, code: 'message_too_large' });

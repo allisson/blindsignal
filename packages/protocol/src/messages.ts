@@ -14,7 +14,8 @@ interface MessageSpec {
 }
 
 const empty = z.object({});
-const token = z.object({ token: z.string().min(1) });
+// `proof` proves the device holds the key the token is bound to (ADR 0041).
+const token = z.object({ token: z.string().min(1), proof: z.string().min(1).optional() });
 const namespace = z.object({ namespace: namespaceId });
 const session = z.object({ sessionId });
 const device = { namespace: namespaceId, userId, deviceId };
@@ -29,6 +30,7 @@ export const terminationReasons = [
 
 // Message catalog, from docs/protocol.md §3 and §4. Unknown payload keys are stripped.
 export const messages = {
+  'auth.challenge': { direction: 'server', payload: z.object({ nonce: z.string().min(1) }) },
   'auth.authenticate': { direction: 'client', payload: token, reply: 'auth.result' },
   'auth.refresh': { direction: 'client', payload: token, reply: 'auth.result' },
   'auth.result': {

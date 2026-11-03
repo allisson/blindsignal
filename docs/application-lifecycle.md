@@ -38,6 +38,12 @@ must do is in `docs/token-issuance.md`, and its keys in `docs/secrets-and-keys.m
    `blindsignal_application_*` series on `/metrics` show its first authentication. A rejection
    reaches the client as one code, and `docs/token-issuance.md#rejections` lists what to check.
 
+To require device proof-of-possession for an application once its backend binds every token with
+`cnf.jkt` (`docs/token-issuance.md#proof-of-possession`), add `"requireProofOfPossession": true`
+to its entry and apply the change. A client connected with an unbound token keeps its connection
+until that token expires, since a refresh can neither add the binding (`identity_mismatch`) nor
+stay unbound (`invalid_token`); it then reconnects with a bound token.
+
 ## Applying a registry change
 
 The server reads the file at startup and on `SIGHUP`. A reload is all or nothing: an invalid file

@@ -188,6 +188,8 @@ export class Connection {
   readonly #joined = new Map<string, () => Promise<void>>();
   /** This connection's copy of its sessions; the peer's connection keeps its own. */
   readonly #sessions = new SessionRegistry();
+  /** What a proof of possession signs on this connection (ADR 0041). */
+  readonly #nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url');
 
   constructor(port: ConnectionPort, deps: ConnectionDependencies, id = crypto.randomUUID()) {
     this.id = id;
@@ -199,6 +201,11 @@ export class Connection {
       () => void this.#enqueue(() => Promise.resolve(this.#missedDeadline())),
       deps.authenticationTimeoutMs,
     );
+  }
+
+  /** Sends the nonce a proof of possession signs; the transport calls it once, on open. */
+  challenge(): void {
+    this.#send({ type: 'auth.challenge', payload: { nonce: this.#nonce } });
   }
 
   /** The authenticated context, or undefined before `auth.authenticate` succeeds. */
@@ -385,7 +392,10 @@ export class Connection {
     const { requestId } = message;
     const started = performance.now();
     if (!(await this.#allowAuthentication(requestId))) return;
-    const verified = await this.#deps.verifier.verify(message.payload.token);
+    const verified = await this.#deps.verifier.verify(
+      message.payload.token,
+      this.#possession(message),
+    );
     if (!verified.ok) return this.#rejectAuthentication(verified.code, requestId, started);
     const { application, context } = verified.token;
     this.#appId = context.appId;
@@ -472,10 +482,16 @@ export class Connection {
     const current = this.#context as ConnectionContext;
     if (!(await this.#allowAuthentication(requestId))) return;
     // A rejected refresh keeps the current token; only terminal codes close (docs/protocol.md §9).
-    const verified = await this.#deps.verifier.verify(message.payload.token);
+    const verified = await this.#deps.verifier.verify(
+      message.payload.token,
+      this.#possession(message),
+    );
     if (!verified.ok) return this.#error(verified.code, requestId);
     const { application, context } = verified.token;
-    if (!sameDevice(context, current)) return this.#error('identity_mismatch', requestId);
+    // The device key is part of the identity: a refresh keeps it, or its absence (ADR 0041).
+    if (!sameDevice(context, current) || context.keyThumbprint !== current.keyThumbprint) {
+      return this.#error('identity_mismatch', requestId);
+    }
     this.#limits = applicationLimits(this.#deps.limits, application);
     if (!(await this.#touch(context))) {
       return this.#error('quota_exceeded', requestId);
@@ -490,6 +506,10 @@ export class Connection {
     for (const namespace of [...this.#joined.keys()]) {
       if (!this.#authorized(namespace)) await this.#leave(namespace);
     }
+  }
+
+  #possession({ payload }: ClientMessage & { type: 'auth.authenticate' | 'auth.refresh' }) {
+    return { nonce: this.#nonce, proof: payload.proof };
   }
 
   /** The current token authorizes the namespace (docs/protocol.md §5). */

@@ -1,7 +1,15 @@
 import { InMemoryCoordinationAdapter } from '@blindsignal/coordination-memory';
 import { devApplication, devIssuer, mintDevToken } from '@blindsignal/dev-issuer';
 import { InMemoryApplicationRepository } from '@blindsignal/storage-memory';
-import { exportJWK, generateKeyPair, SignJWT, type CryptoKey, type JWK } from 'jose';
+import { createHash } from 'node:crypto';
+import {
+  calculateJwkThumbprint,
+  exportJWK,
+  generateKeyPair,
+  SignJWT,
+  type CryptoKey,
+  type JWK,
+} from 'jose';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TokenVerifier, type TokenVerifierOptions } from './auth.ts';
 import { parseRegistry } from './registry.ts';
@@ -49,6 +57,31 @@ async function setup(
   return { verifier, coordination, load };
 }
 
+/** A device key: its private half signs proofs, and `jkt` goes in the token's `cnf`. */
+async function deviceKey(alg: 'ES256' | 'EdDSA' = 'ES256') {
+  const { privateKey, publicKey } = await generateKeyPair(alg, { extractable: true });
+  const jwk = await exportJWK(publicKey);
+  return { alg, privateKey, jwk, jkt: await calculateJwkThumbprint(jwk, 'sha256') };
+}
+
+type DeviceKey = Awaited<ReturnType<typeof deviceKey>>;
+const NONCE = 'n'.repeat(43);
+const hash = (token: string) => createHash('sha256').update(token).digest('base64url');
+
+/** A proof of possession of `key` for `token` on the connection that sent `NONCE` (ADR 0041). */
+function prove(
+  token: string,
+  key: DeviceKey,
+  { claims = {}, header = {} }: { claims?: object; header?: object } = {},
+) {
+  return sign({ nonce: NONCE, ath: hash(token), ...claims }, key.privateKey, {
+    alg: key.alg,
+    typ: 'blindsignal-pop+jwt',
+    jwk: key.jwk,
+    ...header,
+  });
+}
+
 describe('TokenVerifier', () => {
   it('accepts a valid token and returns the application-scoped context', async () => {
     const { verifier } = await setup();
@@ -73,6 +106,78 @@ describe('TokenVerifier', () => {
     );
     const result = await verifier.verify(token);
     expect(result.ok && result.token.context.permissions).toEqual(permissions);
+  });
+
+  describe('proof of possession (ADR 0041)', () => {
+    const bound = (key: DeviceKey) => mintDevToken({ ...identity, cnf: { jkt: key.jkt } }, { now });
+
+    it.each(['ES256', 'EdDSA'] as const)(
+      'accepts a bound token with an %s proof, and keeps the thumbprint',
+      async (alg) => {
+        const { verifier } = await setup();
+        const key = await deviceKey(alg);
+        const token = await bound(key);
+        const result = await verifier.verify(token, {
+          nonce: NONCE,
+          proof: await prove(token, key),
+        });
+        expect(result.ok && result.token.context.keyThumbprint).toBe(key.jkt);
+      },
+    );
+
+    const rejected: [string, (token: string, key: DeviceKey) => Promise<string | undefined>][] = [
+      ['no proof', () => Promise.resolve(undefined)],
+      ['a proof for another nonce', (token, key) => prove(token, key, { claims: { nonce: 'x' } })],
+      ['a proof for another token', (_, key) => prove('other', key)],
+      ['a proof without ath', (token, key) => prove(token, key, { claims: { ath: undefined } })],
+      ['a proof by another key', async (token) => prove(token, await deviceKey())],
+      [
+        'a proof whose header names another key than the signer',
+        async (token, key) => prove(token, key, { header: { jwk: (await deviceKey()).jwk } }),
+      ],
+      ['a proof of another type', (token, key) => prove(token, key, { header: { typ: 'JWT' } })],
+      [
+        'a proof whose header holds a private key',
+        async (token, key) =>
+          prove(token, key, { header: { jwk: await exportJWK(key.privateKey) } }),
+      ],
+      ['a proof that is not a JWT', () => Promise.resolve('not.a.jwt')],
+    ];
+    it.each(rejected)('rejects a bound token with %s, without burning it', async (_, proof) => {
+      const { verifier } = await setup();
+      const key = await deviceKey();
+      const token = await bound(key);
+      expect(
+        await verifier.verify(token, { nonce: NONCE, proof: await proof(token, key) }),
+      ).toEqual({ ok: false, code: 'invalid_token' });
+      const valid = await verifier.verify(token, { nonce: NONCE, proof: await prove(token, key) });
+      expect(valid.ok).toBe(true);
+    });
+
+    it('rejects a cnf claim without jkt', async () => {
+      const { verifier } = await setup();
+      const key = await deviceKey();
+      const token = await mintDevToken({ ...identity, cnf: { jwk: key.jwk } }, { now });
+      expect(
+        await verifier.verify(token, { nonce: NONCE, proof: await prove(token, key) }),
+      ).toEqual({ ok: false, code: 'invalid_token' });
+    });
+
+    it('rejects an unbound token only when the application requires the binding', async () => {
+      const { verifier, load } = await setup();
+      const key = await deviceKey();
+      const token = await mintDevToken(identity, { now });
+      const result = await verifier.verify(token, { nonce: NONCE, proof: await prove(token, key) });
+      expect(result.ok && result.token.context).not.toHaveProperty('keyThumbprint');
+      await load([{ ...devApplication('notes'), requireProofOfPossession: true }]);
+      expect(await verifier.verify(await mintDevToken(identity, { now }))).toEqual({
+        ok: false,
+        code: 'invalid_token',
+      });
+      const boundToken = await bound(key);
+      const proof = await prove(boundToken, key);
+      expect((await verifier.verify(boundToken, { nonce: NONCE, proof })).ok).toBe(true);
+    });
   });
 
   describe('rejects with invalid_token', () => {

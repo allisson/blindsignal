@@ -6,6 +6,8 @@ import {
   InMemoryApplicationRepository,
   InMemoryDeviceRepository,
 } from '@blindsignal/storage-memory';
+import { createHash } from 'node:crypto';
+import { calculateJwkThumbprint, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../config.ts';
 import { AbuseMonitor } from '../domain/abuse.ts';
@@ -169,6 +171,24 @@ async function setup(
 
 type Connect = Awaited<ReturnType<typeof setup>>['connect'];
 
+/** A device key, and the token claims and auth payload that prove holding it (ADR 0041). */
+async function deviceKey() {
+  const { privateKey, publicKey } = await generateKeyPair('ES256');
+  const jwk = await exportJWK(publicKey);
+  const cnf = { jkt: await calculateJwkThumbprint(jwk, 'sha256') };
+  /** Mints a token bound to the key and signs its proof for the connection's challenge. */
+  const payload = async (client: ReturnType<Connect>, claims: object = {}) => {
+    const challenge = client.sent.find((message) => message.type === 'auth.challenge');
+    const token = await mintDevToken({ ...d1, cnf, ...claims }, { now: new Date() });
+    const ath = createHash('sha256').update(token).digest('base64url');
+    const proof = await new SignJWT({ nonce: challenge?.payload.nonce, ath })
+      .setProtectedHeader({ alg: 'ES256', typ: 'blindsignal-pop+jwt', jwk })
+      .sign(privateKey);
+    return { token, proof };
+  };
+  return { cnf, payload };
+}
+
 describe('Connection', () => {
   describe('authentication deadline', () => {
     it('closes a connection still unauthenticated at the deadline, with no error', async () => {
@@ -226,6 +246,53 @@ describe('Connection', () => {
       const client = connect();
       await client.authenticate({ aud: 'other' });
       expect(client.authenticated()).toBe(0);
+    });
+  });
+
+  describe('proof of possession (ADR 0041)', () => {
+    it('challenges each connection with its own nonce', async () => {
+      const { connect } = await setup();
+      const [one, two] = [connect(), connect()];
+      one.connection.challenge();
+      two.connection.challenge();
+      const nonces = [one.last(), two.last()].map((message) => {
+        expect(message?.type).toBe('auth.challenge');
+        return (message as ServerMessage & { type: 'auth.challenge' }).payload.nonce;
+      });
+      expect(nonces[0]).toMatch(/^[\w-]{43}$/);
+      expect(nonces[0]).not.toBe(nonces[1]);
+    });
+
+    it('accepts a proof for its own challenge only', async () => {
+      const { connect } = await setup();
+      const key = await deviceKey();
+      const [client, other] = [connect(), connect()];
+      client.connection.challenge();
+      other.connection.challenge();
+      await other.request('auth.authenticate', await key.payload(client));
+      expect(other.errors()).toEqual(['invalid_token']);
+      await client.request('auth.authenticate', await key.payload(client));
+      expect(client.connection.context?.keyThumbprint).toBe(key.cnf.jkt);
+    });
+
+    it('refreshes with the same key, and rejects another, a new, or a dropped one', async () => {
+      const { connect } = await setup();
+      const [key, otherKey] = [await deviceKey(), await deviceKey()];
+      const client = connect();
+      client.connection.challenge();
+      await client.request('auth.authenticate', await key.payload(client));
+      await client.request('auth.refresh', await key.payload(client));
+      expect(client.last()?.type).toBe('rtc.ice_config');
+      await client.request('auth.refresh', await otherKey.payload(client));
+      await client.refresh();
+      expect(client.errors()).toEqual(['identity_mismatch', 'identity_mismatch']);
+
+      const unbound = connect();
+      unbound.connection.challenge();
+      await unbound.authenticate({ device_id: 'd2' });
+      await unbound.request('auth.refresh', await key.payload(unbound, { device_id: 'd2' }));
+      expect(unbound.errors()).toEqual(['identity_mismatch']);
+      expect(client.closes).toEqual([]);
     });
   });
 
