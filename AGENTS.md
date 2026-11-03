@@ -31,7 +31,8 @@ Chromium and Firefox under Playwright, against the Phase 3 signaling server in `
 MVP subsets of Phases 5 and 6 are complete too: namespace authorization from token claims
 (ADR 0007), device revocation, and the quotas and rate limits of ADR 0011. Phase 7 is complete:
 browsers on separate networks connect through Cloudflare Quick Tunnels (`docs/external-testing.md`,
-`docs/connectivity-report.md`). Next is Phase 8 (TURN support). The workspace uses the toolchain in `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm
+`docs/connectivity-report.md`), which completes the MVP. Next are the post-MVP tasks of Phase 6,
+then Phase 8 (TURN support); see the roadmap's "After the MVP". The workspace uses the toolchain in `docs/adr/0001-typescript-node-toolchain.md` (TypeScript on Node.js LTS, pnpm
 workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright). Do not add a tool outside that ADR without a
 new ADR.
 
