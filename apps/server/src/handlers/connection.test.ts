@@ -1626,6 +1626,47 @@ describe('Connection', () => {
       );
     });
 
+    it('never logs or counts a token, an identity, a namespace, or a relayed payload', async () => {
+      const { connect, logs, metrics } = await setup();
+      const namespace = 'notes:secret-namespace';
+      const secrets = ['secret-sub', 'secret-device', namespace, 'secret-sdp', 'secret-candidate'];
+      const mint = (claims: object) =>
+        mintDevToken({ ...d1, namespaces: [namespace], ...claims }, { now: new Date() });
+      const tokens = [
+        await mint({ sub: 'secret-sub', device_id: 'secret-device' }),
+        await mint({ sub: 'secret-sub', device_id: 'secret-device' }),
+        await mint({ sub: 'u2', device_id: 'd2' }),
+        await mint({ aud: 'other' }),
+      ];
+      const [aliceToken, refreshToken, bobToken, badToken] = tokens as [
+        string,
+        string,
+        string,
+        string,
+      ];
+      const alice = connect();
+      const bob = connect();
+      await alice.request('auth.authenticate', { token: aliceToken });
+      await alice.request('auth.refresh', { token: refreshToken });
+      await bob.request('auth.authenticate', { token: bobToken });
+      await alice.request('namespace.join', { namespace });
+      await bob.request('namespace.join', { namespace });
+      await alice.request('session.create', { namespace, userId: 'u2', deviceId: 'd2' });
+      await vi.advanceTimersByTimeAsync(0);
+      const created = alice.sent.find((m) => m.type === 'session.created');
+      if (created?.type !== 'session.created') throw new Error('no session');
+      const { sessionId } = created.payload;
+      await bob.request('session.accept', { sessionId });
+      await alice.request('rtc.offer', { sessionId, sdp: 'v=0 secret-sdp' });
+      await alice.request('rtc.ice_candidate', { sessionId, candidate: 'secret-candidate' });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(bob.sent.map((m) => m.type)).toContain('rtc.ice_candidate');
+      await connect().request('auth.authenticate', { token: badToken });
+      await alice.connection.receive('{');
+      const emitted = JSON.stringify(logs) + metrics.render();
+      for (const value of [...tokens, ...secrets]) expect(emitted).not.toContain(value);
+    });
+
     it('logs authentications and closing errors, never the user or the device', async () => {
       const { connect, logs } = await setup();
       const alice = connect();
