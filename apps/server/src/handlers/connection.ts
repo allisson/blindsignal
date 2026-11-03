@@ -146,6 +146,8 @@ export class Connection {
   #context: ConnectionContext | undefined;
   /** The connection-quota key this connection holds a slot under, once it took one. */
   #slot: string | undefined;
+  /** The application of a verified token, before the authentication completes too (ADR 0015). */
+  #appId: string | undefined;
   /** The application's limits, read from the registry at each authentication and refresh. */
   #limits: Limits;
   #expiryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -275,6 +277,10 @@ export class Connection {
     if (!parsed.ok) return this.#error(parsed.code, parsed.requestId);
     const message = parsed.message;
     this.#deps.metrics.count('blindsignal_messages_total', { type: message.type });
+    if (this.#context !== undefined) {
+      const labels = { app_id: this.#context.appId };
+      this.#deps.metrics.count('blindsignal_application_messages_total', labels);
+    }
     if (this.#context === undefined && message.type !== 'auth.authenticate') {
       return this.#error('not_authenticated', message.requestId);
     }
@@ -318,6 +324,7 @@ export class Connection {
     const verified = await this.#deps.verifier.verify(message.payload.token);
     if (!verified.ok) return this.#rejectAuthentication(verified.code, requestId);
     const { application, context } = verified.token;
+    this.#appId = context.appId;
     // Released with the connection, whether or not the authentication completes.
     this.#slot = connectionSlot(context.appId);
     this.#limits = applicationLimits(this.#deps.limits, application);
@@ -383,7 +390,7 @@ export class Connection {
       ...(requestId === undefined ? {} : { requestId }),
       payload: { code: 'rate_limited', retryAfterMs },
     });
-    this.#deps.metrics.count('blindsignal_errors_total', { code: 'rate_limited' });
+    this.#countError('rate_limited');
     return false;
   }
 
@@ -515,6 +522,9 @@ export class Connection {
       sessionId,
     );
     this.#deps.metrics.count('blindsignal_sessions_created_total');
+    this.#deps.metrics.count('blindsignal_application_sessions_created_total', {
+      app_id: self.appId,
+    });
     this.#send({ type: 'session.created', requestId, payload: { sessionId } });
     await this.#publish(targetId, {
       type: 'session.request',
@@ -674,6 +684,17 @@ export class Connection {
     }
   }
 
+  /** Counts an `error` sent, and by application once a token is verified (ADR 0015). */
+  #countError(code: ErrorCode): void {
+    this.#deps.metrics.count('blindsignal_errors_total', { code });
+    if (this.#appId !== undefined) {
+      this.#deps.metrics.count('blindsignal_application_errors_total', {
+        app_id: this.#appId,
+        code,
+      });
+    }
+  }
+
   /**
    * Sends `error`, then closes with the code's class when `close` is set or the code is terminal
    * (docs/protocol.md §9).
@@ -684,7 +705,7 @@ export class Connection {
       ...(requestId === undefined ? {} : { requestId }),
       payload: { code },
     });
-    this.#deps.metrics.count('blindsignal_errors_total', { code });
+    this.#countError(code);
     // Already closed, by this error's own send overflowing the buffer, for one.
     if (this.#closed || (!close && errorClasses[code] === 'retryable')) return;
     // Only closing errors are logged; the counter covers the rest. No `sub` or `device_id` (Q12).

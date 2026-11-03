@@ -57,6 +57,15 @@ export class SignalingServer {
     return this.#connections.size;
   }
 
+  /** Authenticated connections, by application (ADR 0015). */
+  connectionsByApplication(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const { context } of this.#connections) {
+      if (context !== undefined) counts.set(context.appId, (counts.get(context.appId) ?? 0) + 1);
+    }
+    return counts;
+  }
+
   /** Resolves to the bound port; port 0 picks a free one. */
   listen(port: number, host?: string): Promise<number> {
     return new Promise((resolve, reject) => {

@@ -105,3 +105,6 @@ client IP (`connection.opened`) for at most 14 days (`docs/adr/0012-metadata-ret
 `GET /metrics` on the admin port serves process-local counters and gauges in the Prometheus text
 format: messages by type, authentications by result, errors by code, sessions created and
 terminated, registry reloads, connections closed by backpressure, open connections, and sessions.
+The `blindsignal_application_*` series break connections, sessions, messages, sessions created,
+and errors down by application (`app_id`), once a token is verified
+(`docs/adr/0015-application-usage-metrics.md`).

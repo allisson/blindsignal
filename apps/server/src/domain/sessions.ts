@@ -77,6 +77,15 @@ export class SessionRegistry {
     return this.#sessions.size;
   }
 
+  /** Sessions pending or active, by application; both participants share one (ADR 0015). */
+  byApplication(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const { requester } of this.#sessions.values()) {
+      counts.set(requester.device.appId, (counts.get(requester.device.appId) ?? 0) + 1);
+    }
+    return counts;
+  }
+
   get(sessionId: string): Session | undefined {
     return this.#sessions.get(sessionId);
   }

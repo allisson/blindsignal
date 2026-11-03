@@ -385,6 +385,17 @@ describe('SignalingServer', () => {
     expect(logs).toMatchObject([{ event: 'connection.opened', ip: '127.0.0.1' }]);
   });
 
+  it('counts authenticated connections by application', async () => {
+    const { server, client } = await start();
+    const alice = await client();
+    const bob = await client();
+    await client();
+    expect(server.connectionsByApplication()).toEqual(new Map());
+    await alice.authenticate({ sub: 'u1', device_id: 'd1', namespaces: ['notes:a'] });
+    await bob.authenticate({ sub: 'u2', device_id: 'd2', namespaces: ['notes:a'] });
+    expect(server.connectionsByApplication()).toEqual(new Map([['notes', 2]]));
+  });
+
   it('closes the connections a reloaded registry makes unavailable', async () => {
     const { server, client } = await start();
     const alice = await client();
