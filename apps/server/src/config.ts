@@ -117,6 +117,13 @@ const environment = z
         message: 'must be a postgres:// URL',
       }),
     BLINDSIGNAL_DATABASE_POOL_SIZE: count.default(10),
+    // Unset keeps coordination in memory, for a single instance (ADR 0023).
+    BLINDSIGNAL_REDIS_URL: z
+      .string()
+      .default('')
+      .refine((value) => value === '' || /^rediss?:\/\//.test(value), {
+        message: 'must be a redis:// or rediss:// URL',
+      }),
     // Before authentication, keyed by client IP or global; no application can override them.
     BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS: seconds.positive().default(10),
     BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: count.default(20),
@@ -154,6 +161,11 @@ const environment = z
       message: 'required in production; use * to allow every origin',
     },
   )
+  // Shared coordination with per-instance storage would split device quotas and revocations.
+  .refine((vars) => vars.BLINDSIGNAL_REDIS_URL === '' || vars.BLINDSIGNAL_DATABASE_URL !== '', {
+    path: ['BLINDSIGNAL_REDIS_URL'],
+    message: 'requires BLINDSIGNAL_DATABASE_URL',
+  })
   .refine(
     (vars) => vars.BLINDSIGNAL_TURN_URLS.length > 0 === (vars.BLINDSIGNAL_TURN_SECRET !== ''),
     { path: ['BLINDSIGNAL_TURN_SECRET'], message: 'set together with BLINDSIGNAL_TURN_URLS' },
@@ -201,6 +213,8 @@ export interface ServerConfig {
   readonly deviceSweepIntervalMs: number;
   /** Absent when storage stays in memory. */
   readonly database?: { readonly url: string; readonly poolSize: number };
+  /** Absent when coordination stays in memory. */
+  readonly redis?: { readonly url: string };
   readonly preAuthentication: PreAuthentication;
   readonly maxMessageBytes: number;
   readonly maxQueuedMessages: number;
@@ -275,6 +289,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
               poolSize: vars.BLINDSIGNAL_DATABASE_POOL_SIZE,
             },
           }),
+      ...(vars.BLINDSIGNAL_REDIS_URL === '' ? {} : { redis: { url: vars.BLINDSIGNAL_REDIS_URL } }),
       preAuthentication: {
         authenticationTimeoutMs: vars.BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS * 1000,
         maxUnauthenticatedPerIp: vars.BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP,

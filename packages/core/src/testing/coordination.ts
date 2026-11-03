@@ -52,6 +52,19 @@ export function describeCoordinationContract(
       expect(await coordination.claimDeviceConnection(bob, 'c3')).toBeUndefined();
     });
 
+    it('reads the connection that holds the claim, per device', async () => {
+      const { coordination } = await create();
+      expect(await coordination.connectionOf(alice)).toBeUndefined();
+      await coordination.claimDeviceConnection(alice, 'c1');
+      await coordination.claimDeviceConnection(alice, 'c2');
+      await coordination.claimDeviceConnection(bob, 'c3');
+      expect(await coordination.connectionOf(alice)).toBe('c2');
+      expect(await coordination.connectionOf({ ...alice, appId: 'other' })).toBeUndefined();
+      await coordination.releaseDeviceConnection(alice, 'c2');
+      expect(await coordination.connectionOf(alice)).toBeUndefined();
+      expect(await coordination.connectionOf(bob)).toBe('c3');
+    });
+
     it('ignores a release by a stale holder', async () => {
       const { coordination } = await create();
       await coordination.claimDeviceConnection(alice, 'c1');

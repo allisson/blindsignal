@@ -163,7 +163,9 @@ disconnect; `active` → `ended` on close, disconnect, revocation, or the maximu
   requester itself, or has no free session slot gets the same `peer_unavailable`, so devices and
   their load cannot be enumerated. A session holds its quota slots from creation (ADR 0011).
 - A `pending` session expires after a configurable negotiation timeout; both sides get
-  `session.terminated` with reason `timeout`.
+  `session.terminated` with reason `timeout`. An answer that races the timeout may end the
+  target's side first: the target's `session.reject` is acknowledged, or its `session.accept`
+  is followed by `session.terminated`, while the requester gets `timeout` (ADR 0023).
 - An `active` session ends once it has been active for the application's maximum session
   duration, when one is set; both sides get `session.terminated` with reason `timeout` (ADR 0014).
 - `session.close` is only client to server, from either participant, in `pending` or `active`.

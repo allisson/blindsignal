@@ -6,7 +6,7 @@ import type {
   RateLimitPolicy,
   Slot,
 } from '@blindsignal/core';
-import type { RedisClientType } from '@redis/client';
+import { createClient, type RedisClientType } from '@redis/client';
 
 export type RedisClient = RedisClientType;
 
@@ -94,6 +94,33 @@ for _, key in ipairs(KEYS) do
 end
 return 1`);
 
+export interface RedisCoordination {
+  readonly coordination: RedisCoordinationAdapter;
+  end(): Promise<void>;
+}
+
+/**
+ * Connects the server's two connections, for commands and for subscriptions. While the server is
+ * unreachable, commands fail at once instead of waiting in a queue, and `onError` receives each
+ * failed attempt to reconnect; the client resubscribes once it is back (ADR 0023).
+ */
+export async function openRedisCoordination(options: {
+  readonly url: string;
+  readonly onError: (error: Error) => void;
+  readonly prefix?: string;
+}): Promise<RedisCoordination> {
+  const client = createClient({ url: options.url, disableOfflineQueue: true });
+  const subscriber = client.duplicate();
+  for (const connection of [client, subscriber]) connection.on('error', options.onError);
+  await Promise.all([client.connect(), subscriber.connect()]);
+  return {
+    coordination: new RedisCoordinationAdapter({ client, subscriber, prefix: options.prefix }),
+    end: async () => {
+      await Promise.all([client.close(), subscriber.close()]);
+    },
+  };
+}
+
 const deviceKey = ({ appId, userId, deviceId }: DeviceIdentity) =>
   JSON.stringify([appId, userId, deviceId]);
 
@@ -148,6 +175,10 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
       [this.#key('device', deviceKey(device))],
       [connectionId],
     );
+  }
+
+  async connectionOf(device: DeviceIdentity): Promise<string | undefined> {
+    return (await this.#client.get(this.#key('device', deviceKey(device)))) ?? undefined;
   }
 
   async acquirePresence(

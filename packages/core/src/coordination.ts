@@ -21,6 +21,8 @@ export interface CoordinationAdapter {
   claimDeviceConnection(device: DeviceIdentity, connectionId: string): Promise<string | undefined>;
   /** Removes the claim only while `connectionId` still holds it. */
   releaseDeviceConnection(device: DeviceIdentity, connectionId: string): Promise<void>;
+  /** The connection that holds the device's claim, on any instance (ADR 0023). */
+  connectionOf(device: DeviceIdentity): Promise<string | undefined>;
 
   /** Acquires or renews the device's lease in the namespace for `ttlMs`. */
   acquirePresence(

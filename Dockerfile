@@ -11,6 +11,7 @@ COPY packages/core/package.json packages/core/
 COPY adapters/storage/memory/package.json adapters/storage/memory/
 COPY adapters/storage/postgresql/package.json adapters/storage/postgresql/
 COPY adapters/coordination/memory/package.json adapters/coordination/memory/
+COPY adapters/coordination/redis/package.json adapters/coordination/redis/
 RUN pnpm install --frozen-lockfile --prod --filter '@blindsignal/server...'
 
 FROM node:26-slim
@@ -22,6 +23,7 @@ COPY packages/core/src packages/core/src
 COPY adapters/storage/memory/src adapters/storage/memory/src
 COPY adapters/storage/postgresql/src adapters/storage/postgresql/src
 COPY adapters/coordination/memory/src adapters/coordination/memory/src
+COPY adapters/coordination/redis/src adapters/coordination/redis/src
 COPY apps/server/src apps/server/src
 USER node
 # Signaling (health and readiness included) and the admin port with /metrics.

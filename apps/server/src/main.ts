@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { InMemoryCoordinationAdapter } from '@blindsignal/coordination-memory';
-import type { StorageAdapter } from '@blindsignal/core';
+import { openRedisCoordination } from '@blindsignal/coordination-redis';
+import type { CoordinationAdapter, StorageAdapter } from '@blindsignal/core';
 import {
   InMemoryApplicationRepository,
   InMemoryDeviceRepository,
@@ -17,7 +18,6 @@ import {
 } from './domain/registry.ts';
 import { sweepDevices } from './domain/retention.ts';
 import { AbuseMonitor } from './domain/abuse.ts';
-import { SessionRegistry } from './domain/sessions.ts';
 import { SignalingServer } from './server.ts';
 import { jsonLogger, Metrics, serveMetrics } from './telemetry.ts';
 
@@ -73,8 +73,19 @@ async function main(): Promise<void> {
   let registry = initial.registry;
   await install(registry);
 
-  const coordination = new InMemoryCoordinationAdapter();
-  const sessions = new SessionRegistry();
+  let coordination: CoordinationAdapter = new InMemoryCoordinationAdapter();
+  let closeCoordination = () => Promise.resolve();
+  if (config.redis !== undefined) {
+    const redis = await openRedisCoordination({
+      ...config.redis,
+      onError: () => logger.log('warn', 'coordination.connection_lost'),
+    });
+    coordination = redis.coordination;
+    closeCoordination = () => redis.end();
+  }
+  logger.log('info', 'coordination.ready', {
+    coordination: config.redis === undefined ? 'memory' : 'redis',
+  });
   const metrics = new Metrics();
   const server = new SignalingServer({
     allowedOrigins: config.allowedOrigins,
@@ -86,7 +97,6 @@ async function main(): Promise<void> {
       verifier: new TokenVerifier({ applications, coordination, startedAt, ...config.token }),
       devices: storage.devices,
       coordination,
-      sessions,
       iceServers: config.iceServers.map(({ urls }) => ({ urls: [...urls] })),
       ...(config.turn === undefined ? {} : { turn: config.turn }),
       clockSkewSeconds: config.token.clockSkewSeconds,
@@ -105,7 +115,9 @@ async function main(): Promise<void> {
     },
   });
   metrics.gauge('blindsignal_connections', 'Open WebSocket connections.', () => server.connections);
-  metrics.gauge('blindsignal_sessions', 'Sessions pending or active.', () => sessions.size);
+  metrics.gauge('blindsignal_sessions', 'Sessions pending or active.', () =>
+    [...server.sessionsByApplication().values()].reduce((sum, count) => sum + count, 0),
+  );
   metrics.labeledGauge(
     'blindsignal_application_connections',
     'Authenticated connections, by application.',
@@ -116,7 +128,7 @@ async function main(): Promise<void> {
     'blindsignal_application_sessions',
     'Sessions pending or active, by application.',
     'app_id',
-    () => sessions.byApplication(),
+    () => server.sessionsByApplication(),
   );
   const port = await server.listen(config.port);
   const admin = await serveMetrics(metrics, config.adminPort, config.adminHost);
@@ -161,6 +173,7 @@ async function main(): Promise<void> {
     await server.drain();
     await server.close();
     stopSweep();
+    await closeCoordination();
     await closeStorage();
     admin.server.close();
   };

@@ -1,4 +1,6 @@
 import { InMemoryCoordinationAdapter } from '@blindsignal/coordination-memory';
+import { openRedisCoordination, type RedisCoordination } from '@blindsignal/coordination-redis';
+import type { CoordinationAdapter } from '@blindsignal/core';
 import { devApplication, mintDevToken } from '@blindsignal/dev-issuer';
 import type { ServerMessage } from '@blindsignal/protocol';
 import {
@@ -12,6 +14,7 @@ import {
   InMemoryApplicationRepository,
   InMemoryDeviceRepository,
 } from '@blindsignal/storage-memory';
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { BlockList } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,7 +23,6 @@ import { loadConfig, type PreAuthentication } from './config.ts';
 import { AbuseMonitor } from './domain/abuse.ts';
 import { TokenVerifier } from './domain/auth.ts';
 import { parseRegistry } from './domain/registry.ts';
-import { SessionRegistry } from './domain/sessions.ts';
 import type { AllowedOrigins } from './domain/origin.ts';
 import { GOING_AWAY, SignalingServer } from './server.ts';
 import { Metrics } from './telemetry.ts';
@@ -32,6 +34,8 @@ interface Options {
   readonly maxMessageBytes?: number;
   readonly trustedProxies?: BlockList;
   readonly preAuthentication?: Partial<PreAuthentication>;
+  /** Shared by several servers to stand for several instances; in memory by default. */
+  readonly coordination?: CoordinationAdapter;
 }
 
 const servers: SignalingServer[] = [];
@@ -52,7 +56,7 @@ async function start(options: Options = {}) {
   if (!registry.ok) throw new Error(registry.error);
   const applications = new InMemoryApplicationRepository();
   await applications.replaceAll(registry.registry.applications);
-  const coordination = new InMemoryCoordinationAdapter();
+  const coordination = options.coordination ?? new InMemoryCoordinationAdapter();
   const logs: Record<string, unknown>[] = [];
   const preAuthentication = { ...defaults.preAuthentication, ...options.preAuthentication };
   const server = new SignalingServer({
@@ -76,7 +80,6 @@ async function start(options: Options = {}) {
       }),
       devices: new InMemoryDeviceRepository(),
       coordination,
-      sessions: new SessionRegistry(),
       iceServers: [],
       clockSkewSeconds: 60,
       authenticationTimeoutMs: 10_000,
@@ -584,6 +587,92 @@ describe('SignalingServer with the SDK', () => {
       await expect(
         alice.client.createSession({ namespace: 'notes:a', userId: 'bob', deviceId: 'phone' }),
       ).rejects.toEqual(new BlindSignalError('peer_unavailable'));
+    });
+  });
+
+  // Runs only against a server: `docker compose --profile valkey up --wait valkey` (ADR 0019).
+  const redisUrl = process.env.BLINDSIGNAL_TEST_REDIS_URL;
+
+  describe.skipIf(redisUrl === undefined)('on two instances sharing Redis (ADR 0023)', () => {
+    const opened: RedisCoordination[] = [];
+
+    // Servers release their connections through Redis, so they drain before it closes.
+    afterEach(async () => {
+      for (const client of sdks.splice(0)) client.close();
+      for (const server of servers.splice(0)) {
+        await server.drain();
+        await server.close();
+      }
+      await Promise.all(opened.splice(0).map((redis) => redis.end()));
+    });
+
+    async function instance(prefix: string) {
+      const redis = await openRedisCoordination({
+        url: redisUrl as string,
+        prefix,
+        onError: () => {},
+      });
+      opened.push(redis);
+      return start({ coordination: redis.coordination });
+    }
+
+    it('discovers, connects, signals, and closes devices on different instances', async () => {
+      const prefix = `test:${randomUUID()}:`;
+      const [one, two] = await Promise.all([instance(prefix), instance(prefix)]);
+      const alice = sdk(one.url, 'alice', 'laptop');
+      const bob = sdk(two.url, 'bob', 'phone');
+      const requests: SessionRequest[] = [];
+      bob.client.on('sessionRequest', (r) => requests.push(r));
+      for (const { client } of [alice, bob]) {
+        await client.connect();
+        await client.join('notes:a');
+      }
+      await vi.waitFor(() =>
+        expect(alice.presence).toEqual([
+          { namespace: 'notes:a', userId: 'bob', deviceId: 'phone', present: true },
+        ]),
+      );
+      expect(await alice.client.discover('notes:a')).toEqual([
+        { userId: 'bob', deviceId: 'phone' },
+      ]);
+
+      const session = await alice.client.createSession({
+        namespace: 'notes:a',
+        userId: 'bob',
+        deviceId: 'phone',
+      });
+      const request = await vi.waitFor(() => {
+        expect(requests).toHaveLength(1);
+        return requests[0]!;
+      });
+      const accepted = new Promise((resolve) => session.on('accepted', resolve));
+      const target = await request.accept();
+      await accepted;
+      const [offerer] = alice.peers;
+      const [answerer] = bob.peers;
+      await vi.waitFor(() =>
+        expect(offerer!.remoteDescription).toEqual({ type: 'answer', sdp: 'answer sdp' }),
+      );
+      const candidate = { candidate: 'candidate:1 1 udp 1 192.0.2.1 9 typ host', sdpMid: '0' };
+      offerer!.gather(candidate);
+      await vi.waitFor(() => expect(answerer!.candidates).toEqual([candidate]));
+      expect(one.server.sessionsByApplication()).toEqual(new Map([['notes', 1]]));
+      expect(two.server.sessionsByApplication()).toEqual(new Map());
+
+      const targetEnded = new Promise((resolve) => target.on('ended', resolve));
+      session.close();
+      await expect(targetEnded).resolves.toEqual({ reason: 'closed_by_peer' });
+      await vi.waitFor(() => expect(one.server.sessionsByApplication()).toEqual(new Map()));
+    });
+
+    it('supersedes a device that connects again on another instance', async () => {
+      const prefix = `test:${randomUUID()}:`;
+      const [one, two] = await Promise.all([instance(prefix), instance(prefix)]);
+      const first = await one.client();
+      await first.authenticate({ sub: 'alice', device_id: 'laptop', namespaces: ['notes:a'] });
+      const second = await two.client();
+      await second.authenticate({ sub: 'alice', device_id: 'laptop', namespaces: ['notes:a'] });
+      expect(await first.closed).toBe(4003);
     });
   });
 });
