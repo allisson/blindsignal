@@ -1,7 +1,10 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 
-export type Level = 'info' | 'warn' | 'error';
+/** In increasing severity. */
+export const levels = ['info', 'warn', 'error'] as const;
+export type Level = (typeof levels)[number];
 
 /** Values a log line may carry; never a token, secret, or application payload (spec §18). */
 export type LogFields = Readonly<Record<string, string | number | undefined>>;
@@ -10,15 +13,40 @@ export interface Logger {
   log(level: Level, event: string, fields?: LogFields): void;
 }
 
-/** One JSON object per line on stdout (docs/adr/0001: no logging dependency). */
+/**
+ * One JSON object per line on stdout (docs/adr/0001: no logging dependency), for the events at
+ * `minimum` or above (ADR 0037).
+ */
 export function jsonLogger(
   write: (line: string) => void = (line) => process.stdout.write(`${line}\n`),
   now: () => Date = () => new Date(),
+  minimum: Level = 'info',
 ): Logger {
   return {
-    log: (level, event, fields = {}) =>
-      write(JSON.stringify({ time: now().toISOString(), level, event, ...fields })),
+    log: (level, event, fields = {}) => {
+      if (levels.indexOf(level) < levels.indexOf(minimum)) return;
+      write(JSON.stringify({ time: now().toISOString(), level, event, ...fields }));
+    },
   };
+}
+
+/**
+ * Logs an uncaught exception or unhandled rejection as `server.crashed`: the error's name and
+ * stack frames, never its message, which may quote values (ADR 0037).
+ */
+export function logCrash(logger: Logger, error: unknown, origin: string): void {
+  const frames =
+    error instanceof Error
+      ? (error.stack ?? '')
+          .split('\n')
+          .filter((line) => /^\s+at /.test(line))
+          .map((line) => line.trim())
+      : [];
+  logger.log('error', 'server.crashed', {
+    origin,
+    reason: error instanceof Error ? error.name : typeof error,
+    stack: frames.length === 0 ? undefined : frames.join('\n'),
+  });
 }
 
 const COUNTERS = {
@@ -39,6 +67,7 @@ const COUNTERS = {
     'Abuse alerts: rate_limited and quota_exceeded rejections reaching the threshold in a window, by application.',
   blindsignal_turn_credentials_issued_total:
     'TURN credentials sent in rtc.ice_config, by application.',
+  blindsignal_devices_expired_total: 'Device records deleted by the retention sweep.',
 } as const;
 
 export type CounterName = keyof typeof COUNTERS;
@@ -66,10 +95,10 @@ export class Metrics {
     label?: string;
   }[] = [];
 
-  count(name: CounterName, labels: Readonly<Record<string, string>> = {}): void {
+  count(name: CounterName, labels: Readonly<Record<string, string>> = {}, by = 1): void {
     const series = this.#counters.get(name) ?? new Map<string, number>();
     const key = labelSet(labels);
-    series.set(key, (series.get(key) ?? 0) + 1);
+    series.set(key, (series.get(key) ?? 0) + by);
     this.#counters.set(name, series);
   }
 
@@ -108,6 +137,43 @@ export class Metrics {
     }
     return `${lines.join('\n')}\n`;
   }
+}
+
+/**
+ * Registers the process's gauges (ADR 0037): its start time, its memory, and the event loop's delay
+ * since the previous scrape, so one scraper reads the delay over its own interval. Returns a
+ * function that stops the event loop monitor.
+ */
+export function watchProcess(metrics: Metrics): () => void {
+  const delay = monitorEventLoopDelay();
+  delay.enable();
+  metrics.gauge(
+    'process_start_time_seconds',
+    'Start time of the process since the Unix epoch, in seconds.',
+    () => performance.timeOrigin / 1000,
+  );
+  metrics.gauge('process_resident_memory_bytes', 'Resident memory size, in bytes.', () =>
+    process.memoryUsage.rss(),
+  );
+  metrics.gauge(
+    'nodejs_heap_size_used_bytes',
+    'V8 heap in use, in bytes.',
+    () => process.memoryUsage().heapUsed,
+  );
+  metrics.labeledGauge(
+    'nodejs_eventloop_delay_seconds',
+    'Event loop delay since the previous scrape, in seconds: its 99th percentile and maximum.',
+    'stat',
+    () => {
+      const stats = new Map([
+        ['p99', delay.percentile(99) / 1e9],
+        ['max', delay.max / 1e9],
+      ]);
+      delay.reset();
+      return stats;
+    },
+  );
+  return () => delay.disable();
 }
 
 /**

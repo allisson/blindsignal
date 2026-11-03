@@ -58,7 +58,8 @@ readiness before closing connections and ends within a deadline (ADR 0031); `exa
 runs it on one host behind Caddy (ADR 0032), and CI runs the production image read-only
 before every merge (ADR 0033); `docs/secrets-and-keys.md` and `docs/application-lifecycle.md` are the
 operator's procedures (ADR 0034), and `docs/backup-and-recovery.md` the backups (ADR 0035); `docs/vps.md` adds a firewall and
-Coturn on the same host (ADR 0036). The workspace uses
+Coturn on the same host (ADR 0036); logs take a level, crashes are logged as JSON, and `/metrics`
+reports the process (ADR 0037). The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey). Do not add a tool outside those ADRs without a new ADR.

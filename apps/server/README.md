@@ -39,6 +39,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_PORT` | `8080` | Signaling port: WebSocket, `/healthz`, and `/readyz`. |
 | `BLINDSIGNAL_ADMIN_PORT` | `9090` | Admin port: `/metrics`. |
 | `BLINDSIGNAL_ADMIN_HOST` | `127.0.0.1` | IP address the admin port binds to. |
+| `BLINDSIGNAL_LOG_LEVEL` | `info` | `info`, `warn`, or `error`: events below it are not written (ADR 0037). |
 | `BLINDSIGNAL_ALLOWED_ORIGINS` | required in production | Comma-separated origins allowed at the upgrade, or `*`. Defense in depth, not authentication. |
 | `BLINDSIGNAL_TRUSTED_PROXIES` | none | Comma-separated IPs and CIDRs whose forwarding header is honored for the client IP. |
 | `BLINDSIGNAL_FORWARDED_HEADER` | `x-forwarded-for` | `x-forwarded-for` or `cf-connecting-ip`. |
@@ -151,10 +152,21 @@ SQLSTATE or name), `devices.expired`, and `devices.sweep_failed` (ADR 0021); coo
 `coordination.ready` and `coordination.connection_lost` (ADR 0023), and the registry logs
 `registry.publish_failed` and `registry.sync_failed` (ADR 0024).
 
+`BLINDSIGNAL_LOG_LEVEL` drops the events below it; at `warn`, no per-connection event, and so no
+client IP, is written. An uncaught exception or unhandled rejection logs `server.crashed` with its
+`origin`, the error's name as `reason`, and its stack frames, never its message, then exits with
+`1` (ADR 0037).
+
 `GET /metrics` on the admin port serves process-local counters and gauges in the Prometheus text
 format: messages by type, authentications by result, errors by code, sessions created and
 terminated, registry reloads, connections closed by backpressure, open connections, and sessions
-(counted by the instance of the connection that requested each, ADR 0023).
+(counted by the instance of the connection that requested each, ADR 0023), and device records
+deleted by the retention sweep (`blindsignal_devices_expired_total`).
+
+It also reports the process (ADR 0037): `process_start_time_seconds`, which changes on every
+restart, `process_resident_memory_bytes`, `nodejs_heap_size_used_bytes`, and
+`nodejs_eventloop_delay_seconds{stat="p99"|"max"}`, the event loop's delay since the previous
+scrape. Each scrape resets the delay, so scrape each instance from one place.
 
 Each scrape also probes PostgreSQL and Redis, when configured, and reports
 `blindsignal_dependency_up{dependency="postgresql"|"redis"}`: 1 when the probe answered within
@@ -174,3 +186,18 @@ With TURN configured, `blindsignal_turn_credentials_issued_total{app_id}` counts
 sent in `rtc.ice_config`, one per authentication and `auth.refresh`. Relay traffic is measured by
 the TURN server's own metrics, not here (`docs/adr/0017-turn-credentials.md`); `docs/turn-operations.md`
 configures the TURN server.
+
+Spec §18's initial metrics, and where each one is:
+
+| Spec §18 | Here |
+|---|---|
+| Active WebSocket connections | `blindsignal_connections` |
+| Authentication success/failure | `blindsignal_authentications_total{result}` |
+| Rejected unknown or suspended applications | `blindsignal_authentications_total{result="application_unavailable"}` for a suspended or revoked application; an issuer missing from the registry counts as `invalid_token` |
+| Active connections and sessions per application | `blindsignal_application_connections`, `blindsignal_application_sessions` |
+| Rate-limit events, quota consumption | `blindsignal_application_errors_total{code="rate_limited"\|"quota_exceeded"}`, `blindsignal_abuse_alerts_total` |
+| Presence registration and expiration | `blindsignal_messages_total{type="namespace.join"\|"namespace.leave"}`; a lease that expires is not counted, and `blindsignal_devices_expired_total` counts device records |
+| Session creation and failure | `blindsignal_sessions_created_total`, `blindsignal_sessions_terminated_total{reason}` |
+| Signaling message counts and errors | `blindsignal_messages_total{type}`, `blindsignal_errors_total{code}` |
+| Reconnection frequency | `blindsignal_authentications_total`, against `blindsignal_connections` |
+| WebRTC negotiation success/failure, direct versus relay, ICE connection duration | Not here: they happen between the browsers. The SDK reports each session's connection type to the application (`packages/sdk`); relay traffic is on the TURN server |

@@ -21,9 +21,23 @@ import {
 import { sweepDevices } from './domain/retention.ts';
 import { AbuseMonitor } from './domain/abuse.ts';
 import { SignalingServer } from './server.ts';
-import { dependencyProbe, jsonLogger, Metrics, serveMetrics } from './telemetry.ts';
+import {
+  dependencyProbe,
+  jsonLogger,
+  logCrash,
+  Metrics,
+  serveMetrics,
+  watchProcess,
+} from './telemetry.ts';
 
-const logger = jsonLogger();
+// At every level until the configuration sets one.
+let logger = jsonLogger();
+
+// Uncaught errors, unhandled rejections included, still end the process, logged as JSON (ADR 0037).
+process.on('uncaughtException', (error, origin) => {
+  logCrash(logger, error, origin);
+  process.exit(1);
+});
 
 async function readRegistry(
   path: string,
@@ -45,6 +59,7 @@ async function main(): Promise<void> {
   const loaded = loadConfig(process.env);
   if (!loaded.ok) throw new Error(`invalid configuration: ${loaded.error}`);
   const config = loaded.config;
+  logger = jsonLogger(undefined, undefined, config.logLevel);
   const startedAt = new Date();
   const { registryPath, development } = config;
 
@@ -140,6 +155,7 @@ async function main(): Promise<void> {
     'app_id',
     () => server.sessionsByApplication(),
   );
+  const stopWatching = watchProcess(metrics);
   const port = await server.listen(config.port);
   const probe = dependencyProbe(dependencies, config.dependencyProbeTimeoutMs);
   const admin = await serveMetrics(
@@ -153,6 +169,7 @@ async function main(): Promise<void> {
     storage.devices,
     { intervalMs: config.deviceSweepIntervalMs, ttlMs: config.deviceTtlMs },
     logger,
+    metrics,
   );
 
   // All or nothing: a rejected reload keeps the current registry (ADR 0005).
@@ -208,6 +225,7 @@ async function main(): Promise<void> {
     await server.drain(config.shutdownDelayMs);
     await server.close();
     stopSweep();
+    stopWatching();
     await stopFollowing();
     await closeCoordination();
     await closeStorage();

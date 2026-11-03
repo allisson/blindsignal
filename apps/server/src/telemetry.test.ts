@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Server } from 'node:http';
-import { dependencyProbe, jsonLogger, Metrics, serveMetrics } from './telemetry.ts';
+import {
+  dependencyProbe,
+  jsonLogger,
+  logCrash,
+  Metrics,
+  serveMetrics,
+  watchProcess,
+} from './telemetry.ts';
 
 describe('jsonLogger', () => {
   it('writes one JSON object per line with time, level, and event first', () => {
@@ -12,6 +19,51 @@ describe('jsonLogger', () => {
     logger.log('warn', 'registry.reload_rejected', { reason: 'x', skipped: undefined });
     expect(lines).toEqual([
       '{"time":"2026-11-02T00:00:00.000Z","level":"warn","event":"registry.reload_rejected","reason":"x"}',
+    ]);
+  });
+
+  it('writes only the events at the minimum level or above', () => {
+    const events: string[] = [];
+    const write = (line: string) => events.push((JSON.parse(line) as { event: string }).event);
+    for (const [minimum, expected] of [
+      ['info', ['i', 'w', 'e']],
+      ['warn', ['w', 'e']],
+      ['error', ['e']],
+    ] as const) {
+      events.length = 0;
+      const logger = jsonLogger(write, undefined, minimum);
+      logger.log('info', 'i');
+      logger.log('warn', 'w');
+      logger.log('error', 'e');
+      expect(events).toEqual(expected);
+    }
+  });
+});
+
+describe('logCrash', () => {
+  const crash = (error: unknown) => {
+    const logs: object[] = [];
+    logCrash({ log: (level, event, fields) => logs.push({ level, event, ...fields }) }, error, 'o');
+    return logs;
+  };
+
+  it('logs the name and the stack frames, never the message', () => {
+    const error = new TypeError('secret-value\nat a second line');
+    error.stack = `TypeError: secret-value\nat a second line\n    at f (/app/a.ts:1:2)\n    at g (/app/b.ts:3:4)`;
+    expect(crash(error)).toEqual([
+      {
+        level: 'error',
+        event: 'server.crashed',
+        origin: 'o',
+        reason: 'TypeError',
+        stack: 'at f (/app/a.ts:1:2)\nat g (/app/b.ts:3:4)',
+      },
+    ]);
+  });
+
+  it('logs the type of a value thrown that is not an error, with no stack', () => {
+    expect(crash('secret-value')).toEqual([
+      { level: 'error', event: 'server.crashed', origin: 'o', reason: 'string', stack: undefined },
     ]);
   });
 });
@@ -36,6 +88,9 @@ describe('Metrics', () => {
       ].join('\n'),
     );
     expect(text).toContain('blindsignal_sessions_created_total 1\n');
+    metrics.count('blindsignal_devices_expired_total', {}, 5);
+    metrics.count('blindsignal_devices_expired_total', {}, 2);
+    expect(metrics.render()).toContain('blindsignal_devices_expired_total 7\n');
     // A counter never incremented still declares itself.
     expect(text).toContain('# TYPE blindsignal_registry_reloads_total counter\n');
     expect(text).toMatch(/# TYPE blindsignal_connections gauge\nblindsignal_connections 4\n$/);
@@ -49,6 +104,38 @@ describe('Metrics', () => {
     expect(metrics.render()).toMatch(
       /# TYPE blindsignal_application_sessions gauge\nblindsignal_application_sessions\{app_id="notes"\} 2\nblindsignal_application_sessions\{app_id="chat"\} 1\n$/,
     );
+  });
+});
+
+describe('watchProcess', () => {
+  const value = (text: string, series: string) =>
+    Number(new RegExp(`^${series.replace(/[{}]/g, '\\$&')} (\\S+)$`, 'm').exec(text)?.[1]);
+
+  it('reports the start time, memory, and the event loop delay since the previous scrape', async () => {
+    const metrics = new Metrics();
+    const stop = watchProcess(metrics);
+    try {
+      // The monitor's timer starts with the event loop's next turn.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const blocked = Date.now();
+      while (Date.now() - blocked < 120) {
+        // Blocks the event loop.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      const text = metrics.render();
+      expect(value(text, 'process_start_time_seconds')).toBe(performance.timeOrigin / 1000);
+      expect(value(text, 'process_resident_memory_bytes')).toBeGreaterThan(0);
+      expect(value(text, 'nodejs_heap_size_used_bytes')).toBeGreaterThan(0);
+      expect(value(text, 'nodejs_eventloop_delay_seconds{stat="max"}')).toBeGreaterThanOrEqual(0.1);
+      expect(value(text, 'nodejs_eventloop_delay_seconds{stat="p99"}')).toBeGreaterThan(0);
+      // The block is behind the previous scrape.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(value(metrics.render(), 'nodejs_eventloop_delay_seconds{stat="max"}')).toBeLessThan(
+        0.1,
+      );
+    } finally {
+      stop();
+    }
   });
 });
 
