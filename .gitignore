@@ -151,3 +151,6 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Self-hosted deployment: the operator's own files (docs/self-hosted.md)
+examples/self-hosted/registry.json

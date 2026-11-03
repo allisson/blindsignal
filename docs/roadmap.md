@@ -468,7 +468,8 @@ Operating TURN is not required to complete the initial local MVP.
 ### Tasks
 
 - [ ] Finalize production Docker image.
-- [ ] Extend the Phase 3 Docker Compose setup for self-hosted deployment.
+- [x] Extend the Phase 3 Docker Compose setup for self-hosted deployment:
+  `examples/self-hosted/` (ADR 0032).
 - [x] Implement production health and readiness checks: liveness, readiness, and dependency
   probes on `/metrics` (ADR 0028).
 - [x] Configure graceful shutdown: a delay before the closures and a deadline (ADR 0031).
@@ -482,7 +483,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [ ] Document key rotation and application revocation.
 - [ ] Document Cloud Run deployment.
 - [ ] Document VPS deployment.
-- [ ] Document self-hosted deployment.
+- [x] Document self-hosted deployment: `docs/self-hosted.md`.
 - [x] Document optional TURN deployment: `docs/turn-operations.md`.
 - [ ] Define backup and recovery for durable metadata.
 
