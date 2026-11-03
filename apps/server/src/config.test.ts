@@ -43,6 +43,8 @@ describe('loadConfig', () => {
       deviceSweepIntervalMs: 3_600_000,
       registrySyncIntervalMs: 60_000,
       dependencyProbeTimeoutMs: 2_000,
+      shutdownDelayMs: 0,
+      shutdownTimeoutMs: 8_000,
       preAuthentication: {
         authenticationTimeoutMs: 10_000,
         maxUnauthenticatedPerIp: 20,
@@ -105,6 +107,8 @@ describe('loadConfig', () => {
       BLINDSIGNAL_MAX_CONNECTION_SECONDS: '3300',
       BLINDSIGNAL_MAX_CONNECTIONS: '900',
       BLINDSIGNAL_DEPENDENCY_PROBE_TIMEOUT_SECONDS: '5',
+      BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS: '5',
+      BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS: '25',
       BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS: '4',
       BLINDSIGNAL_MAX_UNAUTHENTICATED_PER_IP: '3',
       BLINDSIGNAL_MAX_UNAUTHENTICATED: '30',
@@ -150,6 +154,8 @@ describe('loadConfig', () => {
       deviceSweepIntervalMs: 60_000,
       registrySyncIntervalMs: 20_000,
       dependencyProbeTimeoutMs: 5_000,
+      shutdownDelayMs: 5_000,
+      shutdownTimeoutMs: 25_000,
       database: { url: 'postgresql://bs:pw@db.example:5432/bs', poolSize: 4 },
       redis: { url: 'rediss://default:pw@cache.example:6380' },
       preAuthentication: {
@@ -253,6 +259,8 @@ describe('loadConfig', () => {
     ['BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE', ' 20, 50'],
     ['BLINDSIGNAL_ABUSE_ALERT_THRESHOLD', '-1'],
     ['BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS', '0'],
+    ['BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS', '-1'],
+    ['BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS', '0'],
   ])('rejects %s=%s', (name, value) => {
     expect(error({ ...production, [name]: value })).toContain(name);
   });
@@ -327,6 +335,13 @@ describe('loadConfig', () => {
     expect(error({ ...production, BLINDSIGNAL_REDIS_URL: 'redis://cache' })).toBe(
       'BLINDSIGNAL_REDIS_URL: requires BLINDSIGNAL_DATABASE_URL',
     );
+    expect(
+      error({
+        ...production,
+        BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS: '8',
+        BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS: '8',
+      }),
+    ).toBe('BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS: must exceed BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS');
   });
 
   it('names invalid variables without their values', () => {

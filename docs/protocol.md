@@ -228,8 +228,8 @@ WebSocket with the close code of the code's class:
 Five closures carry no `error`:
 
 - **Shutdown.** A server shutting down fails its readiness check, refuses new upgrades with HTTP
-  `503`, and closes every connection with `1001` (Going Away). The SDK reconnects with backoff,
-  reaching another instance or the restarted one.
+  `503`, and, after a configured delay, closes every connection with `1001` (Going Away)
+  (ADR 0031). The SDK reconnects with backoff, reaching another instance or the restarted one.
 - **Maximum lifetime.** A server configured with a maximum connection lifetime closes each
   connection with `1001` before it ends, at a random point in its last tenth (ADR 0029). The SDK
   reconnects with backoff, as on shutdown.

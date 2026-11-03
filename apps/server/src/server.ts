@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { ApplicationRecord, CoordinationAdapter } from '@blindsignal/core';
 import { MAX_MESSAGE_BYTES } from '@blindsignal/protocol';
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -104,11 +105,12 @@ export class SignalingServer {
   }
 
   /**
-   * Fails readiness, refuses new upgrades, and closes every connection with 1001, resolving once
-   * each has released its sessions and presence.
+   * Fails readiness and refuses new upgrades at once; after `delayMs`, closes every connection with
+   * 1001, resolving once each has released its sessions and presence (ADR 0031).
    */
-  async drain(): Promise<void> {
+  async drain(delayMs = 0): Promise<void> {
     this.#draining = true;
+    await sleep(delayMs);
     const closing = [...this.#wss.clients].map(
       (ws) => new Promise<void>((resolve) => ws.once('close', () => resolve())),
     );
