@@ -37,8 +37,9 @@ stored, logged, or counted. Application payloads never reach the server (spec §
   namespace, session participant, token, or payload is logged (tested).
 - **Operators keep logs with a client IP for at most 14 days.** The server README states it;
   BlindSignal cannot enforce a log pipeline it does not run.
-- **Metrics are aggregates** labeled only by message type, error code, authentication result, and
-  termination reason; they identify no application user, device, or address and need no limit.
+- **Metrics are aggregates** labeled only by message type, error code, authentication result,
+  termination reason, and the backpressure limit reached (ADR 0013); they identify no application
+  user, device, or address and need no limit.
 
 ## Considered options
 

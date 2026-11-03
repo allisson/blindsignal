@@ -63,6 +63,8 @@ async function main(): Promise<void> {
       deviceTtlMs: config.deviceTtlMs,
       limits: config.limits,
       maxMessageBytes: config.maxMessageBytes,
+      maxQueuedMessages: config.maxQueuedMessages,
+      maxBufferedBytes: config.maxBufferedBytes,
       presenceLeaseMs: config.presenceLeaseMs,
       negotiationTimeoutMs: config.negotiationTimeoutMs,
       metrics,

@@ -231,7 +231,7 @@ describe('BlindSignalClient connection', () => {
     expect(harness.client.state).toBe('disconnected');
   });
 
-  it.each([1006, 1001, 4001])('reconnects with a new token after close %i', async (code) => {
+  it.each([1006, 1001, 1013, 4001])('reconnects with a new token after close %i', async (code) => {
     const harness = await connected();
     harness.socket().drop(code);
     expect(harness.client.state).toBe('connecting');

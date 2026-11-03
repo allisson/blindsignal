@@ -28,6 +28,8 @@ const COUNTERS = {
   blindsignal_sessions_created_total: 'Sessions created.',
   blindsignal_sessions_terminated_total: 'Sessions terminated, by reason.',
   blindsignal_registry_reloads_total: 'Registry reloads: ok or rejected.',
+  blindsignal_overloaded_connections_total:
+    'Connections closed with 1013, by the limit reached: queued_messages or buffered_bytes.',
 } as const;
 
 export type CounterName = keyof typeof COUNTERS;

@@ -323,7 +323,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement maximum registered devices per application (spec §8.2). *(MVP)*
 - [x] Implement maximum joined namespaces per device (`docs/adr/0011-quotas-and-rate-limits.md`). *(MVP)*
 - [ ] Implement maximum session duration, where configured (spec §8.2).
-- [ ] Implement bounded queues and backpressure.
+- [x] Implement bounded queues and backpressure (`docs/adr/0013-bounded-queues-and-backpressure.md`).
 - [ ] Implement abuse-triggered application suspension and operational alerts (spec §8.3), reusing the Phase 3 suspension handling.
 - [ ] Implement per-application usage metrics.
 - [x] Add abuse and quota enforcement tests. *(MVP, for the MVP limits)*
@@ -627,7 +627,7 @@ These are later capabilities, not prerequisites for validating the core architec
 ## After the MVP
 
 The MVP is complete: every capability in the MVP definition is delivered. Next come the post-MVP
-tasks of Phase 6 (session duration, bounded queues and backpressure, usage metrics, and
-abuse-triggered suspension), which build on ADR 0011 and Phase 3, and then Phase 8. The post-MVP tasks
+tasks of Phase 6 (session duration, usage metrics, and abuse-triggered suspension; bounded queues
+and backpressure are done, ADR 0013), which build on ADR 0011 and Phase 3, and then Phase 8. The post-MVP tasks
 of Phase 5 (proof-of-possession, session authorization, and pairing) each start with an ADR and
 are not scheduled yet.

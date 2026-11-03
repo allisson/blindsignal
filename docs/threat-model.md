@@ -60,7 +60,7 @@ Application payloads are not an asset of the server: they never reach it (spec ย
 | Plaintext signaling | SDK refuses `ws://` except on loopback; TLS everywhere else | spec ยง16 |
 | Cross-site WebSocket use from a hostile page | Token required on every connection; `Origin` allowlist as defense in depth | spec ยง16 |
 | Pre-authentication flooding | Per-IP connection and authentication limits, unauthenticated connection cap, authentication deadline, HTTP `429` at the upgrade | spec ยง8.4, ADR 0011 |
-| Post-authentication flooding or resource exhaustion | Token buckets per connection and session, application and device quotas, maximum message size | ADR 0011 |
+| Post-authentication flooding or resource exhaustion | Token buckets per connection and session, application and device quotas, maximum message size, bounded per-connection queues and send buffers | ADR 0011, ADR 0013 |
 | Forged forwarding headers to evade IP limits | Headers honored only from configured trusted proxies | ADR 0011 |
 | Behind a tunnel or proxy (Phase 7), every client shares one address and its pre-authentication limits | The tunnel's connector listed as a trusted proxy, with its forwarding header (`cf-connecting-ip` for Cloudflare) | ADR 0011 |
 | Metrics reached by clients | The admin port binds to loopback by default and serves only aggregates | ADR 0012 |
@@ -119,8 +119,9 @@ Application payloads are not an asset of the server: they never reach it (spec ย
 7. **In-memory adapters are single-instance** and lose device records, presence, and `jti`
    history on restart. Tokens issued before the restart are rejected, so the lost `jti` history
    allows no replay (ADR 0006); revocations survive in the registry file.
-8. **A flooding connection is answered, not closed** (ADR 0011); closing on repeated violations
-   and abuse-triggered suspension are post-MVP.
+8. **A flooding connection is answered, not closed** (ADR 0011), until its queue fills and it is
+   closed with `1013` (ADR 0013); closing on repeated violations and abuse-triggered suspension
+   are post-MVP.
 9. **The unauthenticated-connection caps are per instance** (`apps/server/README.md`): each
    instance behind a load balancer admits its own share.
 10. **A device record past its TTL may stay in memory** until its application's next new device

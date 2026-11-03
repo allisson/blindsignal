@@ -85,6 +85,8 @@ async function start(options: Options = {}) {
       presenceLeaseMs: options.presenceLeaseMs ?? 90_000,
       negotiationTimeoutMs: 30_000,
       maxMessageBytes: options.maxMessageBytes,
+      maxQueuedMessages: defaults.maxQueuedMessages,
+      maxBufferedBytes: defaults.maxBufferedBytes,
       metrics: new Metrics(),
       logger: { log: (level, event, fields) => logs.push({ level, event, ...fields }) },
     },

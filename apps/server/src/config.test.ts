@@ -40,6 +40,8 @@ describe('loadConfig', () => {
         authenticationAttempts: { ratePerSecond: 1, burst: 10 },
       },
       maxMessageBytes: 65_536,
+      maxQueuedMessages: 1_024,
+      maxBufferedBytes: 1_048_576,
       limits: {
         quotas: {
           connections: 10_000,
@@ -85,6 +87,8 @@ describe('loadConfig', () => {
       BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS: '1,4',
       BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION: '0.2,3',
       BLINDSIGNAL_MAX_MESSAGE_BYTES: '1024',
+      BLINDSIGNAL_MAX_QUEUED_MESSAGES: '64',
+      BLINDSIGNAL_MAX_BUFFERED_BYTES: '131072',
       BLINDSIGNAL_MAX_CONNECTIONS_PER_APP: '40',
       BLINDSIGNAL_MAX_DEVICES_PER_APP: '50',
       BLINDSIGNAL_MAX_SESSIONS_PER_APP: '60',
@@ -117,6 +121,8 @@ describe('loadConfig', () => {
         authenticationAttempts: { ratePerSecond: 0.2, burst: 3 },
       },
       maxMessageBytes: 1024,
+      maxQueuedMessages: 64,
+      maxBufferedBytes: 131_072,
       limits: {
         quotas: {
           connections: 40,
@@ -192,6 +198,8 @@ describe('loadConfig', () => {
     ['BLINDSIGNAL_MAX_DEVICES_PER_APP', '0'],
     ['BLINDSIGNAL_MAX_MESSAGE_BYTES', '0'],
     ['BLINDSIGNAL_MAX_MESSAGE_BYTES', '65537'],
+    ['BLINDSIGNAL_MAX_QUEUED_MESSAGES', '1'],
+    ['BLINDSIGNAL_MAX_BUFFERED_BYTES', '65535'],
     ['BLINDSIGNAL_MAX_CONNECTIONS_PER_APP', '1.5'],
     ['BLINDSIGNAL_MAX_SESSIONS_PER_APP', 'many'],
     ['BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE', '-1'],
