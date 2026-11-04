@@ -55,7 +55,8 @@ and the error catalog in §9; server and SDK parse frames with it.
 - There is no WebSocket subprotocol negotiation and no minor version.
 - The SDK and the server have semantic versions of their own; each of their major versions states
   the protocol majors it speaks, and adding one is a minor version, dropping one a major
-  (ADR 0043).
+  (ADR 0043). A server keeps the previous protocol major next to a new one until old SDKs have
+  had time to upgrade (ADR 0044).
 
 ## 3. Request correlation and replies
 

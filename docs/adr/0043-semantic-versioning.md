@@ -34,8 +34,7 @@ other, and what counts as a breaking change in each.
 - **Logs are not part of the contract,** except the name and fields of an event that a document
   tells operators to watch for, such as `registry.reload_rejected` or `server.crashed`.
 - **A new protocol major is a minor version where it is added, and a major one where it is
-  dropped.** Which protocol majors a server keeps at once is the support policy's (roadmap
-  Phase 12).
+  dropped.** Which protocol majors a server keeps at once is ADR 0044's (amended).
 - **Versions start at `0.1.0` on the first publication.** Within `0.x`, a breaking change raises
   the minor version and anything else the patch. `1.0.0` comes when Phase 12's acceptance criteria
   are met.

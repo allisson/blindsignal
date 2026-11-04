@@ -59,7 +59,8 @@ the decisions behind them are in `docs/adr/0032-self-hosted-compose.md`.
   `POSTGRES_PASSWORD` in `.env` alone breaks the migration.
 - **Upgrades:** `git pull`, then `docker compose up -d --build --wait`. The migrations run before
   the new server starts; clients reconnect on their own after the old one closes their
-  connections with `1001` (ADR 0031).
+  connections with `1001` (ADR 0031). Upgrade one minor version at a time, and roll back by
+  redeploying the previous one; migrations are never reverted (ADR 0044).
 - **Logs:** `docker compose logs -f server`, one JSON object per line, with no token, secret, or
   payload (`apps/server/README.md`).
 - **TURN:** the `turn` profile runs Coturn on this host (`docs/vps.md`), or run it elsewhere as

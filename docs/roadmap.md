@@ -565,7 +565,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [ ] Publish application onboarding documentation.
 - [ ] Publish deployment documentation.
 - [x] Define semantic versioning: ADR 0043.
-- [ ] Define support and upgrade policy.
+- [x] Define support and upgrade policy: ADR 0044.
 
 ### Deliverables
 
@@ -657,4 +657,5 @@ registry and JWKS setup, and grants pairings (`docs/token-issuance.md`); two app
 the server's instances reach nothing of each other, and exchange their own payload formats;
 `docs/application-e2ee.md` states what applications must do for end-to-end encryption, and
 `docs/integration-feedback.md` what the examples taught about integrating. Phase 12 has started:
-the SDK and the server follow semantic versioning, joined by the protocol major (ADR 0043).
+the SDK and the server follow semantic versioning, joined by the protocol major (ADR 0043), and
+a server keeps the previous protocol major while old SDKs can still run (ADR 0044).
