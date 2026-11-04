@@ -26,6 +26,7 @@ server. Initial target: browser / PWA.
 - `docs/backup-and-recovery.md`: what to back up, and restoring PostgreSQL.
 - `docs/vps.md`: one VPS behind a firewall, with Coturn on the same host.
 - `docs/cloud-run.md`: Cloud Run, with the registry in Secret Manager (untested on Cloud Run).
+- `docs/tailscale.md`: a laptop and devices on one tailnet, pairing in `examples/minimal-app`.
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
 raise it; do not silently diverge. A change that alters a documented contract updates the spec,

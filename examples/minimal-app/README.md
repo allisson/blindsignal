@@ -31,7 +31,8 @@ pnpm start
 
 Open `http://127.0.0.1:4000` in two browser profiles, or one normal window and one private window:
 a profile holds one device key and one device ID. Sign in as the same user in both, pair the
-second, and connect.
+second, and connect. To use phones and other machines, `docs/tailscale.md` serves both over HTTPS
+in a tailnet.
 
 The backend's variables are those of `examples/backend-issuer`; `BLINDSIGNAL_EXAMPLE_SIGNALING_URL`
 (default `ws://localhost:8080`) is the signaling server the page uses.

@@ -490,6 +490,8 @@ Operating TURN is not required to complete the initial local MVP.
   `docs/application-lifecycle.md`.
 - [x] Document Cloud Run deployment: `docs/cloud-run.md`, untested on Cloud Run (ADR 0039).
 - [x] Document VPS deployment: `docs/vps.md` (ADR 0036).
+- [x] Document a private network for development: `docs/tailscale.md`, with `tailscale serve`
+  and `examples/minimal-app`, not yet run end to end.
 - [x] Document self-hosted deployment: `docs/self-hosted.md`.
 - [x] Document optional TURN deployment: `docs/turn-operations.md`.
 - [x] Define backup and recovery for durable metadata: `docs/backup-and-recovery.md`

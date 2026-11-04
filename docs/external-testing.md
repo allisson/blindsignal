@@ -8,6 +8,7 @@ Stop the tunnels when the test ends.
 Cloudflare Quick Tunnel is the ingress here: it gives the local server a temporary HTTPS and WSS
 address. It is not a WebRTC transport or a TURN relay. DataChannel traffic still flows directly
 between the browsers, or not at all: this setup configures no TURN server (see Known limitations).
+To keep the server reachable only by your own devices, and to pair them, see `docs/tailscale.md`.
 
 ## Local workflow with Docker Compose
 
