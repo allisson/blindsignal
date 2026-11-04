@@ -118,3 +118,5 @@ $('send').addEventListener('submit', (event) => {
   log(`me: ${input.value}`);
   input.value = '';
 });
+// Before this, a submit would reload the page instead of signing in.
+($('sign-in') as HTMLButtonElement).disabled = false;
