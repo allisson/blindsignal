@@ -43,7 +43,8 @@ connects only through the TURN relay, so its DataChannel tests run with `BLINDSI
 
 `BLINDSIGNAL_TEST_TURN=1 pnpm test:browser` also runs the relay tests: it starts the Coturn of
 `compose.yaml` with Docker, on loopback, and three signaling servers with its test secret, each
-offering one TURN transport: UDP, TCP, and TLS. Chromium accepts the self-signed TLS certificate
+offering one TURN transport: UDP, TCP, and TLS, and each with a demo page of its own, since a page
+takes its server only from its configuration. Chromium accepts the self-signed TLS certificate
 through `--ignore-certificate-errors`; Firefox has no such switch, so its TLS test is skipped. The
 same run tests the fallback to the relay, in a Firefox that gathers no host candidates, and a
 fourth signaling server whose TURN URL nothing listens on, with which sessions still connect
