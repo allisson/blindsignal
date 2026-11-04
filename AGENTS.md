@@ -79,7 +79,8 @@ what the examples taught about integrating. Phase 12 has started: the SDK and th
 semantic versioning, joined by the protocol major (ADR 0043), and a server keeps the previous
 protocol major while old SDKs can still run (ADR 0044); clients accept error codes and end
 reasons that a later release adds (ADR 0045), and the SDK's public API is reviewed, with
-`refresh()` on demand (ADR 0046). The workspace uses
+`refresh()` on demand (ADR 0046); the SDK names its supported browsers, and CI runs WebKit too
+(ADR 0047). The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
@@ -98,7 +99,7 @@ pnpm lint             # ESLint, type-aware, with the ADR 0002 import rules
 pnpm typecheck        # tsc --noEmit in every package
 pnpm test             # Vitest across all packages
 pnpm test:coverage    # Vitest with V8 coverage and the floors below
-pnpm test:browser     # Playwright, Chromium and Firefox, against examples/browser-demo and examples/minimal-app
+pnpm test:browser     # Playwright, Chromium, Firefox, and WebKit, against examples/browser-demo and examples/minimal-app
 BLINDSIGNAL_TEST_TURN=1 pnpm test:browser  # also the relay tests, with the compose.yaml Coturn (Docker)
 BLINDSIGNAL_TEST_POSTGRES_URL=<url> pnpm test  # also the PostgreSQL adapter, with the compose.yaml PostgreSQL (port 6432: through its PgBouncer)
 BLINDSIGNAL_TEST_REDIS_URL=<url> pnpm test     # also the Redis adapter and two server instances, with the compose.yaml Valkey

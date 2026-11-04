@@ -35,9 +35,11 @@ which approve every request (ADR 0042). The page shows the approval a backend wo
 
 ## Tests
 
-`pnpm test:browser` runs `tests/` with Playwright in Chromium and Firefox, starting both servers
-on their own ports. Install the browsers once with
-`pnpm --filter @blindsignal/browser-demo exec playwright install chromium firefox`.
+`pnpm test:browser` runs `tests/` with Playwright in Chromium, Firefox, and WebKit, starting both
+servers on their own ports. Install the browsers once with
+`pnpm --filter @blindsignal/browser-demo exec playwright install chromium firefox webkit`. WebKit
+connects only through the TURN relay, so its DataChannel tests run with `BLINDSIGNAL_TEST_TURN=1`
+(ADR 0047).
 
 `BLINDSIGNAL_TEST_TURN=1 pnpm test:browser` also runs the relay tests: it starts the Coturn of
 `compose.yaml` with Docker, on loopback, and three signaling servers with its test secret, each

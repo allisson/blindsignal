@@ -39,7 +39,9 @@ The backend's variables are those of `examples/backend-issuer`; `BLINDSIGNAL_EXA
 
 ## Tests
 
-`pnpm test:browser` runs `tests/` with Playwright in Chromium and Firefox. `playwright.config.ts`
+`pnpm test:browser` runs `tests/` with Playwright in Chromium, Firefox, and WebKit; WebKit stops
+after the pairing, since it connects only through a TURN relay, which this suite does not start
+(ADR 0047). `playwright.config.ts`
 generates a key for the run, writes a registry trusting it, and starts the signaling server and
 this server on their own ports. Two browser contexts are a user's two devices: the second is paired
 by the first, and a message between them never crosses the signaling server.

@@ -6,8 +6,16 @@ payloads travel only over the DataChannel, never through the signaling server.
 
 The package ships ESM and leaves bundling to the application (ADR 0001). It imports only
 `@blindsignal/protocol` and web-standard globals (ADR 0002). `examples/browser-demo` runs it in a
-page, and its Playwright tests cover Chromium and Firefox. `examples/minimal-app` is the shortest
+page, and its Playwright tests cover Chromium, Firefox, and WebKit. `examples/minimal-app` is the shortest
 complete use: a page whose backend issues bound tokens and grants pairings.
+
+## Browser support
+
+Chrome and Edge 119, Firefox 121, and Safari 17.4, and later, on desktop and iOS
+(`docs/adr/0047-supported-browsers.md`). The SDK needs WebRTC DataChannels, WebCrypto ECDSA P-256,
+and `Promise.withResolvers`; `DeviceKey.load()` needs IndexedDB and a secure context. CI runs
+Chromium, Firefox, and WebKit; in WebKit only through a TURN relay, so direct connections in Safari
+and every iOS browser are untested.
 
 ## Usage
 

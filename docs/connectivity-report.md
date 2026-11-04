@@ -61,3 +61,8 @@ Findings:
 - **Firefox** opened a DataChannel to Chrome on Android across networks.
 - **Backgrounded mobile page.** The Android connection closed with `1006` twice and reconnected
   once the page was in front again, as run 1's S2 and the guide's known limitations describe.
+
+## Not yet run
+
+No run has included Safari or an iOS device. Playwright's WebKit covers Safari's relay path in CI,
+but not a direct one (ADR 0047): a run with a Safari device would.

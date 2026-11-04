@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
 import { createHash } from 'node:crypto';
 
 /** Each browser its own context, as two devices; a suffix keeps parallel projects apart. */
@@ -15,12 +15,28 @@ async function open(browser: Browser, user: string, device: string, query: objec
   return { page, sent, received };
 }
 
+/**
+ * Playwright's WebKit names its host candidates with mDNS names it cannot resolve, and has no
+ * switch to turn them off: its browsers connect only through the TURN relay (ADR 0047).
+ */
+function skipWithoutRelay(info: TestInfo) {
+  test.skip(
+    info.project.name === 'webkit' && !process.env.BLINDSIGNAL_TEST_TURN,
+    'WebKit connects only through the relay of the TURN run',
+  );
+}
+
+function skipDirect(info: TestInfo) {
+  test.skip(info.project.name === 'webkit', 'WebKit cannot connect over host candidates');
+}
+
 async function send(page: Page, text: string) {
   await page.getByLabel('Message').fill(text);
   await page.getByRole('button', { name: 'Send' }).click();
 }
 
 test('two browsers open a DataChannel, exchange messages, and close', async ({ browser }, info) => {
+  skipDirect(info);
   const alice = await open(browser, 'alice', `laptop-${info.project.name}`);
   const bob = await open(browser, 'bob', `phone-${info.project.name}`);
 
@@ -53,6 +69,7 @@ test('two browsers open a DataChannel, exchange messages, and close', async ({ b
 test('two applications on one server keep their devices and protocols apart', async ({
   browser,
 }, info) => {
+  skipWithoutRelay(info);
   // The same user and device IDs in both: an identity belongs to its application (spec §6.1).
   const laptop = `laptop-apps-${info.project.name}`;
   const phone = `phone-apps-${info.project.name}`;
@@ -91,6 +108,7 @@ test('two applications on one server keep their devices and protocols apart', as
 test('two browsers bound to device keys connect, and keep their keys across a reload', async ({
   browser,
 }, info) => {
+  skipWithoutRelay(info);
   const alice = await open(browser, 'alice', `pop-laptop-${info.project.name}`, { pop: '' });
   const bob = await open(browser, 'bob', `pop-phone-${info.project.name}`, { pop: '' });
   for (const { page, sent } of [alice, bob]) {
@@ -179,8 +197,8 @@ for (const [transport, port] of [
   }, info) => {
     test.skip(!process.env.BLINDSIGNAL_TEST_TURN, 'needs the Coturn of compose.yaml');
     test.skip(
-      transport === 'tls' && info.project.name === 'firefox',
-      "Firefox rejects the test TURN server's self-signed certificate",
+      transport === 'tls' && info.project.name !== 'chromium',
+      "Firefox and WebKit reject the test TURN server's self-signed certificate",
     );
     const query = { relay: '', server: `ws://localhost:${port}` };
     const suffix = `${transport}-${info.project.name}`;
@@ -231,6 +249,7 @@ test('two browsers without direct candidates fall back to the relay', async ({
 // The signaling server on 8790 offers a TURN URL that nothing listens on.
 test('two browsers connect directly while TURN is unreachable', async ({ browser }, info) => {
   test.skip(!process.env.BLINDSIGNAL_TEST_TURN, 'needs the signaling servers of the TURN run');
+  skipDirect(info);
   const query = { server: 'ws://localhost:8790' };
   const suffix = `no-turn-${info.project.name}`;
   const alice = await open(browser, 'alice', `laptop-${suffix}`, query);

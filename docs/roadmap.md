@@ -560,7 +560,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [ ] Complete security review.
 - [ ] Complete abuse-resistance review.
 - [ ] Complete performance and load tests.
-- [ ] Complete browser compatibility tests.
+- [x] Complete browser compatibility tests: ADR 0047.
 - [ ] Publish SDK documentation.
 - [ ] Publish application onboarding documentation.
 - [ ] Publish deployment documentation.
@@ -660,4 +660,5 @@ the server's instances reach nothing of each other, and exchange their own paylo
 the SDK and the server follow semantic versioning, joined by the protocol major (ADR 0043), and
 a server keeps the previous protocol major while old SDKs can still run (ADR 0044), clients
 accept error codes and end reasons that a later release adds (ADR 0045), and the SDK's public API
-is reviewed, with `refresh()` on demand (ADR 0046).
+is reviewed, with `refresh()` on demand (ADR 0046), and the SDK names its supported browsers, with
+WebKit in CI (ADR 0047).

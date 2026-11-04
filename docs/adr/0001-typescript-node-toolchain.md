@@ -31,7 +31,8 @@ codegen on both sides, and every message schema is written against the validatio
 - **Tests:** Vitest for unit and integration tests against in-memory adapters; Playwright Test for
   browser-to-browser DataChannel tests.
 - **Browsers:** Chromium and Firefox are required in CI from the MVP; WebKit is best-effort until
-  the Phase 12 compatibility tests, since headless WebKit WebRTC is limited in CI.
+  the Phase 12 compatibility tests, since headless WebKit WebRTC is limited in CI. Amended by
+  ADR 0047: WebKit runs in CI too, and the supported versions are named there.
 - **Lint and format:** ESLint with type-checked `typescript-eslint`, plus Prettier. Type-aware
   `no-floating-promises` and `no-misused-promises` matter in an async message handler, where a
   forgotten promise can silently skip an authorization check. Biome was rejected for weaker
