@@ -18,7 +18,8 @@
     <h1>BlindSignal minimal app</h1>
     <form id="login">
       <label>User <input id="user" autocomplete="username" required /></label>
-      <button type="submit">Sign in</button>
+      <!-- Enabled by app.ts once its handlers are attached -->
+      <button id="sign-in" type="submit" disabled>Sign in</button>
     </form>
     <p>Device: <span id="device"></span>. Signaling: <span id="state">disconnected</span></p>
     <p id="pair" hidden>

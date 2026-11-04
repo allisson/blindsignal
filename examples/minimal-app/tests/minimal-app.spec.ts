@@ -45,6 +45,18 @@ test("a user's new device is paired by the first, then they exchange a message",
   }
 });
 
+test('signing in waits for the page to load', async ({ page }, info) => {
+  // A slow load: the button stays disabled until the page's handlers are attached.
+  await page.route('**/config', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  await page.goto('/');
+  await page.getByLabel('User').fill(`carol-${info.project.name}-${info.repeatEachIndex}`);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.locator('#state')).toHaveText('connected');
+});
+
 test('a device keeps its ID across a reload', async ({ browser }, info) => {
   const { page, deviceId } = await signIn(
     browser,
