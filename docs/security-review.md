@@ -40,6 +40,11 @@ reported no advisory.
 | SDK ↔ server | `iceServers` is checked only when the client is built, and accepts a `credential` on a `stun:` URL | The client copies what it checked, and refuses `username` and `credential` |
 | SDK ↔ server | The server URL may carry userinfo or a query string | The SDK refuses userinfo, a query string, and a fragment |
 | SDK ↔ server | `auth.refresh` leaves the connection's pairing requests open when the new token drops `pairing` | They end with `pairing.ended` reason `namespace_unauthorized` (ADR 0042) |
+| Operator ↔ server | A `SIGHUP` that arrives before the signal handlers are installed ends the process | The server handles it from its first line, and reloads once it can (ADR 0005) |
+| Operator ↔ server | An unreachable Redis at startup leaves the server waiting, with no deadline | `BLINDSIGNAL_STARTUP_TIMEOUT_SECONDS`, default 30, for every dependency (ADR 0031) |
+| Operator ↔ server | `server.start_failed` and the crash log can carry text from an error message | Only the server's own errors log their message, others their name and code; crash frames are read after the message (ADR 0037) |
+| Operator ↔ server | The TURN credential lifetime has no upper bound | At most a day (ADR 0017) |
+| Operator ↔ server | `docs/cloud-run.md` does not require TLS and authentication for Redis, and OTLP headers may go over plain HTTP | It requires both, and `https://` for OTLP credentials, as `docs/deployment.md` does |
 
 ### Non-blocking, accepted
 
@@ -51,11 +56,6 @@ reported no advisory.
 
 | Boundary | Finding |
 |---|---|
-| Operator ↔ server | A `SIGHUP` that arrives before the signal handlers are installed ends the process |
-| Operator ↔ server | An unreachable Redis at startup leaves the server waiting, with no deadline |
-| Operator ↔ server | `server.start_failed` and the crash log can carry text from an error message |
-| Operator ↔ server | The TURN credential lifetime has no upper bound |
-| Operator ↔ server | `docs/cloud-run.md` does not require TLS and authentication for Redis, and OTLP headers may go over plain HTTP |
 | Server ↔ adapters | An event delivered from another instance is not checked against the session again |
 | Server ↔ adapters | Coordination events are parsed without a schema |
 | Server ↔ adapters | A device's claim in Redis has no TTL |
@@ -78,6 +78,12 @@ ADR 0013, ADR 0016, and ADR 0017.
 | SDK ↔ server | A connection the server closed waited 30 s for the client's close frame, holding its slot | `BLINDSIGNAL_CLOSE_TIMEOUT_SECONDS`, default 5 (ADR 0011) |
 | Device ↔ device | `examples/self-hosted/turnserver.conf` set no quota, and relayed TCP to any address (threat model §4.4) | `user-quota`, `total-quota`, `max-bps`, and `no-tcp-relay` (ADR 0017, `docs/turn-operations.md`) |
 | SDK ↔ server | No test showed that a refused authentication or refresh issues no TURN credential (ADR 0009) | A negative test |
+
+### Non-blocking, fixed
+
+| Boundary | Finding | Fix |
+|---|---|---|
+| Server ↔ adapters | Redis commands have no timeout, so an upgrade waits on `consumeRateLimit` while Redis does not answer | `BLINDSIGNAL_REDIS_COMMAND_TIMEOUT_SECONDS`, default 2: an operation fails as when Redis is unreachable (ADR 0023) |
 
 ### Non-blocking, accepted
 
@@ -105,7 +111,6 @@ ADR 0013, ADR 0016, and ADR 0017.
 | SDK ↔ server | Both sides of a session share one `rtc` bucket |
 | SDK ↔ server | No HTTP header or request timeout bounds a client before the upgrade |
 | Operator ↔ server | The abuse alert does not name the connection |
-| Server ↔ adapters | Redis commands have no timeout, so an upgrade waits on `consumeRateLimit` while Redis does not answer |
 | Device ↔ device | A TURN username is its expiry and application ID only, so the credentials of one application minted in the same second are the same, and share its `user-quota` |
 | Device ↔ device | `denied-peer-ip` does not deny the TURN host's own public address |
 | Tests | No test sends `rtc.ice_config` from a client (spec §21), or runs the abuse rules against Redis and two instances |

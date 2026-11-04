@@ -47,7 +47,9 @@ repository; never expose it.
       (`docs/backup-and-recovery.md`).
 - [ ] With Redis, `maxmemory-policy` is `noeviction`, each deployment sharing it has its own
       `BLINDSIGNAL_REDIS_PREFIX`, and every instance restarts after Redis loses data
-      (ADR 0035).
+      (ADR 0035). Outside a private network of its own, Redis takes a password over
+      `rediss://`.
+- [ ] OTLP credentials in `OTEL_EXPORTER_OTLP_HEADERS` go only to an `https://` endpoint.
 - [ ] Each secret has an owner and a rotation (`docs/secrets-and-keys.md`).
 - [ ] Logs with a client IP are kept 14 days at most (ADR 0012): `BLINDSIGNAL_LOG_LEVEL=warn`
       writes none, or the log store deletes them.

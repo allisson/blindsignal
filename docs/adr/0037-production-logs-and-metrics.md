@@ -16,7 +16,14 @@ that the server cannot observe at all.
   events, and with them every logged client IP, are not written.
 - **An uncaught exception or unhandled rejection logs `server.crashed` (`error`) and exits with
   status 1,** as Node.js would. The entry carries the origin, the error's name, and its stack
-  frames, never its message, which may quote values.
+  frames, never its message, which may quote values. The frames are read after the message, so a
+  line of the message that looks like a frame is not one (amended with the operator robustness
+  fixes).
+- **A failed startup logs `server.start_failed` (`error`) and exits with status 1** (amended with
+  the operator robustness fixes). Its reason is the message only for the server's own
+  configuration and registry errors, which name keys, never values, and for a schema behind the
+  release; for any other error, such as a database refusing a user, it is the error's name, with
+  its `code` when it has one (`ECONNREFUSED`, a SQLSTATE).
 - **The process's own gauges, under the names Prometheus clients commonly use:**
   `process_start_time_seconds`, `process_resident_memory_bytes`, `nodejs_heap_size_used_bytes`,
   and `nodejs_eventloop_delay_seconds{stat="p99"|"max"}`, from `monitorEventLoopDelay`. The delay

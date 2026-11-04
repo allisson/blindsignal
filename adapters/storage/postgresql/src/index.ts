@@ -11,6 +11,11 @@ import { loadMigrations, LOCK_CLASS, LOCK_REGISTRY, schemaVersion } from './migr
 
 export { loadMigrations, migrate, schemaVersion, type Migration } from './migrate.ts';
 
+/** The schema is behind this release; its message names versions only, so it may be logged. */
+export class SchemaVersionError extends Error {
+  override name = 'SchemaVersionError';
+}
+
 export interface PostgreSQLStorage {
   readonly storage: PostgreSQLStorageAdapter;
   /** Rejects when the schema is behind this release's migrations (ADR 0019). */
@@ -37,7 +42,7 @@ export function openPostgreSQLStorage(options: {
       const [current, migrations] = await Promise.all([schemaVersion(pool), loadMigrations()]);
       const required = migrations.at(-1)?.version ?? 0;
       if (current < required) {
-        throw new Error(
+        throw new SchemaVersionError(
           `the database schema is at version ${current} and this release needs ${required}: run the migrate command`,
         );
       }

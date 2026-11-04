@@ -28,11 +28,12 @@ call to another service on the authentication path.
   - `BLINDSIGNAL_TURN_URLS`: comma-separated `turn:` and `turns:` URLs; empty turns TURN off.
   - `BLINDSIGNAL_TURN_SECRET`: the secret shared with the TURN server; at least 32 bytes. Never
     logged, and a configuration error names the variable, never its value.
-  - `BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS`: default 900.
+  - `BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS`: default 900, at most 86,400 (amended with the
+    operator robustness fixes: a stolen credential opens allocations until it expires).
 
   The server refuses to start when only one of the URLs and the secret is set, when the secret is
   shorter than 32 bytes, or when the lifetime is below the maximum token lifetime plus the
-  clock-skew tolerance (ADR 0009). `BLINDSIGNAL_ICE_SERVERS` stays STUN-only, so no static TURN
+  clock-skew tolerance (ADR 0009) or above a day. `BLINDSIGNAL_ICE_SERVERS` stays STUN-only, so no static TURN
   credential can be configured.
 - **Forcing the relay:** the SDK accepts `iceTransportPolicy`, `all` (default) or `relay`, the
   `RTCConfiguration` field of that name, applied to every peer connection. It lets tests prove a

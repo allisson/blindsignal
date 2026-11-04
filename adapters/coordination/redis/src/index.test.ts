@@ -26,12 +26,15 @@ async function instance(prefix = `test:${randomUUID()}:`) {
 
 /**
  * A TCP proxy to the server that tells the subscriber's connection, the one that sent SUBSCRIBE,
- * from the command connection, so a test can cut either and refuse its reconnection.
+ * from the command connection, so a test can cut either and refuse its reconnection, or stall
+ * every reply, as a server that stops answering.
  */
 async function proxy() {
   const target = new URL(url!);
   const pairs: { sockets: Socket[]; subscriber: boolean }[] = [];
   let refusing = false;
+  let stalled = false;
+  const held: [Socket, Buffer][] = [];
   const server = createServer((downstream) => {
     if (refusing) return void downstream.destroy();
     const upstream = connect(Number(target.port), target.hostname);
@@ -41,7 +44,10 @@ async function proxy() {
     downstream.on('data', (chunk: Buffer) => {
       if (chunk.toString().toUpperCase().includes('SUBSCRIBE')) pair.subscriber = true;
     });
-    downstream.pipe(upstream).pipe(downstream);
+    downstream.pipe(upstream);
+    upstream.on('data', (chunk: Buffer) =>
+      stalled ? held.push([downstream, chunk]) : downstream.write(chunk),
+    );
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
@@ -51,6 +57,14 @@ async function proxy() {
       for (const pair of pairs) {
         if (pair.subscriber === subscriber) for (const socket of pair.sockets) socket.destroy();
       }
+    },
+    stall() {
+      stalled = true;
+    },
+    /** Delivers the replies held since the stall, and every reply after them. */
+    resume() {
+      stalled = false;
+      for (const [socket, chunk] of held.splice(0)) socket.write(chunk);
     },
     close() {
       for (const socket of pairs.flatMap((pair) => pair.sockets)) socket.destroy();
@@ -137,6 +151,32 @@ describe.skipIf(url === undefined)('RedisCoordinationAdapter', () => {
       tcp.cut(subscriber);
       await vi.waitFor(() => expect(opened.ping()).rejects.toThrow());
     } finally {
+      await opened.end().catch(() => {});
+      await tcp.close();
+    }
+  });
+
+  it('fails a command the server does not answer within the timeout (ADR 0023)', async () => {
+    const tcp = await proxy();
+    const opened = await openRedisCoordination({
+      url: tcp.url,
+      onError: () => {},
+      commandTimeoutMs: 200,
+    });
+    try {
+      await expect(opened.coordination.claimJti('i', randomUUID(), 1000)).resolves.toBe(true);
+      tcp.stall();
+      const started = Date.now();
+      await expect(
+        opened.coordination.consumeRateLimit('k', { ratePerSecond: 1, burst: 1 }),
+      ).rejects.toThrow();
+      expect(Date.now() - started).toBeLessThan(2000);
+      // The late reply goes to the command that timed out, not to the next one.
+      tcp.resume();
+      await expect(opened.coordination.claimJti('i', randomUUID(), 1000)).resolves.toBe(true);
+    } finally {
+      // A close waits for the replies held, which the client discards once they arrive.
+      tcp.resume();
       await opened.end().catch(() => {});
       await tcp.close();
     }

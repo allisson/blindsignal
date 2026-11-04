@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { connect } from 'node:net';
+import { connect, createServer as createTcpServer, type Socket } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
@@ -19,6 +19,38 @@ const CRASH = `data:text/javascript,${encodeURIComponent(`
   process.once('SIGUSR2', crash);
   if (process.env.CRASH_AFTER_MS) setTimeout(crash, Number(process.env.CRASH_AFTER_MS));
 `)}`;
+
+// Loaded before main.ts: sends SIGHUP while the startup reads the registry, before the reload is
+// wired, and holds the read until the signal has arrived.
+const EARLY_SIGHUP = `data:text/javascript,${encodeURIComponent(`
+  import fs from 'node:fs';
+  import { syncBuiltinESMExports } from 'node:module';
+  const readFile = fs.promises.readFile;
+  let sent = false;
+  fs.promises.readFile = async (...args) => {
+    if (!sent) {
+      sent = true;
+      process.kill(process.pid, 'SIGHUP');
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return readFile(...args);
+  };
+  syncBuiltinESMExports();
+`)}`;
+
+/** A TCP server that accepts connections and never answers, as a dependency that hangs. */
+async function silent() {
+  const sockets: Socket[] = [];
+  const server = createTcpServer((socket) => sockets.push(socket));
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    port: (server.address() as AddressInfo).port,
+    close() {
+      for (const socket of sockets) socket.destroy();
+      server.close();
+    },
+  };
+}
 
 interface Entry {
   readonly event: string;
@@ -113,6 +145,81 @@ describe('shutdown (ADR 0031)', { timeout: 30_000 }, () => {
     expect(Date.now() - signalled).toBeLessThan(5000);
     expect(events.includes('server.shutdown_timeout')).toBe(true);
     socket.destroy();
+  });
+});
+
+describe('startup', { timeout: 30_000 }, () => {
+  it('reloads the registry on a SIGHUP that arrives before the reload is wired (ADR 0005)', async () => {
+    // The startup timeout passes too, after the server listens, and must not end it.
+    const { child, entries, exited } = start({ BLINDSIGNAL_STARTUP_TIMEOUT_SECONDS: '1' }, [
+      '--import',
+      EARLY_SIGHUP,
+    ]);
+    const reloaded = new Promise<void>((resolve) =>
+      child.on('entry', (entry: Entry) => {
+        if (entry.event === 'registry.reloaded') resolve();
+      }),
+    );
+    await reloaded;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    child.kill('SIGTERM');
+    expect(await exited).toBe(0);
+    expect(entries.some((entry) => entry.event === 'server.start_failed')).toBe(false);
+  });
+
+  it('exits with 1 once a dependency holds the start past the timeout (ADR 0031)', async () => {
+    const database = await silent();
+    try {
+      const started = Date.now();
+      const { entries, exited } = start({
+        BLINDSIGNAL_DATABASE_URL: `postgres://bs@127.0.0.1:${database.port}/bs`,
+        BLINDSIGNAL_STARTUP_TIMEOUT_SECONDS: '1',
+      });
+      expect(await exited).toBe(1);
+      expect(Date.now() - started).toBeLessThan(10_000);
+      expect(entries.at(-1)).toMatchObject({
+        event: 'server.start_failed',
+        reason: 'startup timed out',
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("logs a dependency's failure by its name and code, never its message (ADR 0037)", async () => {
+    const closed = await silent();
+    closed.close();
+    const { entries, exited } = start({
+      BLINDSIGNAL_DATABASE_URL: `postgres://secret-user:secret-value@127.0.0.1:${closed.port}/bs`,
+    });
+    expect(await exited).toBe(1);
+    expect(entries.at(-1)).toMatchObject({
+      event: 'server.start_failed',
+      reason: 'Error',
+      code: 'ECONNREFUSED',
+    });
+    expect(JSON.stringify(entries)).not.toMatch(/secret|127\.0\.0\.1/);
+  });
+
+  it.skipIf(process.env.BLINDSIGNAL_TEST_POSTGRES_URL === undefined)(
+    'logs a schema behind the release with its versions (ADR 0037)',
+    async () => {
+      // A search path with no tables: the schema is at version 0.
+      const options = encodeURIComponent(`-c search_path=missing_${Date.now()}`);
+      const { entries, exited } = start({
+        BLINDSIGNAL_DATABASE_URL: `${process.env.BLINDSIGNAL_TEST_POSTGRES_URL}?options=${options}`,
+      });
+      expect(await exited).toBe(1);
+      expect(entries.at(-1)).toMatchObject({ event: 'server.start_failed' });
+      expect(entries.at(-1)?.reason).toMatch(/^the database schema is at version 0/);
+    },
+  );
+
+  it('logs a configuration error with the variable it names', async () => {
+    const { entries, exited } = start({ BLINDSIGNAL_PORT: 'x' });
+    expect(await exited).toBe(1);
+    expect(entries.at(-1)).toMatchObject({ event: 'server.start_failed' });
+    expect(entries.at(-1)?.reason).toContain('BLINDSIGNAL_PORT');
   });
 });
 
