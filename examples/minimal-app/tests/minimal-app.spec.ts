@@ -17,8 +17,8 @@ async function signIn(browser: Browser, user: string) {
 test("a user's new device is paired by the first, then they exchange a message", async ({
   browser,
 }, info) => {
-  // A user per browser project: the projects share one backend and signaling server.
-  const user = `alice-${info.project.name}`;
+  // A user per run: the projects and repeats share one backend and signaling server.
+  const user = `alice-${info.project.name}-${info.repeatEachIndex}`;
   const laptop = await signIn(browser, user);
   await expect(laptop.page.locator('#pair')).toBeHidden();
 
@@ -46,7 +46,10 @@ test("a user's new device is paired by the first, then they exchange a message",
 });
 
 test('a device keeps its ID across a reload', async ({ browser }, info) => {
-  const { page, deviceId } = await signIn(browser, `bob-${info.project.name}`);
+  const { page, deviceId } = await signIn(
+    browser,
+    `bob-${info.project.name}-${info.repeatEachIndex}`,
+  );
   await page.reload();
   await expect(page.locator('#device')).toHaveText(deviceId);
 });
