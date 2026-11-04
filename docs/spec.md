@@ -588,7 +588,7 @@ The protocol must not include application payload messages.
 
 ICE is responsible for finding a viable network path between peers.
 
-The SDK must gather candidates, exchange them through signaling, handle connection state transitions, support ICE restart, and expose diagnostics.
+The SDK must gather candidates, exchange them through signaling, handle connection state transitions, support ICE restart, and expose diagnostics. It holds at most 100 remote candidates that arrive before the remote description, and drops the rest.
 
 ### 12.2 STUN
 
@@ -736,7 +736,7 @@ A PWA may be suspended or terminated by the browser or operating system. BlindSi
 ## 16. Security requirements
 
 - TLS for signaling connections. The SDK refuses `ws://` URLs except for loopback hosts (`localhost`, `127.0.0.1`, `[::1]`) used in local development (§14.1). The server may accept plaintext WebSocket only from a local TLS-terminating proxy or tunnel (§14.2) or a local development container network; it must never be exposed to clients without TLS.
-- Access tokens sent only in the authentication message after the WebSocket opens, never in the connection URL or query string.
+- Access tokens sent only in the authentication message after the WebSocket opens, never in the connection URL or query string. The SDK refuses a server URL with userinfo, a query string, or a fragment.
 - Registered applications only.
 - Trusted issuer and signing-key configuration.
 - Strict JWT validation and algorithm allowlisting.
@@ -862,8 +862,9 @@ client.on("sessionRequest", async (request) => {
 ```
 
 - **Credentials.** `accessTokenProvider` is the only credential input. The SDK accepts no
-  application secret, and `iceServers` accepts STUN URLs only: TURN servers and credentials are
-  merged in from `rtc.ice_config` (§12.3).
+  application secret, and `iceServers` accepts STUN URLs only, without credentials, checked and
+  copied when the client is built: TURN servers and credentials are merged in from
+  `rtc.ice_config` (§12.3).
 - **Device enrollment.** There is no enrollment call: the token's `device_id` enrolls the device
   on its first successful authentication (ADR 0006). The application backend chooses and keeps the
   device ID.

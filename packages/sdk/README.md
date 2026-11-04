@@ -69,10 +69,10 @@ if (device) {
 
 | Option | Default | Meaning |
 |---|---|---|
-| `serverUrl` | required | `wss://`, or `ws://` on `localhost`, `127.0.0.1`, or `[::1]`. |
+| `serverUrl` | required | `wss://`, or `ws://` on `localhost`, `127.0.0.1`, or `[::1]`; no userinfo, query, or fragment. |
 | `accessTokenProvider` | required | Returns a new token from the application backend. |
 | `deviceKey` | none | A `DeviceKey`: proves possession on every authentication, for tokens bound with `cnf.jkt` (ADR 0041). |
-| `iceServers` | `[]` | STUN servers only; TURN comes from the server's `rtc.ice_config`. |
+| `iceServers` | `[]` | STUN servers only, without `username` or `credential`; TURN comes from the server's `rtc.ice_config`. Copied when the client is built. |
 | `iceTransportPolicy` | `all` | `relay` uses TURN candidates only, hiding this device's addresses from its peers. |
 | `refreshMarginMs` | `60000` | How long before expiry `auth.refresh` is sent. |
 | `backoff` | `{ baseMs: 1000, maxMs: 30000 }` | `BackoffOptions`: reconnect and refresh retry delays, with full jitter. |
@@ -102,7 +102,7 @@ if (device) {
 | `rejoinFailed` | `{ namespace, error }`: a namespace not joined again after a reconnect. |
 | `sessionRequest` | A `SessionRequest`: the peer's `namespace`, `userId`, and `deviceId`, `sessionId`, `accept()`, which resolves to the target's `Session`, and `reject()`. |
 | `pairingRequest` | A `PairingRequest`: `pairingId`, the new device's `namespace`, `userId`, `deviceId`, and `jkt`, `approve()`, and `reject()`. |
-| `pairingEnded` | `{ pairingId, reason }`: a pairing request ended without this device's answer: `answered`, `timeout`, `requester_gone`, or a reason a later server adds. |
+| `pairingEnded` | `{ pairingId, reason }`: a pairing request ended without this device's answer: `answered`, `timeout`, `requester_gone`, `namespace_unauthorized`, or a reason a later server adds. |
 
 `on(event, listener)` returns the function that removes the listener.
 
@@ -128,7 +128,8 @@ const client = new BlindSignalClient({
 
 With `deviceKey`, the client waits for the server's `auth.challenge`, up to `heartbeat.timeoutMs`,
 and signs a proof for each token. Clearing the site's data loses the key: the backend then binds
-the new one. `DeviceKey.from(keyPair)` wraps a P-256 ECDSA pair kept elsewhere.
+the new one. `DeviceKey.from(keyPair)` wraps a non-extractable P-256 ECDSA pair kept elsewhere,
+and throws a `TypeError` for any other.
 
 | Member | Meaning |
 |---|---|
@@ -161,7 +162,8 @@ client.on("pairingRequest", (request) => {
 
 `requestPairing` resolves to a `PairingResult`: `{ status: "approved", approval }`,
 `{ status: "rejected" }`, or `{ status: "timeout" }`. It rejects with a `BlindSignalError`:
-`peer_unavailable` when no device can be asked, `not_authorized`, `rate_limited`, or
+`peer_unavailable` when no device can be asked, `not_authorized`, also when a refresh drops the
+namespace from the token's `pairing` claim before an answer, `rate_limited`, or
 `connection_closed` when the connection drops before an answer. The approval is a JWT valid for 5
 minutes.
 

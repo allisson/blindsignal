@@ -29,7 +29,12 @@ export type Extensible<T extends string> = T | (string & {});
 const extensible = <T extends string>() => z.string().min(1) as z.ZodType<Extensible<T>>;
 
 // Why a pairing request ended without an answer for this device (ADR 0042).
-export const pairingEndReasons = ['answered', 'timeout', 'requester_gone'] as const;
+export const pairingEndReasons = [
+  'answered',
+  'timeout',
+  'requester_gone',
+  'namespace_unauthorized',
+] as const;
 
 export type PairingEndReason = (typeof pairingEndReasons)[number];
 

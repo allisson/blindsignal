@@ -2639,6 +2639,27 @@ describe('pairing (ADR 0042)', () => {
     expect(of(approver, 'pairing.ended')).toHaveLength(1);
   });
 
+  it('ends the requests that a refresh no longer lets the requester make', async () => {
+    const { approver, other, requester, keys } = await devices();
+    const pairingId = await request(requester);
+    const refresh = async (claims: object) => {
+      await requester.request('auth.refresh', await keys.d2.payload(requester, claims));
+      await settle();
+    };
+    await refresh({ device_id: 'd2', pairing: [NS, 'notes:other'] });
+    expect(of(requester, 'pairing.ended')).toEqual([]);
+    await refresh({ device_id: 'd2', pairing: ['notes:other'] });
+    const ended = { pairingId, reason: 'namespace_unauthorized' };
+    for (const client of [requester, approver, other]) {
+      expect(of(client, 'pairing.ended').map((m) => m.payload)).toEqual([ended]);
+    }
+    const approval = await keys.d1.approve(approvalOf(pairingId, keys));
+    await approver.request('pairing.approve', { pairingId, approval });
+    expect(approver.errors()).toEqual(['pairing_unavailable']);
+    await vi.advanceTimersByTimeAsync(NEGOTIATION_MS);
+    expect(of(requester, 'pairing.ended')).toHaveLength(1);
+  });
+
   it('refuses an unknown pairing, and an approval after a refresh withdrew the permission', async () => {
     const { approver, requester, keys } = await devices();
     await approver.request('pairing.approve', {

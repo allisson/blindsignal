@@ -535,6 +535,18 @@ export class Connection {
     for (const namespace of [...this.#joined.keys()]) {
       if (!this.#authorized(namespace)) await this.#leave(namespace);
     }
+    // And the pairing requests it no longer lets this device make (ADR 0042).
+    const pairable = context.pairing ?? [];
+    const withdrawn = this.#pairings.takeAll(
+      ({ pairing }) => !pairable.includes(pairing.namespace),
+    );
+    for (const { pairing, approvers } of withdrawn) {
+      const reason = 'namespace_unauthorized';
+      for (const approver of approvers) {
+        await this.#notify(approver, { type: 'pairing.ended', pairingId: pairing.id, reason });
+      }
+      this.#send({ type: 'pairing.ended', payload: { pairingId: pairing.id, reason } });
+    }
   }
 
   #possession({ payload }: ClientMessage & { type: 'auth.authenticate' | 'auth.refresh' }) {

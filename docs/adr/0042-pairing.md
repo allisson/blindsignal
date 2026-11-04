@@ -35,7 +35,9 @@ proof with.
   unknown pairing, gets `pairing_unavailable`.
 - **A request lasts the session negotiation timeout.** Each side ends its own copy with
   `pairing.ended` reason `timeout`; a requester that leaves ends the asked devices' copies with
-  `requester_gone`.
+  `requester_gone`. A requester whose refresh drops the namespace from `pairing` ends its requests
+  there, its own copy and the asked devices', with `namespace_unauthorized`, and
+  `requestPairing()` rejects with `not_authorized` (amended with the SDK hardening fixes).
 - **The backend grants:** it checks the approval's signature against the key it bound to the
   approving device, its claims against the new device, and its `exp`, then issues tokens with the
   namespace. Revoking a pairing is leaving the namespace out of the next token, or revoking the

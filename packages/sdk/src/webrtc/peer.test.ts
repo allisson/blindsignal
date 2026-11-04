@@ -105,6 +105,16 @@ describe('PeerLink', () => {
     expect(pc.candidates).toEqual([candidate, second, second]);
   });
 
+  it('holds up to 100 remote candidates before the remote description', async () => {
+    const { peer, pc } = link('target');
+    const early = Array.from({ length: 101 }, (_, i) => ({ ...candidate, sdpMid: String(i) }));
+    for (const c of early)
+      peer.receive(message('rtc.ice_candidate', { candidate: JSON.stringify(c) }));
+    peer.receive(message('rtc.offer', { sdp: 'offer sdp' }));
+    await settle();
+    expect(pc.candidates).toEqual(early.slice(0, 100));
+  });
+
   it('ignores a candidate that does not parse or apply, and an early one that fails', async () => {
     const { peer, pc, events } = link('target');
     peer.receive(message('rtc.ice_candidate', { candidate: JSON.stringify(candidate) }));

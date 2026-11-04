@@ -128,6 +128,8 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   readonly #sessions = new Map<string, Session>();
   /** Every RTCPeerConnection not yet closed, its session ended or not. */
   readonly #links = new Set<PeerLink>();
+  /** The STUN servers of the options, checked and copied once (spec §11). */
+  readonly #iceServers: RTCIceServer[];
   /** Pairings this device asked for and awaits, by ID. They fail when the connection drops. */
   readonly #pairings = new Map<string, PromiseWithResolvers<PairingResult>>();
   /** Bumped by close(), so an attempt in flight discards its result. */
@@ -143,11 +145,20 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   constructor(options: BlindSignalClientOptions) {
     super();
     signalingUrl(options.serverUrl);
-    for (const { urls } of options.iceServers ?? []) {
-      if (![urls].flat().every((url) => /^stuns?:/i.test(url))) {
-        throw new TypeError('iceServers accepts STUN URLs only; TURN comes from rtc.ice_config');
+    // Copied, so a change to the caller's array after this check cannot add TURN or a credential.
+    this.#iceServers = (options.iceServers ?? []).map((server) => {
+      const { urls } = server;
+      if (
+        ![urls].flat().every((url) => /^stuns?:/i.test(url)) ||
+        'username' in server ||
+        'credential' in server
+      ) {
+        throw new TypeError(
+          'iceServers accepts STUN URLs only, without credentials; TURN comes from rtc.ice_config',
+        );
       }
-    }
+      return { urls: Array.isArray(urls) ? [...urls] : urls };
+    });
     this.#options = options;
   }
 
@@ -335,13 +346,21 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
         });
       case 'pairing.rejected':
         return this.#settle(message.payload.pairingId, { status: 'rejected' });
-      case 'pairing.ended':
-        // The device that asked hears only of its timeout; an asked one, of any end.
-        if (this.#pairings.has(message.payload.pairingId)) {
-          return this.#settle(message.payload.pairingId, { status: 'timeout' });
+      case 'pairing.ended': {
+        // The device that asked hears only of its timeout, or of a refresh that withdrew the
+        // namespace; an asked one, of any end.
+        const { pairingId, reason } = message.payload;
+        const pending = this.#pairings.get(pairingId);
+        if (pending !== undefined) {
+          this.#pairings.delete(pairingId);
+          if (reason === 'namespace_unauthorized') {
+            return pending.reject(new BlindSignalError('not_authorized'));
+          }
+          return pending.resolve({ status: 'timeout' });
         }
         this.emit('pairingEnded', message.payload);
         return;
+      }
       case 'rtc.offer':
       case 'rtc.answer':
       case 'rtc.ice_candidate':
@@ -398,7 +417,7 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
       sessionId: id,
       role,
       configuration: () => ({
-        iceServers: [...(this.#options.iceServers ?? []), ...(this.#iceConfig?.iceServers ?? [])],
+        iceServers: [...this.#iceServers, ...(this.#iceConfig?.iceServers ?? [])],
         ...(this.#options.iceTransportPolicy && {
           iceTransportPolicy: this.#options.iceTransportPolicy,
         }),

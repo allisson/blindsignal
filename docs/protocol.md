@@ -260,6 +260,8 @@ which issues tokens with the namespace (ADR 0042). The server grants nothing and
 - A request lasts the negotiation timeout of §7: N and each asked device get `pairing.ended`
   reason `timeout`. When N's connection closes, the asked devices get `pairing.ended` reason
   `requester_gone`.
+- An `auth.refresh` of N whose token no longer lists the namespace in `pairing` ends N's requests
+  there: N and each asked device get `pairing.ended` reason `namespace_unauthorized`.
 
 `pairing.ended` reasons:
 
@@ -268,6 +270,7 @@ which issues tokens with the namespace (ADR 0042). The server grants nothing and
 | `answered` | Another asked device answered first. |
 | `timeout` | No answer within the negotiation timeout. |
 | `requester_gone` | The new device's connection closed. |
+| `namespace_unauthorized` | The new device's refreshed token no longer lists the namespace in `pairing`. |
 
 ## 8. Heartbeat
 

@@ -67,8 +67,10 @@ export class PendingPairings<T> {
     return entry.value;
   }
 
-  /** Removes every pairing, for a connection that closes. */
-  takeAll(): T[] {
-    return [...this.#entries.keys()].map((id) => this.take(id) as T);
+  /** Removes the pairings that match: every one by default, for a connection that closes. */
+  takeAll(matches: (value: T) => boolean = () => true): T[] {
+    return [...this.#entries]
+      .filter(([, { value }]) => matches(value))
+      .map(([id]) => this.take(id) as T);
   }
 }

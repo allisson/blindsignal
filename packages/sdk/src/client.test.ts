@@ -1007,6 +1007,14 @@ describe('BlindSignalClient pairing', () => {
     expect(ended).toEqual([]);
   });
 
+  it('rejects a request that a refresh withdrew the namespace of', async () => {
+    const harness = await paired();
+    const { result, pairingId } = await asking(harness);
+    const reason = 'namespace_unauthorized';
+    harness.socket().receive(event('pairing.ended', { pairingId, reason }));
+    await expect(result).rejects.toEqual(new BlindSignalError('not_authorized'));
+  });
+
   it('rejects with the server error, without a connection, or without a device key', async () => {
     const harness = await paired();
     const result = harness.client.requestPairing(namespace);
@@ -1082,7 +1090,7 @@ describe('BlindSignalClient pairing', () => {
     expect(harness.sent('pairing.approve')).toEqual([]);
   });
 
-  it.each(['answered', 'timeout', 'requester_gone'])(
+  it.each(['answered', 'timeout', 'requester_gone', 'namespace_unauthorized'])(
     'tells an asked device its request ended: %s',
     async (reason) => {
       const harness = await paired();
@@ -1128,6 +1136,26 @@ describe('BlindSignalClient WebRTC', () => {
     expect(() =>
       setup({ iceServers: [{ urls: ['STUN:a.example', 'stuns:b.example'] }] }),
     ).not.toThrow();
+  });
+
+  it('refuses a credential in iceServers', () => {
+    for (const credentials of [{ username: 'u' }, { credential: 'c' }]) {
+      expect(() => setup({ iceServers: [{ urls: 'stun:a.example', ...credentials }] })).toThrow(
+        TypeError,
+      );
+    }
+  });
+
+  it('keeps the iceServers it checked, whatever the caller changes later', async () => {
+    const stun = { urls: ['stun:stun.example'] };
+    const iceServers: RTCIceServer[] = [stun];
+    const harness = await connected(300_000, { iceServers });
+    iceServers.push({ urls: 'turn:evil.example', username: 'u', credential: 'c' });
+    stun.urls.push('turn:evil.example');
+    await accepted(harness);
+    expect(harness.peers[0]!.configuration).toEqual({
+      iceServers: [{ urls: ['stun:stun.example'] }, ...iceConfig.iceServers],
+    });
   });
 
   it('applies iceTransportPolicy to every peer connection', async () => {

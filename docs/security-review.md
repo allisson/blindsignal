@@ -35,6 +35,11 @@ reported no advisory.
 | Issuer ↔ server | A token's `aud` could be an array that holds the server's audience among others | Such a token is rejected (ADR 0006) |
 | Issuer ↔ server | A production registry whose `jwksUri` served the development key was not refused | Outside development mode, a key set holding it fails the fetch |
 | Tests | No test covered a JWKS fetch that times out or redirects, a token without `iat` or `exp`, or concurrent use of one `jti` or rate limit | Tests for each, the concurrent ones in the coordination contract, against memory and Redis |
+| SDK ↔ server | The SDK buffers ICE candidates that arrive before the remote description with no cap and no timeout | The SDK holds 100 of them, and drops the rest; the link lasts as long as its session |
+| SDK ↔ server | `DeviceKey.from` accepts an extractable key, or one that is not an ECDSA key | It refuses both (ADR 0041) |
+| SDK ↔ server | `iceServers` is checked only when the client is built, and accepts a `credential` on a `stun:` URL | The client copies what it checked, and refuses `username` and `credential` |
+| SDK ↔ server | The server URL may carry userinfo or a query string | The SDK refuses userinfo, a query string, and a fragment |
+| SDK ↔ server | `auth.refresh` leaves the connection's pairing requests open when the new token drops `pairing` | They end with `pairing.ended` reason `namespace_unauthorized` (ADR 0042) |
 
 ### Non-blocking, accepted
 
@@ -46,11 +51,6 @@ reported no advisory.
 
 | Boundary | Finding |
 |---|---|
-| SDK ↔ server | The SDK buffers ICE candidates that arrive before the remote description with no cap and no timeout |
-| SDK ↔ server | `DeviceKey.from` accepts an extractable key, or one that is not an ECDSA key |
-| SDK ↔ server | `iceServers` is checked only when the client is built, and accepts a `credential` on a `stun:` URL |
-| SDK ↔ server | The server URL may carry userinfo or a query string |
-| SDK ↔ server | `auth.refresh` leaves the connection's pairing requests open when the new token drops `pairing` |
 | Operator ↔ server | A `SIGHUP` that arrives before the signal handlers are installed ends the process |
 | Operator ↔ server | An unreachable Redis at startup leaves the server waiting, with no deadline |
 | Operator ↔ server | `server.start_failed` and the crash log can carry text from an error message |

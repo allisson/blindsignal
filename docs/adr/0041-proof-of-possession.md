@@ -13,6 +13,9 @@ accepted risk 1). This ADR binds a token to a key the device holds and the token
   IndexedDB, one per origin. It exposes the public key's JWK thumbprint (RFC 7638, SHA-256,
   base64url) for the application to send its backend. ES256 is the one algorithm every target
   browser supports for a non-extractable key.
+- **`DeviceKey.from` takes only a non-extractable P-256 ECDSA pair (amended with the SDK
+  hardening fixes):** an extractable private key, another algorithm or curve, or the halves in the
+  wrong order throw a `TypeError`.
 - **The application hands the key to the client (amended with the SDK):** `DeviceKey.load()`
   returns this origin's key, creating it on first use; tabs loading it at once keep the first one
   stored. `deviceKey.thumbprint` goes to the backend, and `new BlindSignalClient({ deviceKey })`

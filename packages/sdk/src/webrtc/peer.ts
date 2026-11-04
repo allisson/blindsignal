@@ -4,6 +4,9 @@ import type { Payload, RelayedMessage } from '@blindsignal/protocol';
 import { Emitter } from '../emitter.ts';
 import type { RelayType } from '../signaling.ts';
 
+/** Candidates a link holds before the remote description; a peer that sends more loses them. */
+const MAX_EARLY_CANDIDATES = 100;
+
 export type PeerConnectionFactory = (configuration: RTCConfiguration) => RTCPeerConnection;
 
 /** What send() accepts; received data is a `string` or an `ArrayBuffer`. */
@@ -208,8 +211,8 @@ export class PeerLink extends Emitter<PeerLinkEvents> {
   async #candidate(candidate: string): Promise<void> {
     try {
       const init = JSON.parse(candidate) as RTCIceCandidateInit;
-      if (this.#pc.remoteDescription === null) this.#early.push(init);
-      else await this.#pc.addIceCandidate(init);
+      if (this.#pc.remoteDescription !== null) await this.#pc.addIceCandidate(init);
+      else if (this.#early.length < MAX_EARLY_CANDIDATES) this.#early.push(init);
     } catch {
       // One bad candidate from the peer leaves the others to connect.
     }
