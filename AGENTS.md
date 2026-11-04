@@ -85,7 +85,8 @@ reasons that a later release adds (ADR 0045), and the SDK's public API is review
 (ADR 0047); the security review left no blocking finding open, and repeats before every minor
 and major release, with Dependabot, pinned actions, and `pnpm audit --prod` in CI (ADR 0048), and
 the abuse review left none open either; load tests validate the quota and rate-limit defaults
-before every minor and major release (ADR 0049). The workspace uses
+before every minor and major release (ADR 0049); the SDK README documents every export, and a
+test keeps it so (ADR 0046). The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10

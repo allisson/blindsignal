@@ -32,6 +32,12 @@ places where the API was larger than intended:
   (`stripInternal`), and they change with no version contract.
 - **`@blindsignal/sdk/testing` is public:** `FakePeerConnection` and `FakeDataChannel` let an
   application test its own code in Node, where no WebRTC stack exists. The build includes them.
+- **The SDK README documents the public API (amended with the SDK documentation):**
+  `packages/sdk/README.md` names every export of both entry points in a code span, and
+  `apps/server/src/sdk-readme.test.ts` fails when one is missing; it lives in the server because
+  the SDK's tests have no Node types. The README's examples were compiled against the SDK's types
+  when written, which no check repeats. It ships with the package, so it is the SDK
+  documentation, with no generated reference.
 - **Kept as they are:** `on()` returning the function that removes the listener, with no `off()` or
   `once()`; `connect()` callable again after `close()`; every event and exported type; and the
   `createSocket` and `createPeerConnection` options for tests. Adding to any of them later is a
@@ -41,6 +47,8 @@ places where the API was larger than intended:
 
 - **Closing and connecting again after a grant.** Rejected: it ends every session and presence for
   a change only the token carries, and `auth.refresh` exists to renew credentials in place.
+- **A generated reference, such as TypeDoc.** Rejected: a tool outside ADR 0001 for about 25
+  exports, and the doc comments already reach the editor through the published types.
 - **Documenting `iceConfig`.** Rejected: the TURN credentials have no use outside the
   RTCPeerConnection, and spec §12.3 keeps them to `rtc.ice_config`.
 - **Hiding the internal members at runtime, with closures or a `WeakMap`.** Rejected: more code to
