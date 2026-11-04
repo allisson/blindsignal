@@ -23,7 +23,7 @@ Open `http://127.0.0.1:3000/?user=alice&device=laptop` and `http://127.0.0.1:300
 then press **Connect to bob/phone** in the first tab. The demo accepts every session request.
 
 `BLINDSIGNAL_DEMO_PORT` and `BLINDSIGNAL_DEMO_SIGNALING_URL` change the demo's port and the
-signaling server it uses; `&server=<url>` picks another one for a single page. Add `&relay` to a
+signaling server it uses; a page takes no other one, so a link cannot send its tokens elsewhere. Add `&relay` to a
 page's URL to connect through TURN only (`iceTransportPolicy: 'relay'`); the signaling server must
 configure TURN (ADR 0017). `&connectTimeout=<ms>` sets the SDK's `connectTimeoutMs` (ADR 0018). `&pop` loads the origin's
 device key and binds the page's tokens to it, as `cnf.jkt` (ADR 0041); the page shows the key's
@@ -43,7 +43,8 @@ connects only through the TURN relay, so its DataChannel tests run with `BLINDSI
 
 `BLINDSIGNAL_TEST_TURN=1 pnpm test:browser` also runs the relay tests: it starts the Coturn of
 `compose.yaml` with Docker, on loopback, and three signaling servers with its test secret, each
-offering one TURN transport: UDP, TCP, and TLS. Chromium accepts the self-signed TLS certificate
+offering one TURN transport: UDP, TCP, and TLS, and each with a demo page of its own, since a page
+takes its server only from its configuration. Chromium accepts the self-signed TLS certificate
 through `--ignore-certificate-errors`; Firefox has no such switch, so its TLS test is skipped. The
 same run tests the fallback to the relay, in a Firefox that gathers no host candidates, and a
 fourth signaling server whose TURN URL nothing listens on, with which sessions still connect

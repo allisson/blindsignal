@@ -25,10 +25,9 @@ $('me').textContent = `${user}/${device}`;
 $('key').textContent = deviceKey?.thumbprint ?? 'none';
 $('namespace').textContent = NAMESPACE;
 
-// `?server=<url>` picks another signaling server than the demo's own.
-const serverUrl =
-  params.get('server') ??
-  ((await (await fetch('/config')).json()) as { serverUrl: string }).serverUrl;
+// The server comes from the demo's own configuration only: a URL parameter would let a link send
+// the page's tokens to any server.
+const { serverUrl } = (await (await fetch('/config')).json()) as { serverUrl: string };
 const client = new BlindSignalClient({
   serverUrl,
   accessTokenProvider: async () => {

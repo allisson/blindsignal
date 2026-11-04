@@ -48,6 +48,9 @@ reported no advisory.
 | Server ↔ adapters | An event delivered from another instance is not checked against the session again | Each event carries its sender's connection ID, and the receiver checks it, and the event, against its own copy (ADR 0023) |
 | Server ↔ adapters | Coordination events are parsed without a schema | A schema for each topic's events; one that fails it, or a message that is not JSON, is dropped and counted (ADR 0023) |
 | Server ↔ adapters | A device's claim in Redis has no TTL | The claim is a lease, renewed on every heartbeat (ADR 0022) |
+| Examples | `examples/backend-issuer` has no rate limit on its token endpoint, keeps unbounded state in memory, and its session cookie has no `__Host-` prefix, expiry, or sign-out | A rate limit per user, and per address for `/login`; caps on sessions, users, and devices, and used pairing IDs forgotten once expired; a `__Host-session` cookie for 8 hours, and `POST /logout` |
+| Examples | `examples/browser-demo` sends a token to any `wss://` server its `?server=` names, and `examples/minimal-app`'s device IDs can collide with the page's element IDs | The demo takes its server from its own configuration only, and the minimal app keys its device list by device ID, not element ID |
+| Tests | The scan for secrets in served files skips the `*.test.ts` files the examples serve | It scans them too |
 
 ### Non-blocking, accepted
 
@@ -57,11 +60,7 @@ reported no advisory.
 
 ### Non-blocking, open
 
-| Boundary | Finding |
-|---|---|
-| Examples | `examples/backend-issuer` has no rate limit on its token endpoint, keeps unbounded state in memory, and its session cookie has no `__Host-` prefix, expiry, or sign-out |
-| Examples | `examples/browser-demo` sends a token to any `wss://` server its `?server=` names, and `examples/minimal-app`'s device IDs can collide with the page's element IDs |
-| Tests | The scan for secrets in served files skips the `*.test.ts` files the examples serve |
+None.
 
 ## 2026-11: abuse resistance
 
@@ -84,6 +83,7 @@ ADR 0013, ADR 0016, and ADR 0017.
 | Boundary | Finding | Fix |
 |---|---|---|
 | Server ↔ adapters | Redis commands have no timeout, so an upgrade waits on `consumeRateLimit` while Redis does not answer | `BLINDSIGNAL_REDIS_COMMAND_TIMEOUT_SECONDS`, default 2: an operation fails as when Redis is unreachable (ADR 0023) |
+| Tests | No test sends `rtc.ice_config` from a client (spec §21), or runs the abuse rules against Redis and two instances | A client-sent `rtc.ice_config` and `session.terminated` get `invalid_message`; on two instances sharing Redis, the per-IP connection-attempt limit and a target's session slots count across both |
 
 ### Non-blocking, accepted
 
@@ -113,4 +113,3 @@ ADR 0013, ADR 0016, and ADR 0017.
 | Operator ↔ server | The abuse alert does not name the connection |
 | Device ↔ device | A TURN username is its expiry and application ID only, so the credentials of one application minted in the same second are the same, and share its `user-quota` |
 | Device ↔ device | `denied-peer-ip` does not deny the TURN host's own public address |
-| Tests | No test sends `rtc.ice_config` from a client (spec §21), or runs the abuse rules against Redis and two instances |

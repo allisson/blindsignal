@@ -86,15 +86,17 @@ export default defineConfig({
       },
       reuseExistingServer: !process.env.CI,
     })),
-    {
+    // One demo page per signaling server, on the same offset from its default port: a page takes
+    // its server only from its own configuration.
+    ...signalingPorts.map((port) => ({
       command: 'node server.ts',
-      url: `http://127.0.0.1:${demoPort}/config`,
+      url: `http://127.0.0.1:${demoPort + port - signalingPort}/config`,
       env: {
         ...development,
-        BLINDSIGNAL_DEMO_PORT: String(demoPort),
-        BLINDSIGNAL_DEMO_SIGNALING_URL: `ws://localhost:${signalingPort}`,
+        BLINDSIGNAL_DEMO_PORT: String(demoPort + port - signalingPort),
+        BLINDSIGNAL_DEMO_SIGNALING_URL: `ws://localhost:${port}`,
       },
       reuseExistingServer: !process.env.CI,
-    },
+    })),
   ],
 });

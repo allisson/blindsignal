@@ -1,8 +1,9 @@
 import { DeviceKey } from '@blindsignal/sdk';
 import { createLocalJWKSet, exportJWK, generateKeyPair, jwtVerify, SignJWT } from 'jose';
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { Readable } from 'node:stream';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBackend, registryEntry, type SigningJwk } from './backend.ts';
 import { configFromEnv } from './config.ts';
 
@@ -23,6 +24,7 @@ const config = {
     'http://[::1]:3797',
     'https://localhost:3797',
   ],
+  rateLimitPerMinute: 1_000,
 };
 
 let server: Server;
@@ -215,7 +217,7 @@ describe('backend issuer', () => {
       ['without a session', () => post('/token', { deviceId: 'laptop' }), 401],
       [
         'with an unknown session',
-        () => post('/token', { deviceId: 'laptop' }, { cookie: 'session=x' }),
+        () => post('/token', { deviceId: 'laptop' }, { cookie: '__Host-session=x' }),
         401,
       ],
       [
@@ -239,14 +241,14 @@ describe('backend issuer', () => {
       expect((await post('/token', { deviceId: 'laptop' }, { cookie })).status).toBe(404);
     });
 
-    it('sets a session cookie scripts cannot read', async () => {
+    it('sets a host-only session cookie scripts cannot read, for 8 hours', async () => {
       const response = await post('/login', { user: 'alice' });
       expect(response.headers.get('set-cookie')).toMatch(
-        /^session=[\w-]{43}; HttpOnly; Secure; SameSite=Strict; Path=\/$/,
+        /^__Host-session=[\w-]{43}; Max-Age=28800; HttpOnly; Secure; SameSite=Strict; Path=\/$/,
       );
     });
 
-    it('leaves Secure out only for a plain-HTTP loopback origin', async () => {
+    it('leaves Secure and the prefix out only for a plain-HTTP loopback origin', async () => {
       const cookie = async (origin: string) =>
         (await post('/login', { user: 'alice' }, { origin })).headers.get('set-cookie');
       for (const origin of [
@@ -255,10 +257,135 @@ describe('backend issuer', () => {
         'http://[::1]:3797',
       ]) {
         expect(await cookie(origin)).toMatch(
-          /^session=[\w-]{43}; HttpOnly; SameSite=Strict; Path=\/$/,
+          /^session=[\w-]{43}; Max-Age=28800; HttpOnly; SameSite=Strict; Path=\/$/,
         );
       }
-      expect(await cookie('https://localhost:3797')).toContain('; Secure;');
+      expect(await cookie('https://localhost:3797')).toMatch(/^__Host-session=.*; Secure;/);
+    });
+
+    it("reads only the cookie of the request's origin", async () => {
+      const value = (await login('alice')).split('=')[1]!;
+      const loopbackOrigin = { origin: 'http://127.0.0.1:3797' };
+      await enroll(`__Host-session=${value}`, 'laptop', await newDevice());
+      const token = (cookie: string, headers = {}) =>
+        post('/token', { deviceId: 'laptop' }, { cookie, ...headers });
+      expect((await token(`session=${value}`)).status).toBe(401);
+      expect((await token(`__Host-session=${value}`, loopbackOrigin)).status).toBe(401);
+      expect((await token(`other=1; __Host-session=${value}`)).status).toBe(200);
+    });
+  });
+
+  describe('sessions', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('signs out: clears the cookie, and the session no longer works', async () => {
+      const cookie = await login('alice');
+      await enroll(cookie, 'laptop', await newDevice());
+      const response = await post('/logout', {}, { cookie });
+      expect(response.status).toBe(204);
+      expect(response.headers.get('set-cookie')).toBe(
+        '__Host-session=; Max-Age=0; HttpOnly; Secure; SameSite=Strict; Path=/',
+      );
+      expect((await post('/token', { deviceId: 'laptop' }, { cookie })).status).toBe(401);
+      // Without a session, signing out still clears the cookie.
+      expect((await post('/logout', {})).status).toBe(204);
+    });
+
+    it('ends a session after 8 hours', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const cookie = await login('alice');
+      await enroll(cookie, 'laptop', await newDevice());
+      vi.advanceTimersByTime(8 * 3_600_000 - 1);
+      expect((await post('/token', { deviceId: 'laptop' }, { cookie })).status).toBe(200);
+      vi.advanceTimersByTime(1);
+      expect((await post('/token', { deviceId: 'laptop' }, { cookie })).status).toBe(401);
+    });
+  });
+
+  describe('limits', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('limits requests per user, with Retry-After, and starts again each minute', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      handle = createBackend({ ...config, rateLimitPerMinute: 2 });
+      const alice = await login('alice');
+      await enroll(alice, 'laptop', await newDevice());
+      expect((await post('/token', { deviceId: 'laptop' }, { cookie: alice })).status).toBe(200);
+      vi.advanceTimersByTime(20_000);
+      const limited = await post('/token', { deviceId: 'laptop' }, { cookie: alice });
+      expect(limited.status).toBe(429);
+      expect(limited.headers.get('retry-after')).toBe('40');
+      // Another user has a count of its own.
+      const bob = await login('bob');
+      expect((await enroll(bob, 'phone', await newDevice())).status).toBe(204);
+      vi.advanceTimersByTime(40_000);
+      expect((await post('/token', { deviceId: 'laptop' }, { cookie: alice })).status).toBe(200);
+    });
+
+    it('limits sign-ins per client address', async () => {
+      handle = createBackend({ ...config, rateLimitPerMinute: 2 });
+      await login('alice');
+      await login('bob');
+      expect((await post('/login', { user: 'carol' })).status).toBe(429);
+    });
+
+    it('caps the devices of a user', async () => {
+      const cookie = await login('alice');
+      for (let n = 0; n < 10; n++) {
+        expect((await enroll(cookie, `d${n}`, await newDevice())).status).toBe(204);
+      }
+      expect((await enroll(cookie, 'd10', await newDevice())).status).toBe(409);
+      expect((await enroll(cookie, 'd0', await newDevice())).status).toBe(409);
+    });
+
+    /** Calls the handler in process: 10,000 requests over HTTP would take too long. */
+    async function direct(path: string, body: object, cookie = '') {
+      const request = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
+        method: 'POST',
+        url: path,
+        headers: { origin: ORIGIN, 'content-type': 'application/json', cookie },
+        socket: { remoteAddress: '127.0.0.1' },
+      }) as unknown as IncomingMessage;
+      const answer = { status: 0, headers: {} as Record<string, string> };
+      const response = {
+        writeHead(status: number, headers: Record<string, string> = {}) {
+          Object.assign(answer, { status, headers });
+          return this;
+        },
+        end() {},
+      } as unknown as ServerResponse;
+      await handle(request, response);
+      return answer;
+    }
+    const sessionOf = (answer: { headers: Record<string, string> }) =>
+      answer.headers['set-cookie']!.split(';')[0]!;
+
+    it('drops the oldest session past 10,000', async () => {
+      handle = createBackend({ ...config, rateLimitPerMinute: 100_000 });
+      const first = sessionOf(await direct('/login', { user: 'alice' }));
+      const second = sessionOf(await direct('/login', { user: 'alice' }));
+      for (let n = 2; n < 10_000; n++) await direct('/login', { user: 'alice' });
+      const jkt = (await newDevice()).key.thumbprint;
+      expect((await direct('/devices', { deviceId: 'laptop', jkt }, first)).status).toBe(204);
+      await direct('/login', { user: 'alice' });
+      expect((await direct('/devices', { deviceId: 'laptop', jkt }, first)).status).toBe(401);
+      expect((await direct('/devices', { deviceId: 'laptop', jkt }, second)).status).toBe(204);
+    });
+
+    it('caps the users at 10,000', async () => {
+      handle = createBackend({ ...config, rateLimitPerMinute: 100_000 });
+      const jkt = (await newDevice()).key.thumbprint;
+      const cookies = [];
+      for (let n = 0; n <= 10_000; n++)
+        cookies.push(sessionOf(await direct('/login', { user: `u${n}` })));
+      // Kept apart from the 10,000 sessions above: the oldest is dropped past them.
+      for (let n = 1; n < 10_000; n++) await direct('/devices', { deviceId: 'd', jkt }, cookies[n]);
+      const last = cookies[10_000]!;
+      expect((await direct('/devices', { deviceId: 'd', jkt }, last)).status).toBe(204);
+      const extra = sessionOf(await direct('/login', { user: 'extra' }));
+      expect((await direct('/devices', { deviceId: 'd', jkt }, extra)).status).toBe(503);
+      // A user already known still enrolls another device.
+      expect((await direct('/devices', { deviceId: 'e', jkt }, last)).status).toBe(204);
     });
   });
 });
@@ -274,12 +401,24 @@ describe('configFromEnv', () => {
       appId: 'example',
       issuer: 'http://127.0.0.1:4000',
       allowedOrigins: ['http://127.0.0.1:4000'],
+      rateLimitPerMinute: 30,
     });
     const env = {
       BLINDSIGNAL_EXAMPLE_SIGNING_JWK: key,
       BLINDSIGNAL_EXAMPLE_ALLOWED_ORIGINS: 'https://a.test, https://b.test',
     };
     expect(configFromEnv(env).allowedOrigins).toEqual(['https://a.test', 'https://b.test']);
+  });
+
+  it('reads the rate limit, a positive integer', () => {
+    const key = JSON.stringify(signingKey);
+    const env = (limit: string) => ({
+      BLINDSIGNAL_EXAMPLE_SIGNING_JWK: key,
+      BLINDSIGNAL_EXAMPLE_RATE_LIMIT_PER_MINUTE: limit,
+    });
+    expect(configFromEnv(env('5')).rateLimitPerMinute).toBe(5);
+    for (const invalid of ['0', '-1', '1.5', 'x'])
+      expect(() => configFromEnv(env(invalid))).toThrow();
   });
 
   it('refuses a key without its private half', () => {

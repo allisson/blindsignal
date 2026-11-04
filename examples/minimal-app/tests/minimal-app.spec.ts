@@ -59,6 +59,50 @@ test('signing in waits for the page to load', async ({ page }, info) => {
   await expect(page.locator('#state')).toHaveText('connected');
 });
 
+test('signing out ends the session at the backend', async ({ browser }, info) => {
+  const { page } = await signIn(browser, `dave-${info.project.name}-${info.repeatEachIndex}`);
+  // The page reloads once the backend has ended the session.
+  await Promise.all([
+    page.waitForEvent('load'),
+    page.getByRole('button', { name: 'Sign out' }).click(),
+  ]);
+  await expect(page.locator('#state')).toHaveText('disconnected');
+  const status = await page.evaluate(async () => {
+    const deviceId = localStorage.getItem('deviceId');
+    const response = await fetch('/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId }),
+    });
+    return response.status;
+  });
+  expect(status).toBe(401);
+});
+
+test('a device ID that names an element of the page leaves the page whole', async ({
+  browser,
+}, info) => {
+  const user = `erin-${info.project.name}-${info.repeatEachIndex}`;
+  const laptop = await signIn(browser, user);
+  // The user's next device, whose ID is the ID of the page's signaling state.
+  const context = await browser.newContext();
+  await context.addInitScript(() => localStorage.setItem('deviceId', 'state'));
+  const named = await context.newPage();
+  await named.goto('/');
+  await named.getByLabel('User').fill(user);
+  await named.getByRole('button', { name: 'Sign in' }).click();
+  await named.getByRole('button', { name: 'Ask to pair' }).click();
+  await laptop.page.getByRole('button', { name: 'Approve state' }).click();
+
+  const connect = laptop.page.getByRole('button', { name: 'Connect to state' });
+  await expect(connect).toBeVisible();
+  await expect(laptop.page.locator('#state')).toHaveText('connected');
+  // It leaves: its entry goes, and the page's own element stays.
+  await named.close();
+  await expect(connect).toBeHidden();
+  await expect(laptop.page.locator('#state')).toHaveText('connected');
+});
+
 test('a device keeps its ID across a reload', async ({ browser }, info) => {
   const { page, deviceId } = await signIn(
     browser,

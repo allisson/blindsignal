@@ -22,6 +22,8 @@ export interface BackendConfig {
   signingKey: SigningJwk;
   /** Origins whose pages may call the backend: every other request is refused (CSRF). */
   allowedOrigins: readonly string[];
+  /** Requests a minute: to `/login` per client address, to the other routes per user. */
+  rateLimitPerMinute: number;
 }
 
 const TOKEN_LIFETIME_S = 300;
@@ -29,6 +31,13 @@ const TOKEN_LIFETIME_S = 300;
 const APPROVAL_MAX_LIFETIME_S = 360;
 const APPROVAL_TYPE = 'blindsignal-pairing+jwt';
 const MAX_BODY_BYTES = 16 * 1024;
+const SESSION_LIFETIME_S = 8 * 60 * 60;
+const RATE_WINDOW_MS = 60_000;
+// shortcut: fixed caps that bound the memory an example holds; a real backend keeps its state in a
+// database and sizes these from its own load.
+const MAX_SESSIONS = 10_000;
+const MAX_USERS = 10_000;
+const MAX_DEVICES_PER_USER = 10;
 
 // Opaque IDs; a user ID is also the scope of the user's namespace, so it stays short and plain.
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
@@ -40,6 +49,7 @@ const bodies = {
   '/devices': z.object({ deviceId: id, jkt: thumbprint }),
   '/token': z.object({ deviceId: id }),
   '/pairings': z.object({ deviceId: id, namespace: z.string(), approval: z.string() }),
+  '/logout': z.object({}),
 };
 
 interface Device {
@@ -49,10 +59,12 @@ interface Device {
 
 class HttpError extends Error {
   readonly status: number;
+  readonly retryAfterS: number | undefined;
 
-  constructor(status: number) {
+  constructor(status: number, retryAfterS?: number) {
     super(String(status));
     this.status = status;
+    this.retryAfterS = retryAfterS;
   }
 }
 
@@ -81,24 +93,56 @@ export function registryEntry(
  * device gets the namespace `<appId>:<user>`; later devices only ask to be paired into it, until
  * one of the user's devices approves them (ADR 0042).
  *
- * shortcut: users, devices, sessions, and used pairing IDs live in memory and vanish on restart;
- * a real backend keeps them in its own database.
+ * shortcut: users, devices, sessions, and used pairing IDs live in memory, under fixed caps, and
+ * vanish on restart; a real backend keeps them in its own database.
  */
 const loopback = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** WebKit drops a `Secure` cookie on plain-HTTP loopback, which Chromium and Firefox keep. */
-function secure(origin: string): string {
+function plainLoopback(origin: string): boolean {
   const { protocol, hostname } = new URL(origin);
-  return protocol === 'http:' && loopback.has(hostname) ? '' : ' Secure;';
+  return protocol === 'http:' && loopback.has(hostname);
+}
+
+/**
+ * The session cookie for an origin: `__Host-` keeps it to this host and path, which needs
+ * `Secure`, so a plain-HTTP loopback page gets it unprefixed.
+ */
+function sessionCookie(origin: string) {
+  const plain = plainLoopback(origin);
+  const name = plain ? 'session' : '__Host-session';
+  const attributes = `HttpOnly;${plain ? '' : ' Secure;'} SameSite=Strict; Path=/`;
+  return {
+    name,
+    set: (value: string) => `${name}=${value}; Max-Age=${SESSION_LIFETIME_S}; ${attributes}`,
+    clear: `${name}=; Max-Age=0; ${attributes}`,
+  };
 }
 
 export function createBackend(config: BackendConfig) {
   const key = importJWK(config.signingKey, 'ES256');
-  const sessions = new Map<string, string>();
+  // In insertion order, so the first entry is the oldest session.
+  const sessions = new Map<string, { user: string; expiresAt: number }>();
   const users = new Map<string, Map<string, Device>>();
-  // shortcut: never pruned; a real backend forgets an ID once its approval has expired.
-  const usedPairings = new Set<string>();
+  // Pairing ID → the `exp` of its approval: past it, the approval is refused anyway.
+  const usedPairings = new Map<string, number>();
+  const requests = new Map<string, number>();
+  let windowStart = Date.now();
   const namespaceOf = (user: string) => `${config.appId}:${user}`;
+
+  /** A fixed window: every key's count starts again each minute, so the map holds one minute. */
+  function limit(key: string): void {
+    const now = Date.now();
+    if (now - windowStart >= RATE_WINDOW_MS) {
+      requests.clear();
+      windowStart = now;
+    }
+    const count = (requests.get(key) ?? 0) + 1;
+    requests.set(key, count);
+    if (count > config.rateLimitPerMinute) {
+      throw new HttpError(429, Math.ceil((windowStart + RATE_WINDOW_MS - now) / 1000));
+    }
+  }
 
   function device(user: string, deviceId: string): Device {
     const found = users.get(user)?.get(deviceId);
@@ -137,6 +181,8 @@ export function createBackend(config: BackendConfig) {
       if (known.jkt !== jkt) throw new HttpError(409);
       return;
     }
+    if (devices.size >= MAX_DEVICES_PER_USER) throw new HttpError(409);
+    if (!users.has(user) && users.size >= MAX_USERS) throw new HttpError(503);
     const namespaces = new Set(devices.size === 0 ? [namespaceOf(user)] : []);
     devices.set(deviceId, { jkt, namespaces });
     users.set(user, devices);
@@ -168,15 +214,29 @@ export function createBackend(config: BackendConfig) {
       typeof pairingId === 'string' &&
       !usedPairings.has(pairingId);
     if (!valid) throw new HttpError(403);
-    usedPairings.add(pairingId);
+    const now = Date.now() / 1000;
+    for (const [used, exp] of usedPairings) if (exp < now) usedPairings.delete(used);
+    usedPairings.set(pairingId, payload.exp!);
     target.namespaces.add(namespace);
   }
 
+  /** The session the request's cookie names, while it lasts. */
+  function sessionOf(request: IncomingMessage): string | undefined {
+    const { name } = sessionCookie(request.headers.origin!);
+    return request.headers.cookie
+      ?.split(';')
+      .map((pair) => pair.trim().split('='))
+      .find(([key]) => key === name)?.[1];
+  }
+
   function sessionUser(request: IncomingMessage): string {
-    const cookie = request.headers.cookie?.match(/(?:^|;\s*)session=([^;]+)/)?.[1];
-    const user = cookie === undefined ? undefined : sessions.get(cookie);
-    if (user === undefined) throw new HttpError(401);
-    return user;
+    const session = sessionOf(request);
+    const found = session === undefined ? undefined : sessions.get(session);
+    if (found === undefined || found.expiresAt <= Date.now()) {
+      if (session !== undefined) sessions.delete(session);
+      throw new HttpError(401);
+    }
+    return found.user;
   }
 
   async function readBody(request: IncomingMessage): Promise<unknown> {
@@ -207,18 +267,27 @@ export function createBackend(config: BackendConfig) {
     const parsed = bodies[path].safeParse(await readBody(request));
     if (!parsed.success) throw new HttpError(400);
     const body = parsed.data as Record<string, string>;
+    const cookie = sessionCookie(request.headers.origin!);
     if (path === '/login') {
+      limit(`address:${request.socket.remoteAddress}`);
       // Stands in for the application's own sign-in: there is no password.
       const session = randomBytes(32).toString('base64url');
-      sessions.set(session, body.user!);
-      response
-        .writeHead(204, {
-          'set-cookie': `session=${session}; HttpOnly;${secure(request.headers.origin!)} SameSite=Strict; Path=/`,
-        })
-        .end();
+      if (sessions.size >= MAX_SESSIONS) sessions.delete(sessions.keys().next().value!);
+      sessions.set(session, {
+        user: body.user!,
+        expiresAt: Date.now() + SESSION_LIFETIME_S * 1000,
+      });
+      response.writeHead(204, { 'set-cookie': cookie.set(session) }).end();
+      return;
+    }
+    if (path === '/logout') {
+      const session = sessionOf(request);
+      if (session !== undefined) sessions.delete(session);
+      response.writeHead(204, { 'set-cookie': cookie.clear }).end();
       return;
     }
     const user = sessionUser(request);
+    limit(`user:${user}`);
     if (path === '/devices') enroll(user, body.deviceId!, body.jkt!);
     if (path === '/pairings') await pair(user, body.deviceId!, body.namespace!, body.approval!);
     if (path === '/token') {
@@ -244,7 +313,16 @@ export function createBackend(config: BackendConfig) {
       await post(pathname as keyof typeof bodies, request, response);
     } catch (error) {
       // Status codes only: the client learns nothing about which check failed.
-      response.writeHead(error instanceof HttpError ? error.status : 500).end();
+      if (error instanceof HttpError) {
+        const retryAfter = error.retryAfterS;
+        response.writeHead(
+          error.status,
+          retryAfter === undefined ? {} : { 'retry-after': String(retryAfter) },
+        );
+      } else {
+        response.writeHead(500);
+      }
+      response.end();
     }
   };
 }

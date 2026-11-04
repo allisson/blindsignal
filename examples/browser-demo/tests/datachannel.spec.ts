@@ -1,8 +1,17 @@
 import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
 import { createHash } from 'node:crypto';
 
+/** The demo page on the signaling server at this port: playwright.config.ts runs one per server. */
+const demo = (signalingPort: number) => `http://127.0.0.1:${3787 + signalingPort - 8787}`;
+
 /** Each browser its own context, as two devices; a suffix keeps parallel projects apart. */
-async function open(browser: Browser, user: string, device: string, query: object = {}) {
+async function open(
+  browser: Browser,
+  user: string,
+  device: string,
+  query: object = {},
+  signalingPort = 8787,
+) {
   const page = await (await browser.newContext()).newPage();
   const sent: string[] = [];
   const received: string[] = [];
@@ -10,7 +19,7 @@ async function open(browser: Browser, user: string, device: string, query: objec
     socket.on('framesent', ({ payload }) => sent.push(String(payload)));
     socket.on('framereceived', ({ payload }) => received.push(String(payload)));
   });
-  await page.goto(`/?${new URLSearchParams({ user, device, ...query })}`);
+  await page.goto(`${demo(signalingPort)}/?${new URLSearchParams({ user, device, ...query })}`);
   await expect(page.locator('#state')).toHaveText('connected');
   return { page, sent, received };
 }
@@ -200,10 +209,9 @@ for (const [transport, port] of [
       transport === 'tls' && info.project.name !== 'chromium',
       "Firefox and WebKit reject the test TURN server's self-signed certificate",
     );
-    const query = { relay: '', server: `ws://localhost:${port}` };
     const suffix = `${transport}-${info.project.name}`;
-    const alice = await open(browser, 'alice', `relay-laptop-${suffix}`, query);
-    const bob = await open(browser, 'bob', `relay-phone-${suffix}`, query);
+    const alice = await open(browser, 'alice', `relay-laptop-${suffix}`, { relay: '' }, port);
+    const bob = await open(browser, 'bob', `relay-phone-${suffix}`, { relay: '' }, port);
 
     await alice.page.getByRole('button', { name: `Connect to bob/relay-phone-${suffix}` }).click();
     for (const { page } of [alice, bob]) {
@@ -250,10 +258,9 @@ test('two browsers without direct candidates fall back to the relay', async ({
 test('two browsers connect directly while TURN is unreachable', async ({ browser }, info) => {
   test.skip(!process.env.BLINDSIGNAL_TEST_TURN, 'needs the signaling servers of the TURN run');
   skipDirect(info);
-  const query = { server: 'ws://localhost:8790' };
   const suffix = `no-turn-${info.project.name}`;
-  const alice = await open(browser, 'alice', `laptop-${suffix}`, query);
-  const bob = await open(browser, 'bob', `phone-${suffix}`, query);
+  const alice = await open(browser, 'alice', `laptop-${suffix}`, {}, 8790);
+  const bob = await open(browser, 'bob', `phone-${suffix}`, {}, 8790);
 
   await alice.page.getByRole('button', { name: `Connect to bob/phone-${suffix}` }).click();
   for (const { page } of [alice, bob]) {
@@ -270,10 +277,10 @@ test('two browsers connect directly while TURN is unreachable', async ({ browser
 test('a session forced to an unreachable TURN server closes', async ({ browser }, info) => {
   test.skip(!process.env.BLINDSIGNAL_TEST_TURN, 'needs the signaling servers of the TURN run');
   // No candidate is ever gathered, so only the SDK's connection timeout ends the session.
-  const query = { relay: '', server: 'ws://localhost:8790', connectTimeout: '1000' };
+  const query = { relay: '', connectTimeout: '1000' };
   const suffix = `dead-turn-${info.project.name}`;
-  const alice = await open(browser, 'alice', `laptop-${suffix}`, query);
-  const bob = await open(browser, 'bob', `phone-${suffix}`, query);
+  const alice = await open(browser, 'alice', `laptop-${suffix}`, query, 8790);
+  const bob = await open(browser, 'bob', `phone-${suffix}`, query, 8790);
 
   await alice.page.getByRole('button', { name: `Connect to bob/phone-${suffix}` }).click();
   for (const { page } of [alice, bob]) {

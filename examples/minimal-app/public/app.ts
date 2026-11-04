@@ -55,6 +55,10 @@ client.on('pairingRequest', (request) => {
   $('log').append(button);
 });
 
+// Keyed by device ID, never by element ID: a device ID is chosen by another device, and could name
+// an element of this page.
+const listed = new Map<string, HTMLLIElement>();
+
 function listDevice(namespace: string, userId: string, peerId: string): void {
   const button = Object.assign(document.createElement('button'), {
     type: 'button',
@@ -63,8 +67,10 @@ function listDevice(namespace: string, userId: string, peerId: string): void {
   button.addEventListener('click', () => {
     void client.createSession({ namespace, userId, deviceId: peerId }).then(attach);
   });
-  const item = Object.assign(document.createElement('li'), { id: peerId });
+  const item = document.createElement('li');
   item.append(button);
+  listed.get(peerId)?.remove();
+  listed.set(peerId, item);
   $('devices').append(item);
 }
 
@@ -81,7 +87,8 @@ async function start(user: string): Promise<void> {
     return;
   }
   client.on('presence', (peer) => {
-    document.getElementById(peer.deviceId)?.remove();
+    listed.get(peer.deviceId)?.remove();
+    listed.delete(peer.deviceId);
     if (peer.present) listDevice(namespace, peer.userId, peer.deviceId);
   });
   for (const peer of await client.discover(namespace)) listDevice(namespace, user, peer.deviceId);
@@ -109,6 +116,14 @@ $('login').addEventListener('submit', (event) => {
     await post('/devices', { deviceId, jkt: deviceKey.thumbprint });
     await start(user);
   })().catch((error: unknown) => log(String(error)));
+});
+
+// The backend ends the session and clears its cookie; the reload drops this page's connection.
+$('sign-out').addEventListener('click', () => {
+  client.close();
+  void post('/logout', {})
+    .then(() => location.reload())
+    .catch((error: unknown) => log(String(error)));
 });
 
 $('send').addEventListener('submit', (event) => {

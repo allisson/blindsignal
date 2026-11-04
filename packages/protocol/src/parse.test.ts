@@ -92,6 +92,11 @@ describe('parseClientMessage', () => {
     ['an unknown type', client('connection.unknown', {})],
     ['an inherited property as type', client('toString', {})],
     ['a server-only type', client('session.request', { sessionId })],
+    ['a client-sent rtc.ice_config', client('rtc.ice_config', { iceServers: [] })],
+    [
+      'a client-sent session.terminated',
+      client('session.terminated', { sessionId, reason: 'closed_by_peer' }),
+    ],
     ['an invalid payload', client('session.accept', { sessionId: 'not-a-uuid' })],
   ])('rejects %s as an invalid message', (_, text) => {
     const result = parseClientMessage(text);

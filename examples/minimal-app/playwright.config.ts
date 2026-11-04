@@ -19,6 +19,8 @@ const appEnv = {
   BLINDSIGNAL_EXAMPLE_SIGNING_JWK: process.env.BLINDSIGNAL_EXAMPLE_SIGNING_JWK,
   BLINDSIGNAL_EXAMPLE_PORT: String(appPort),
   BLINDSIGNAL_EXAMPLE_SIGNALING_URL: `ws://localhost:${signalingPort}`,
+  // Every test page signs in from 127.0.0.1, so the per-address limit would throttle them.
+  BLINDSIGNAL_EXAMPLE_RATE_LIMIT_PER_MINUTE: '1000',
 };
 const registryPath = join(tmpdir(), 'blindsignal-minimal-app', 'registry.json');
 mkdirSync(join(registryPath, '..'), { recursive: true });
