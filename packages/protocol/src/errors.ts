@@ -25,8 +25,6 @@ export const errorClasses = {
 
 export type ErrorCode = keyof typeof errorClasses;
 
-export const errorCodes = Object.keys(errorClasses) as [ErrorCode, ...ErrorCode[]];
-
 export const closeCodes = {
   retryable: 4001,
   terminal: 4002,

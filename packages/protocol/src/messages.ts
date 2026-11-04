@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { errorCodes } from './errors.ts';
+import type { ErrorCode } from './errors.ts';
 import { deviceId, namespaceId, sessionId, userId } from './ids.ts';
 
 export const PROTOCOL_VERSION = 1;
@@ -21,8 +21,17 @@ const session = z.object({ sessionId });
 const pairing = z.object({ pairingId: sessionId });
 const device = { namespace: namespaceId, userId, deviceId };
 
+/** A listed value, or one that a later release of this protocol version adds (ADR 0045). */
+export type Extensible<T extends string> = T | (string & {});
+
+// Receivers accept any value, so a release can add one within the version; senders keep to the
+// listed values through their own types (ADR 0045).
+const extensible = <T extends string>() => z.string().min(1) as z.ZodType<Extensible<T>>;
+
 // Why a pairing request ended without an answer for this device (ADR 0042).
 export const pairingEndReasons = ['answered', 'timeout', 'requester_gone'] as const;
+
+export type PairingEndReason = (typeof pairingEndReasons)[number];
 
 export const terminationReasons = [
   'closed_by_peer',
@@ -31,6 +40,8 @@ export const terminationReasons = [
   'timeout',
   'namespace_unauthorized',
 ] as const;
+
+export type TerminationReason = (typeof terminationReasons)[number];
 
 // Message catalog, from docs/protocol.md §3 and §4. Unknown payload keys are stripped.
 export const messages = {
@@ -62,7 +73,7 @@ export const messages = {
   'session.close': { direction: 'client', payload: session, reply: 'ack' },
   'session.terminated': {
     direction: 'server',
-    payload: z.object({ sessionId, reason: z.enum(terminationReasons) }),
+    payload: z.object({ sessionId, reason: extensible<TerminationReason>() }),
   },
   'pairing.create': { direction: 'client', payload: namespace, reply: 'pairing.created' },
   'pairing.created': { direction: 'server', payload: pairing },
@@ -85,7 +96,7 @@ export const messages = {
   'pairing.rejected': { direction: 'server', payload: pairing },
   'pairing.ended': {
     direction: 'server',
-    payload: z.object({ pairingId: sessionId, reason: z.enum(pairingEndReasons) }),
+    payload: z.object({ pairingId: sessionId, reason: extensible<PairingEndReason>() }),
   },
   'rtc.offer': { direction: 'relay', payload: z.object({ sessionId, sdp: z.string() }) },
   'rtc.answer': { direction: 'relay', payload: z.object({ sessionId, sdp: z.string() }) },
@@ -110,7 +121,10 @@ export const messages = {
   ack: { direction: 'server', payload: empty },
   error: {
     direction: 'server',
-    payload: z.object({ code: z.enum(errorCodes), retryAfterMs: z.int().nonnegative().optional() }),
+    payload: z.object({
+      code: extensible<ErrorCode>(),
+      retryAfterMs: z.int().nonnegative().optional(),
+    }),
   },
 } as const satisfies Record<string, MessageSpec>;
 

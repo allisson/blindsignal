@@ -257,6 +257,8 @@ describe('BlindSignalClient connection', () => {
     [4002, 'device_revoked', 'device_revoked'],
     [4003, 'superseded', 'superseded'],
     [4002, undefined, 'connection_closed'],
+    // A code a later server adds: the close code's class decides (ADR 0045).
+    [4002, 'account_closed', 'account_closed'],
     [1009, undefined, 'message_too_large'],
   ])('stops after close %i with error %s', async (code, sent, reported) => {
     const harness = await connected();
@@ -774,7 +776,8 @@ describe('BlindSignalClient sessions', () => {
     expect(session.state).toBe('ended');
   });
 
-  it.each(['closed_by_peer', 'peer_disconnected', 'peer_revoked', 'timeout'])(
+  // `peer_moved` stands for a reason that a later server adds (ADR 0045).
+  it.each(['closed_by_peer', 'peer_disconnected', 'peer_revoked', 'timeout', 'peer_moved'])(
     'ends a session terminated with %s',
     async (reason) => {
       const harness = await connected();
@@ -937,6 +940,11 @@ describe('BlindSignalClient pairing', () => {
     const pairingId = timedOut.pairingId;
     harness.socket().receive(event('pairing.ended', { pairingId, reason: 'timeout' }));
     await expect(timedOut.result).resolves.toEqual({ status: 'timeout' });
+    // A reason that a later server adds ends the request the same way (ADR 0045).
+    const cancelled = await asking(harness);
+    const reason = 'cancelled';
+    harness.socket().receive(event('pairing.ended', { pairingId: cancelled.pairingId, reason }));
+    await expect(cancelled.result).resolves.toEqual({ status: 'timeout' });
     expect(ended).toEqual([]);
   });
 

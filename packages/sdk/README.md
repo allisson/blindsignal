@@ -68,7 +68,7 @@ session.on("open", () => session.send("hello"));
 | `rejoinFailed` | `{ namespace, error }`: a namespace not joined again after a reconnect. |
 | `sessionRequest` | A `SessionRequest`: the peer, `sessionId`, `accept()`, and `reject()`. |
 | `pairingRequest` | A `PairingRequest`: `pairingId`, the new device's `namespace`, `userId`, `deviceId`, and `jkt`, `approve()`, and `reject()`. |
-| `pairingEnded` | `{ pairingId, reason }`: a pairing request ended without this device's answer: `answered`, `timeout`, or `requester_gone`. |
+| `pairingEnded` | `{ pairingId, reason }`: a pairing request ended without this device's answer: `answered`, `timeout`, `requester_gone`, or a reason a later server adds. |
 
 `on(event, listener)` returns the function that removes the listener.
 
@@ -147,7 +147,8 @@ behavior is in `docs/protocol.md` §10.
 
 Requests reject with `BlindSignalError`. Its `code` is a protocol error code (`docs/protocol.md`
 §9, exported as `errorClasses` with its class), `connection_closed`, or `protocol_error`;
-`retryAfterMs` is set for `rate_limited`. Retryable failures reconnect on their own. A terminal
+`retryAfterMs` is set for `rate_limited`. A code missing from `errorClasses` comes from a later
+server and counts as retryable (ADR 0045). Retryable failures reconnect on their own. A terminal
 error stops the client and closes every DataChannel; a superseded one (another connection took the
 device) stops it until the application calls `connect()` again.
 

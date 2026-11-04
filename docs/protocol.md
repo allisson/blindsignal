@@ -44,9 +44,11 @@ and the error catalog in §9; server and SDK parse frames with it.
 ## 2. Versioning
 
 - `version` is a single integer major version. This document defines version `1`.
-- Within a major version, the allowed changes are adding an **optional** payload field and adding a
-  server-to-client message type that a client may ignore (ADR 0041). Receivers ignore payload
-  fields they do not know, and clients ignore server message types they do not know.
+- Within a major version, the allowed changes are adding an **optional** payload field, adding a
+  server-to-client message type that a client may ignore (ADR 0041), and adding a value to
+  `error.code`, `session.terminated.reason`, or `pairing.ended.reason` (ADR 0045). Receivers
+  ignore payload fields they do not know, clients ignore server message types they do not know,
+  and clients accept a value of those three fields that they do not list.
 - Any other new message type, a new required field, a removed field, or a change in meaning
   requires the next major version.
 - The version of a connection is the `version` of its `auth.authenticate`. A server that does not
@@ -281,7 +283,8 @@ which issues tokens with the namespace (ADR 0042). The server grants nothing and
 
 `error` carries a `code` from the catalog and, for rate limits only, `retryAfterMs`. It carries no
 free-text message. Each code has a class in the `protocol` package catalog; the class is not sent
-on the wire.
+on the wire. A code that a client does not list comes from a later release of the version: the
+SDK treats it as retryable, and a connection it closes by its close code (ADR 0045).
 
 When the server closes a connection, it first sends `error` with the code, then closes the
 WebSocket with the close code of the code's class:

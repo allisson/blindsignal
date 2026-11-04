@@ -68,6 +68,25 @@ describe('Signaling', () => {
     await expect(join).rejects.toMatchObject({ code: 'rate_limited', retryAfterMs: 500 });
   });
 
+  it('rejects a request with an error code that a later server adds (ADR 0045)', async () => {
+    const { signaling, socket, closes } = await connect();
+    const join = signaling.request('namespace.join', { namespace: 'notes:a' });
+    socket.receive(reply('error', 'r1', { code: 'account_closed' }));
+    await expect(join).rejects.toEqual(new BlindSignalError('account_closed'));
+    socket.drop(4002);
+    expect(closes).toEqual([{ code: 4002, error: 'account_closed' }]);
+  });
+
+  it('ignores a message type it does not know, and still settles the request', async () => {
+    const { signaling, socket, messages } = await connect();
+    const join = signaling.request('namespace.join', { namespace: 'notes:a' });
+    socket.receive(reply('namespace.moved', 'r1', { namespace: 'notes:b' }));
+    socket.receive({ version: 1, type: 'namespace.moved', payload: { namespace: 'notes:b' } });
+    expect(messages).toEqual([]);
+    socket.receive(reply('ack', 'r1'));
+    await expect(join).resolves.toMatchObject({ type: 'ack' });
+  });
+
   it('rejects a reply of the wrong type with protocol_error', async () => {
     const { signaling, socket } = await connect();
     const join = signaling.request('namespace.join', { namespace: 'notes:a' });

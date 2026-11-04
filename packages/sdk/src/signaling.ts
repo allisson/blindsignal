@@ -3,7 +3,6 @@ import {
   messages,
   parseServerMessage,
   PROTOCOL_VERSION,
-  type ErrorCode,
   type Message,
   type MessageType,
   type Payload,
@@ -33,7 +32,7 @@ export interface SignalingEvents extends Record<string, unknown> {
   /** A server event, a relayed message, or a reply to no pending request (a relay failure). */
   message: ServerMessage;
   /** `error` is the last error code received, when the close code is a protocol class code. */
-  close: { code: number; error?: ErrorCode };
+  close: { code: number; error?: Payload<'error'>['code'] };
 }
 
 export type SocketFactory = (url: URL) => WebSocket;
@@ -52,7 +51,7 @@ export class Signaling extends Emitter<SignalingEvents> {
   readonly #pending = new Map<string, Pending>();
   #nextId = 0;
   #closed = false;
-  #lastError: ErrorCode | undefined;
+  #lastError: Payload<'error'>['code'] | undefined;
   readonly #challenge = Promise.withResolvers<string>();
 
   private constructor(socket: WebSocket) {
