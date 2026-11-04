@@ -568,7 +568,8 @@ Initial message categories:
 | Configuration | `rtc.ice_config` |
 | Lifecycle | `connection.ping`, `connection.pong`, `ack`, `error` |
 
-The full message catalog, payloads, versioning rule, and error codes are in `docs/protocol.md`.
+The full message catalog, payloads, versioning rule, and error codes are in `docs/protocol.md`. The
+SDK and the server follow semantic versioning (`docs/adr/0043-semantic-versioning.md`).
 
 `auth.refresh` renews the connection's credentials with a new application-issued token without reconnecting; the new token must keep the connection's identity (§5.3). `session.create` is sent by the requesting device to the server, which replies `session.created` with the server-generated session ID; `session.request` is sent by the server to the target device, which answers with `session.accept` or `session.reject`; the server sends the requesting device `session.accepted` or `session.rejected`. `session.close` is sent only from client to server; the other participant receives `session.terminated`. `session.terminated` is sent by the server whenever a session ends for a reason outside the recipient's control (the other participant closed it, disconnected, or was revoked, or the request timed out) and carries that reason (§6.4). Application suspension needs no such notice: all peers of a session belong to the same application, and their connections are closed (§5.5); each SDK closes its sessions when reauthentication is rejected (§6.4). `rtc.ice_config` is sent by the server and is the only channel for TURN credentials (§12.3). The server sends it after every successful `auth.authenticate` and `auth.refresh`, even when no TURN server is configured, and at no other time; TURN credentials are renewed with the token (`docs/adr/0009-ice-configuration.md`). ICE restart is a new `rtc.offer` within the same session; there is no separate message type. Pairing messages are finalized together with the pairing protocol (§7.4).
 

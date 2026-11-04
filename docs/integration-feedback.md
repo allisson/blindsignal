@@ -28,5 +28,5 @@ from an outside application.
 | Finding | Where it showed up | Roadmap task |
 |---|---|---|
 | The SDK has no public way to refresh the token on demand: after the backend grants a pairing, the minimal app closes the client and connects again to get a token with the namespace. | `examples/minimal-app/public/app.ts` | Phase 12: review public API stability |
-| The SDK is not published (`private`, version `0.0.0`): the examples serve its source with the types stripped, and an application outside this repository has no package to install. | `examples/minimal-app/server.ts`, `examples/browser-demo/server.ts` | Phase 12: publish SDK documentation; define semantic versioning |
+| The SDK is not published (`private`, version `0.0.0`): the examples serve its source with the types stripped, and an application outside this repository has no package to install. | `examples/minimal-app/server.ts`, `examples/browser-demo/server.ts` | Phase 12: publish SDK documentation, at the version ADR 0043 defines |
 | No application outside this repository has integrated yet. | Phase 11 | Phase 11: integrate with BlindVault |

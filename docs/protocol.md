@@ -53,6 +53,9 @@ and the error catalog in §9; server and SDK parse frames with it.
   support it answers `error` `unsupported_version` and closes the connection (terminal). Any later
   message with a different `version` is rejected the same way.
 - There is no WebSocket subprotocol negotiation and no minor version.
+- The SDK and the server have semantic versions of their own; each of their major versions states
+  the protocol majors it speaks, and adding one is a minor version, dropping one a major
+  (ADR 0043).
 
 ## 3. Request correlation and replies
 
