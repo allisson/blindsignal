@@ -18,6 +18,9 @@ and take over its presence and connection.
   `namespaces` (an array of strings, possibly empty, with a configurable maximum length). `nbf` is
   optional and validated when present. Unknown claims are ignored. What `namespaces` authorizes is
   settled with the namespace authorization source (spec §7.3).
+- **Audience (amended with the token validation fixes):** `aud` is the application's audience, as
+  a string or an array holding only it. A token whose `aud` also names another service is
+  rejected: any service it names could use it here once.
 - **Lifetime:** `exp − iat` at most 10 minutes by default; clock-skew tolerance 60 seconds by
   default, applied to `exp`, `nbf`, and `iat`. Both are configurable.
 - **Replay:** every token is single-use. Each `auth.authenticate` and each `auth.refresh` needs a

@@ -125,7 +125,13 @@ async function main(): Promise<void> {
     preAuthentication: config.preAuthentication,
     coordination,
     connection: {
-      verifier: new TokenVerifier({ applications, coordination, startedAt, ...config.token }),
+      verifier: new TokenVerifier({
+        applications,
+        coordination,
+        startedAt,
+        development: config.development,
+        ...config.token,
+      }),
       devices: storage.devices,
       coordination,
       iceServers: config.iceServers.map(({ urls }) => ({ urls: [...urls] })),

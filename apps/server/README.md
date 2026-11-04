@@ -51,6 +51,10 @@ names the variable, never its value.
 | `BLINDSIGNAL_TOKEN_MAX_LIFETIME_SECONDS` | `600` | Maximum `exp - iat` (ADR 0006). |
 | `BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS` | `60` | Clock-skew tolerance on token times. |
 | `BLINDSIGNAL_TOKEN_MAX_NAMESPACES` | `100` | Maximum namespaces in one token. |
+| `BLINDSIGNAL_JWKS_TIMEOUT_SECONDS` | `5` | Timeout of each fetch of an application's `jwksUri` (spec §5.3). |
+| `BLINDSIGNAL_JWKS_CACHE_SECONDS` | `600` | How long a fetched key set is kept. |
+| `BLINDSIGNAL_JWKS_COOLDOWN_SECONDS` | `30` | Minimum time between fetches of one issuer's key set, after an unknown `kid` or a failed fetch. |
+| `BLINDSIGNAL_JWKS_MAX_BYTES` | `65536` | A larger key set response fails the fetch. |
 | `BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS` | `30` | WebSocket ping interval. |
 | `BLINDSIGNAL_CLOSE_TIMEOUT_SECONDS` | `5` | A connection the server closes is terminated when its client has not answered the close this long after (ADR 0011). |
 | `BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS` | `0` | On `SIGTERM`, readiness fails and upgrades get HTTP `503` this long before the connections close. Set it to the time the load balancer takes to stop routing to a failing instance (ADR 0031). |

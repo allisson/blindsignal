@@ -203,7 +203,7 @@ Requirements:
 - Public-key retrieval through trusted JWKS configuration or static key configuration. JWKS URIs use HTTPS only, and fetches have timeouts. Refetching keys on an unknown `kid` is rate-limited per issuer, so unauthenticated clients cannot force repeated JWKS fetches.
 - Safe key rotation and cache refresh.
 - Rejection of unknown, suspended, or revoked applications.
-- No acceptance of tokens issued for unrelated services.
+- No acceptance of tokens issued for unrelated services: `aud` is the application's audience, as a string or as an array holding only it. A token whose `aud` also names another service is rejected, since that service could use it here.
 - Each trusted issuer maps to exactly one registered application. The `app_id` claim must match the application registered for the validated issuer; a mismatch is rejected.
 - Single-use tokens: each `auth.authenticate` and `auth.refresh` needs a token whose `(iss, jti)` has not been accepted before, tracked until `exp` plus the clock-skew tolerance. While that tracking is in memory, a token whose `iat` is earlier than the server's start time is rejected, since a restart forgets every accepted `jti`.
 - A token presented through `auth.refresh` must carry the same `app_id`, `sub`, and `device_id` as the connection's current context; a mismatch is rejected. Changing identity requires a new connection.
@@ -212,7 +212,8 @@ Requirements:
 Issuer key configuration:
 - Each application has either a `jwks_uri` or static public keys in the registry file (§5.6), never both.
 - A `jwks_uri` must use HTTPS; the registry load rejects any other scheme, so a reload with one is rejected whole.
-- Remote key sets are fetched with the `jose` library's `createRemoteJWKSet`, one per issuer, with its defaults as configurable starting values: a 5-second fetch timeout, a 10-minute cache lifetime, and a 30-second cooldown before an unknown `kid` can trigger another fetch for that issuer.
+- Remote key sets are fetched with the `jose` library's `createRemoteJWKSet`, one per issuer, with its defaults as configurable starting values: a 5-second fetch timeout, a 10-minute cache lifetime, and a 30-second cooldown before an unknown `kid` can trigger another fetch for that issuer. A failed fetch starts the cooldown too.
+- A fetch never follows a redirect, and fails when the response exceeds a configurable size, 64 KiB by default, or, outside development mode, when the key set holds the development issuer's key (§14.1).
 - A token whose `kid` is still unknown, including during the cooldown, is rejected with `invalid_token`.
 
 The token is a credential for a specific application and service, not a general-purpose authorization grant.

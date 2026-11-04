@@ -1,5 +1,5 @@
 import { InMemoryCoordinationAdapter } from '@blindsignal/coordination-memory';
-import { devApplication, devIssuer, mintDevToken } from '@blindsignal/dev-issuer';
+import { DEV_PUBLIC_JWK, devApplication, devIssuer, mintDevToken } from '@blindsignal/dev-issuer';
 import { InMemoryApplicationRepository } from '@blindsignal/storage-memory';
 import { createHash } from 'node:crypto';
 import {
@@ -97,6 +97,14 @@ describe('TokenVerifier', () => {
     expect(result.ok && result.token.application.appId).toBe('notes');
   });
 
+  it('accepts an audience array that holds only the application audience', async () => {
+    const { verifier } = await setup();
+    const aud = ['blindsignal'] as unknown as string;
+    expect((await verifier.verify(await mintDevToken({ ...identity, aud }, { now }))).ok).toBe(
+      true,
+    );
+  });
+
   it('returns the permissions claim, when present, in the context (ADR 0040)', async () => {
     const { verifier } = await setup();
     const permissions = { 'notes:a': ['session.accept'] };
@@ -185,6 +193,12 @@ describe('TokenVerifier', () => {
       ['an unknown issuer', { ...identity, iss: 'https://unknown.example' }],
       ['a non-string issuer', { ...identity, iss: undefined }],
       ['a wrong audience', { ...identity, aud: 'other-service' }],
+      [
+        'an audience of other services too',
+        { ...identity, aud: ['blindsignal', 'other-service'] as unknown as string },
+      ],
+      ['a missing iat', { ...identity, iat: undefined }],
+      ['a missing exp', { ...identity, exp: undefined }],
       [
         'an app_id that is not the issuer application',
         { ...identity, iss: devIssuer('notes'), app_id: 'other' },
@@ -370,12 +384,14 @@ describe('TokenVerifier', () => {
       vi.useRealTimers();
     });
 
-    async function remote() {
+    async function remote(options: Partial<TokenVerifierOptions> = {}) {
       vi.useFakeTimers({ toFake: ['Date'], now });
       const first = await esKey('k1');
       const second = await esKey('k2');
-      let published = [first.jwk];
-      const fetch = vi.fn((url: string) => {
+      let published: object[] = [first.jwk];
+      const fetch = vi.fn<
+        (url: string, init?: { signal?: AbortSignal; redirect?: string }) => Promise<Response>
+      >((url) => {
         expect(url).toBe(JWKS_URI);
         return Promise.resolve(Response.json({ keys: published }));
       });
@@ -388,7 +404,7 @@ describe('TokenVerifier', () => {
         jwksUri: JWKS_URI,
         algorithms: ['ES256'],
       };
-      const { verifier } = await setup([app], { jwks: { fetch } });
+      const { verifier } = await setup([app], { ...options, jwks: { fetch, ...options.jwks } });
       const mint = async (key: CryptoKey, kid: string) => {
         const iat = Math.floor(Date.now() / 1000);
         const claims = { ...identity, iss: app.issuer, aud: 'blindsignal', namespaces: [] };
@@ -404,6 +420,7 @@ describe('TokenVerifier', () => {
         second,
         mint,
         rotate: () => (published = [first.jwk, second.jwk]),
+        publish: (keys: object[]) => (published = keys),
       };
     }
 
@@ -450,6 +467,52 @@ describe('TokenVerifier', () => {
         ok: false,
         code: 'invalid_token',
       });
+    });
+
+    it('never follows a redirect', async () => {
+      const { verifier, fetch, first, mint } = await remote();
+      const location = { location: 'https://elsewhere.example/jwks.json' };
+      fetch.mockResolvedValueOnce(new Response(null, { status: 302, headers: location }));
+      const result = await verifier.verify(await mint(first.privateKey, 'k1'));
+      expect(result).toEqual({ ok: false, code: 'invalid_token' });
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch.mock.calls[0]?.[1]?.redirect).toBe('manual');
+    });
+
+    it('rejects when the fetch times out', async () => {
+      const { verifier, fetch, first, mint } = await remote({ jwks: { timeoutMs: 20 } });
+      fetch.mockImplementationOnce(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason as Error));
+          }),
+      );
+      expect(await verifier.verify(await mint(first.privateKey, 'k1'))).toEqual({
+        ok: false,
+        code: 'invalid_token',
+      });
+    });
+
+    it('reads a key set up to the size limit, and fails a larger one', async () => {
+      const first = await esKey('k1');
+      const size = Buffer.byteLength(JSON.stringify({ keys: [first.jwk] }));
+      for (const [maxBytes, ok] of [
+        [size, true],
+        [size - 1, false],
+      ] as const) {
+        const { verifier, mint, publish } = await remote({ jwks: { maxBytes } });
+        publish([first.jwk]);
+        expect((await verifier.verify(await mint(first.privateKey, 'k1'))).ok).toBe(ok);
+      }
+    });
+
+    it('refuses a key set holding the dev key, except in development mode', async () => {
+      for (const development of [false, true]) {
+        const { verifier, first, mint, publish } = await remote({ development });
+        publish([first.jwk, { ...DEV_PUBLIC_JWK }]);
+        const result = await verifier.verify(await mint(first.privateKey, 'k1'));
+        expect(result.ok).toBe(development);
+      }
     });
   });
 });

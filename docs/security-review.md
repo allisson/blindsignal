@@ -31,6 +31,10 @@ reported no advisory.
 | Device ↔ device | `denied-peer-ip` left out the IPv4-mapped and NAT64 IPv6 ranges, which reach IPv4 peers the other lines deny | Both ranges denied in `docs/turn-operations.md` and `examples/self-hosted/turnserver.conf` |
 | Supply chain | Dependabot proposed updates to the image's base only, and the actions were referenced by tag | Dependabot for npm and the actions too, the actions pinned by commit, and `pnpm audit --prod` in CI (ADR 0048) |
 | Supply chain | `.dockerignore` did not leave out `.env` files | `**/.env*` |
+| Issuer ↔ server | The JWKS response had no size limit, and its fetch timeout and cooldown were not configurable as spec §5.3 asks | `BLINDSIGNAL_JWKS_MAX_BYTES`, `BLINDSIGNAL_JWKS_TIMEOUT_SECONDS`, `BLINDSIGNAL_JWKS_CACHE_SECONDS`, and `BLINDSIGNAL_JWKS_COOLDOWN_SECONDS` |
+| Issuer ↔ server | A token's `aud` could be an array that holds the server's audience among others | Such a token is rejected (ADR 0006) |
+| Issuer ↔ server | A production registry whose `jwksUri` served the development key was not refused | Outside development mode, a key set holding it fails the fetch |
+| Tests | No test covered a JWKS fetch that times out or redirects, a token without `iat` or `exp`, or concurrent use of one `jti` or rate limit | Tests for each, the concurrent ones in the coordination contract, against memory and Redis |
 
 ### Non-blocking, accepted
 
@@ -47,9 +51,6 @@ reported no advisory.
 | SDK ↔ server | `iceServers` is checked only when the client is built, and accepts a `credential` on a `stun:` URL |
 | SDK ↔ server | The server URL may carry userinfo or a query string |
 | SDK ↔ server | `auth.refresh` leaves the connection's pairing requests open when the new token drops `pairing` |
-| Issuer ↔ server | The JWKS response has no size limit, and its fetch timeout and cooldown are not configurable as spec §5.3 asks |
-| Issuer ↔ server | A token's `aud` may be an array that holds the server's audience among others |
-| Issuer ↔ server | A production registry whose `jwksUri` serves the development key is not refused |
 | Operator ↔ server | A `SIGHUP` that arrives before the signal handlers are installed ends the process |
 | Operator ↔ server | An unreachable Redis at startup leaves the server waiting, with no deadline |
 | Operator ↔ server | `server.start_failed` and the crash log can carry text from an error message |
@@ -61,7 +62,6 @@ reported no advisory.
 | Examples | `examples/backend-issuer` has no rate limit on its token endpoint, keeps unbounded state in memory, and its session cookie has no `__Host-` prefix, expiry, or sign-out |
 | Examples | `examples/browser-demo` sends a token to any `wss://` server its `?server=` names, and `examples/minimal-app`'s device IDs can collide with the page's element IDs |
 | Tests | The scan for secrets in served files skips the `*.test.ts` files the examples serve |
-| Tests | No test covers a JWKS fetch that times out or redirects, a token without `iat` or `exp`, or concurrent use of one `jti` or rate limit |
 
 ## 2026-11: abuse resistance
 

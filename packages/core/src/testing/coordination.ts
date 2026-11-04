@@ -41,6 +41,14 @@ export function describeCoordinationContract(
       expect(await coordination.claimJti('ab', 'c', TTL)).toBe(true);
       expect(await coordination.claimJti('a', 'bc', TTL)).toBe(true);
     });
+
+    it('accepts one of concurrent claims of a pair', async () => {
+      const { coordination } = await create();
+      const claims = await Promise.all(
+        Array.from({ length: 10 }, () => coordination.claimJti('iss', 'j1', TTL)),
+      );
+      expect(claims.filter(Boolean)).toHaveLength(1);
+    });
   });
 
   describe(`${name}: device connections`, () => {
@@ -145,6 +153,15 @@ export function describeCoordinationContract(
       expect(await coordination.consumeRateLimit('k', policy)).toEqual({ allowed: true });
       expect(await coordination.consumeRateLimit('k', policy)).toEqual({ allowed: true });
       expect((await coordination.consumeRateLimit('k', policy)).allowed).toBe(false);
+    });
+
+    it('allows only the burst of concurrent requests', async () => {
+      const { coordination } = await create();
+      const policy = { ratePerSecond: 0.1, burst: 3 };
+      const decisions = await Promise.all(
+        Array.from({ length: 10 }, () => coordination.consumeRateLimit('k', policy)),
+      );
+      expect(decisions.filter((decision) => decision.allowed)).toHaveLength(3);
     });
   });
 
