@@ -1,9 +1,9 @@
 # BlindSignal threat model
 
-**Status:** MVP scope, reviewed after the Phase 5 and 6 MVP subsets, before external testing (Phase 7)  
+**Status:** reviewed before the first release (Phase 12, `docs/security-review.md`)  
 **Reference:** `docs/spec.md` §4, §5, §6, §8, §16, §17; `docs/protocol.md`; `docs/adr/`
 
-What BlindSignal protects in the MVP, against whom, and which risks it accepts. Each mitigation
+What BlindSignal protects, against whom, and which risks it accepts. Each mitigation
 points to the document that defines it; this file adds no rule of its own.
 
 ## 1. Assets
@@ -17,6 +17,8 @@ points to the document that defines it; this file adds no rule of its own.
 | Device identity and presence | Who is reachable, and as whom (ADR 0006, spec §7.3). |
 | Session membership | Who may signal whom (ADR 0003, ADR 0004). |
 | Metadata | Identifiers, IP addresses, timing, session participants (spec §4.4, §17). |
+| Device keys | Bind tokens and sign pairing approvals; non-extractable in the browser (ADR 0041, ADR 0042). |
+| Shared state | Device records and the registry in PostgreSQL; `jti` history, presence, sessions, and rate limits in Redis (ADR 0020 to ADR 0023). |
 | Availability | Shared capacity across applications (spec §8). |
 
 Application payloads are not an asset of the server: they never reach it (spec §4.1).
@@ -31,6 +33,7 @@ Application payloads are not an asset of the server: they never reach it (spec �
 | Unauthenticated client | Anyone who can reach the WebSocket endpoint. |
 | Network attacker | Can observe or alter traffic between the SDK, the server, and peers. |
 | Remote peer | The other participant of a session; may be malicious after acceptance. |
+| Dependency or action author | Trusted only for the version pinned in the lockfile, the image digest, or the action commit. |
 
 ## 3. Trust boundaries
 
@@ -38,7 +41,10 @@ Application payloads are not an asset of the server: they never reach it (spec �
 2. **Issuer ↔ server:** signed tokens and the JWKS fetch.
 3. **Operator ↔ server:** the registry file and the process environment.
 4. **Device ↔ device:** the WebRTC DataChannel, direct or through TURN.
-5. **Server ↔ adapters:** storage and coordination state (ADR 0010).
+5. **Server ↔ adapters:** storage and coordination state (ADR 0010), in PostgreSQL and Redis
+   when several instances share them.
+6. **Build ↔ dependencies:** the npm packages, the image's base, and the GitHub Actions that
+   build and test it.
 
 ## 4. Threats and mitigations
 
@@ -63,6 +69,8 @@ Application payloads are not an asset of the server: they never reach it (spec �
 | Cross-site WebSocket use from a hostile page | Token required on every connection; `Origin` allowlist as defense in depth | spec §16 |
 | Pre-authentication flooding | Per-IP connection and authentication limits, unauthenticated connection cap, authentication deadline, HTTP `429` at the upgrade | spec §8.4, ADR 0011 |
 | Post-authentication flooding or resource exhaustion | Token buckets per connection and session, application and device quotas, maximum message size, bounded per-connection queues and send buffers | ADR 0011, ADR 0013 |
+| WebSocket pings or pongs used to renew leases outside the rate limits, or to fill the send buffer | Only the pong to the server's own ping renews leases; the server answers pings itself, and terminates a connection past its send buffer limit | ADR 0011, ADR 0013 |
+| Too many connections for one instance or its platform | Connections capped per instance, and closed before a maximum lifetime | ADR 0029, ADR 0030 |
 | Forged forwarding headers to evade IP limits | Headers honored only from configured trusted proxies | ADR 0011 |
 | Behind a tunnel or proxy (Phase 7), every client shares one address and its pre-authentication limits | The tunnel's connector listed as a trusted proxy, with its forwarding header (`cf-connecting-ip` for Cloudflare) | ADR 0011 |
 | Metrics reached by clients | The admin port binds to loopback by default and serves only aggregates | ADR 0012 |
@@ -85,7 +93,9 @@ Application payloads are not an asset of the server: they never reach it (spec �
 | An invalid registry edit breaks trust configuration | Reload is all or nothing; the previous registry stays | ADR 0005 |
 | A revoked application is brought back | Reactivation of a revoked application is rejected | ADR 0005 |
 | Control plane reached with an application token | The control plane has no network surface | ADR 0005 |
-| Development issuers trusted in production | Development issuers and test keys isolated from production configuration | spec §14.1 |
+| Development issuers trusted in production | Development issuers and test keys isolated from production configuration; outside development mode, a registry that trusts one is refused from the file and from storage | spec §14.1 |
+| A suspension or revocation reaches only the instance that reloaded | `registry.changed` makes every instance sync from storage, and each syncs on an interval too | ADR 0024 |
+| Telemetry carries tokens, identifiers, or payloads | Metrics are aggregates, at most per application; logs have fixed fields; the OTLP endpoint is the operator's | ADR 0015, ADR 0037, ADR 0038 |
 | A suspended or revoked application, or a revoked device, keeps its open connections | A registry reload closes the affected connections and ends their sessions | ADR 0005, spec §6.4 |
 | Metadata kept beyond its use, or identifiers written to logs | State held only while the protocol needs it; logs with fixed fields and no user, device, or token; IP logs kept at most 14 days | ADR 0012 |
 
@@ -104,6 +114,21 @@ Application payloads are not an asset of the server: they never reach it (spec �
 |---|---|---|
 | Races exceed quotas or accept a `jti` twice | Atomic adapter operations | ADR 0010 |
 | In-memory state assumed safe across instances | In-memory adapters documented as single-instance only | spec §10.3 |
+| Another database role reads device records or the registry | The tables hide from every role but their owner | ADR 0027 |
+| Two deployments sharing one Redis read each other's state | Every key under `BLINDSIGNAL_REDIS_PREFIX` | ADR 0022 |
+| Redis evicts or loses the `jti` history, allowing a replay | `maxmemory-policy noeviction`; the instances restart after Redis loses data | ADR 0035 |
+| A failed instance leaves its sessions open on the others | A session whose peer's instance fails ends once the peer reconnects | ADR 0026 |
+| Database or Redis credentials leaked | Held only in the environment, and rotated as documented | `docs/secrets-and-keys.md` |
+
+### 4.6 Build ↔ dependencies
+
+| Threat | Mitigation | Reference |
+|---|---|---|
+| A dependency with a known advisory ships in the server or the SDK | `pnpm audit --prod` fails CI; Dependabot proposes updates weekly | ADR 0048 |
+| A dependency changes between installs | `pnpm install --frozen-lockfile` in CI and the image | `.github/workflows/ci.yml`, `Dockerfile` |
+| The image's base changes under the same tag | The base pinned by digest | ADR 0033 |
+| An action's tag moved to other code | Actions pinned by commit | ADR 0048 |
+| An `.env` file copied into the image | `.dockerignore` leaves out `**/.env*` | `.dockerignore` |
 
 ## 5. Accepted risks
 
@@ -143,6 +168,9 @@ Application payloads are not an asset of the server: they never reach it (spec �
     relays, so a server that rewrites them can read DataChannel payloads. Only application E2EE,
     with peer keys authenticated outside BlindSignal, keeps payloads from it
     (`docs/application-e2ee.md`).
+13. **Across instances, a status change can take a sync interval.** When the `registry.changed`
+    event is lost, a suspension, revocation, or device revocation reaches an instance at its next
+    sync, up to `BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS` (default 60) later (ADR 0024).
 
 ## 6. Out of scope
 
@@ -150,8 +178,6 @@ Application payloads are not an asset of the server: they never reach it (spec �
   states what an application must do for E2EE.
 - How the issuer authenticates its users.
 - A compromised server host, operator, or issuer signing key; their protection is the deployer's.
-- Cross-instance propagation of status changes, handled with distributed adapters (roadmap
-  Phase 9).
 - How the backend records pairings and checks approvals; `docs/token-issuance.md#pairing` states
   what it must do.
 - How the backend binds a device to its key; `docs/token-issuance.md` states what it must do.

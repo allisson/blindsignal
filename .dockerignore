@@ -7,4 +7,5 @@
 docs
 examples
 *.log
+**/.env*
 packages/core/src/testing
