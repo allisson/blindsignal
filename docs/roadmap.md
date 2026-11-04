@@ -557,7 +557,7 @@ Operating TURN is not required to complete the initial local MVP.
 
 - [x] Review public API stability: ADR 0046.
 - [x] Review protocol compatibility: ADR 0045.
-- [ ] Complete security review.
+- [x] Complete security review: ADR 0048, `docs/security-review.md`.
 - [ ] Complete abuse-resistance review.
 - [ ] Complete performance and load tests.
 - [x] Complete browser compatibility tests: ADR 0047.
@@ -566,6 +566,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [ ] Publish deployment documentation.
 - [x] Define semantic versioning: ADR 0043.
 - [x] Define support and upgrade policy: ADR 0044.
+- [ ] Fix or accept the open findings of the security review (`docs/security-review.md`).
 
 ### Deliverables
 
@@ -661,4 +662,5 @@ the SDK and the server follow semantic versioning, joined by the protocol major 
 a server keeps the previous protocol major while old SDKs can still run (ADR 0044), clients
 accept error codes and end reasons that a later release adds (ADR 0045), and the SDK's public API
 is reviewed, with `refresh()` on demand (ADR 0046), and the SDK names its supported browsers, with
-WebKit in CI (ADR 0047).
+WebKit in CI (ADR 0047); the security review left no blocking finding open, and repeats before
+every minor and major release (ADR 0048, `docs/security-review.md`).

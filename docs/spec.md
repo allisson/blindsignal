@@ -241,7 +241,7 @@ When an application is suspended or revoked:
 
 In a single-instance deployment, including the MVP, suspension and revocation take effect immediately: new authentication fails and the application's active WebSocket connections are closed.
 
-The system must define how quickly application status changes propagate across instances.
+The system must define how quickly application status changes propagate across instances. With several instances, a change reaches every instance within a round trip through Redis, or within `BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS` (default 60) when that event is lost (`docs/adr/0024-registry-propagation.md`).
 
 ### 5.6 Control plane
 

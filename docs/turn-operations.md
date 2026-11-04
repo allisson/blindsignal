@@ -53,6 +53,8 @@ denied-peer-ip=192.168.0.0-192.168.255.255
 denied-peer-ip=::1
 denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+denied-peer-ip=::ffff:0:0-::ffff:ffff:ffff
+denied-peer-ip=64:ff9b::-64:ff9b::ffff:ffff
 # Sized for the expected relayed sessions; see Limits.
 user-quota=<allocations per credential>
 total-quota=<allocations per server>
@@ -63,7 +65,9 @@ prometheus-address=10.0.0.10
 
 - **Peers.** A relay sends traffic wherever its client asks, so without `denied-peer-ip` it
   reaches the network that hosts it: private ranges, loopback, link-local, and the cloud metadata
-  address `169.254.169.254` (threat model §4.4). Never set `allow-loopback-peers`. The test Coturn
+  address `169.254.169.254` (threat model §4.4). The IPv4-mapped (`::ffff:0:0/96`) and NAT64
+  (`64:ff9b::/96`) ranges are denied whole, since each holds an IPv4 address the IPv4 lines deny;
+  Coturn takes ranges as `first-last`, not CIDR, and refuses to start on an invalid one. Never set `allow-loopback-peers`. The test Coturn
   of `compose.yaml` denies none of these, because its relay addresses are private container
   addresses; never copy it to production.
 - **Ports.** `3478` over UDP and TCP, `443` over TCP for `turns:`, and the relay range over UDP,

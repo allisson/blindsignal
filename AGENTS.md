@@ -29,6 +29,7 @@ server. Initial target: browser / PWA.
 - `docs/tailscale.md`: a laptop and devices on one tailnet, pairing in `examples/minimal-app`.
 - `docs/application-e2ee.md`: what BlindSignal protects in a payload, and what E2EE leaves to applications.
 - `docs/integration-feedback.md`: what the Phase 11 examples taught, fixed, documented, and open.
+- `docs/security-review.md`: each security review's findings and their state; `SECURITY.md`, how to report one.
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
 raise it; do not silently diverge. A change that alters a documented contract updates the spec,
@@ -80,7 +81,8 @@ semantic versioning, joined by the protocol major (ADR 0043), and a server keeps
 protocol major while old SDKs can still run (ADR 0044); clients accept error codes and end
 reasons that a later release adds (ADR 0045), and the SDK's public API is reviewed, with
 `refresh()` on demand (ADR 0046); the SDK names its supported browsers, and CI runs WebKit too
-(ADR 0047). The workspace uses
+(ADR 0047); the security review left no blocking finding open, and repeats before every minor
+and major release, with Dependabot, pinned actions, and `pnpm audit --prod` in CI (ADR 0048). The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
