@@ -561,7 +561,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Complete abuse-resistance review: `docs/security-review.md`.
 - [x] Complete performance and load tests: ADR 0049, `docs/load-report.md`.
 - [x] Complete browser compatibility tests: ADR 0047.
-- [ ] Publish SDK documentation.
+- [x] Publish SDK documentation: `packages/sdk/README.md` (ADR 0046).
 - [ ] Publish application onboarding documentation.
 - [ ] Publish deployment documentation.
 - [x] Define semantic versioning: ADR 0043.
@@ -666,4 +666,5 @@ is reviewed, with `refresh()` on demand (ADR 0046), and the SDK names its suppor
 WebKit in CI (ADR 0047); the security review left no blocking finding open, and repeats before
 every minor and major release (ADR 0048, `docs/security-review.md`), and the abuse review left
 none open either; load tests validate the quota and rate-limit defaults before every minor and
-major release too (ADR 0049, `docs/load-report.md`).
+major release too (ADR 0049, `docs/load-report.md`); the SDK README documents every export, and
+a test keeps it so (ADR 0046).
