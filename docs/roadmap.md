@@ -555,7 +555,7 @@ Operating TURN is not required to complete the initial local MVP.
 
 ### Tasks
 
-- [ ] Review public API stability.
+- [x] Review public API stability: ADR 0046.
 - [x] Review protocol compatibility: ADR 0045.
 - [ ] Complete security review.
 - [ ] Complete abuse-resistance review.
@@ -658,5 +658,6 @@ the server's instances reach nothing of each other, and exchange their own paylo
 `docs/application-e2ee.md` states what applications must do for end-to-end encryption, and
 `docs/integration-feedback.md` what the examples taught about integrating. Phase 12 has started:
 the SDK and the server follow semantic versioning, joined by the protocol major (ADR 0043), and
-a server keeps the previous protocol major while old SDKs can still run (ADR 0044), and clients
-accept error codes and end reasons that a later release adds (ADR 0045).
+a server keeps the previous protocol major while old SDKs can still run (ADR 0044), clients
+accept error codes and end reasons that a later release adds (ADR 0045), and the SDK's public API
+is reviewed, with `refresh()` on demand (ADR 0046).

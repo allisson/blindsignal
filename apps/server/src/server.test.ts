@@ -671,7 +671,6 @@ describe('SignalingServer with the SDK', () => {
     const alice = sdk(url, 'alice', 'laptop');
     const bob = sdk(url, 'bob', 'phone');
     await expect(alice.client.connect()).resolves.toEqual({ userId: 'alice', deviceId: 'laptop' });
-    expect(alice.client.iceConfig).toEqual({ iceServers: [] });
     await alice.client.join('notes:a');
     await bob.client.connect();
     await bob.client.join('notes:a');

@@ -58,6 +58,7 @@ session.on("open", () => session.send("hello"));
 | `discover(namespace)` | The other devices present in a joined namespace. |
 | `createSession({ namespace, userId, deviceId })` | A requester's `Session`, `pending` until the target accepts. |
 | `requestPairing(namespace)` | Asks this user's devices in `namespace` to approve this one; see [Pairing](#pairing). |
+| `refresh()` | Sends `auth.refresh` now with a new token, for when the backend changed what the token grants; rejects with a `BlindSignalError` and keeps the current token. Refreshes before expiry need no call. |
 | `close()` | Closes the connection and stops reconnecting; open DataChannels stay until their sessions close. |
 | `state` | `disconnected`, `connecting`, or `connected`. |
 
@@ -106,7 +107,12 @@ device's token lists the namespace in `pairing`.
 ```typescript
 // The new device; requestPairing() without a deviceKey rejects with a TypeError.
 const result = await client.requestPairing("notes:workspace");
-if (result.status === "approved") await fetch("/pairings", { method: "POST", body: result.approval });
+if (result.status === "approved") {
+  await fetch("/pairings", { method: "POST", body: result.approval });
+  // The next token lists the namespace.
+  await client.refresh();
+  await client.join("notes:workspace");
+}
 
 // A device already in the namespace, joined there.
 client.on("pairingRequest", (request) => {
@@ -156,3 +162,9 @@ device) stops it until the application calls `connect()` again.
 
 `@blindsignal/sdk/testing` exports `FakePeerConnection` and `FakeDataChannel`, driven by the
 test, to pass as `createPeerConnection` where no WebRTC stack exists, as in Node.
+
+## API stability
+
+The public API is what `@blindsignal/sdk` and `@blindsignal/sdk/testing` export, versioned as ADR
+0043 defines. Members tagged `@internal`, which the client calls on its own objects, are left out of
+the published types and of that contract (`docs/adr/0046-sdk-public-api.md`).

@@ -134,6 +134,8 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   #generation = 0;
   #attempts = 0;
   #connectedAt = 0;
+  /** When the connection's current token expires; a refresh that changes it supersedes older retries. */
+  #expiresAt = 0;
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   #refreshTimer: ReturnType<typeof setTimeout> | undefined;
   #pingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -151,11 +153,6 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
 
   get state(): ConnectionState {
     return this.#state;
-  }
-
-  /** The last `rtc.ice_config` received, for the WebRTC layer. Never exposes it elsewhere. */
-  get iceConfig(): IceConfig | undefined {
-    return this.#iceConfig;
   }
 
   /**
@@ -221,6 +218,15 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
     const pending = Promise.withResolvers<PairingResult>();
     this.#pairings.set(created.payload.pairingId, pending);
     return pending.promise;
+  }
+
+  /**
+   * Sends `auth.refresh` now with a new token from the provider, for when the backend changed what
+   * the token grants, such as a namespace after a pairing. Rejects with a `BlindSignalError`, and the
+   * connection stays on its current token; the scheduled refresh goes on.
+   */
+  async refresh(): Promise<void> {
+    await this.#renew(this.#current());
   }
 
   /** Closes the connection and stops reconnecting. Open DataChannels stay open until their sessions close. */
@@ -490,26 +496,34 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   }
 
   #scheduleRefresh(expiresInMs: number): void {
-    const expiresAt = Date.now() + expiresInMs;
+    clearTimeout(this.#refreshTimer);
+    this.#expiresAt = Date.now() + expiresInMs;
     const margin = this.#options.refreshMarginMs ?? 60_000;
-    this.#refreshTimer = setTimeout(() => void this.#refresh(expiresAt, 0), expiresInMs - margin);
+    this.#refreshTimer = setTimeout(() => void this.#refresh(0), expiresInMs - margin);
+  }
+
+  async #renew(signaling: Signaling): Promise<void> {
+    const token = await this.#options.accessTokenProvider();
+    const proof = await this.#prove(signaling, token);
+    const result = await signaling.request('auth.refresh', { token, ...proof });
+    if (this.#signaling !== signaling) throw new BlindSignalError('connection_closed');
+    this.#scheduleRefresh(result.payload.expiresInMs);
   }
 
   /** Retries with backoff until the token expires; then the server closes with `token_expired`. */
-  async #refresh(expiresAt: number, attempt: number): Promise<void> {
+  async #refresh(attempt: number): Promise<void> {
     const signaling = this.#signaling;
     if (signaling === undefined) return;
+    const expiresAt = this.#expiresAt;
     try {
-      const token = await this.#options.accessTokenProvider();
-      const proof = await this.#prove(signaling, token);
-      const result = await signaling.request('auth.refresh', { token, ...proof });
-      if (this.#signaling === signaling) this.#scheduleRefresh(result.payload.expiresInMs);
+      await this.#renew(signaling);
     } catch (error) {
-      if (this.#signaling !== signaling) return;
+      // Dropped, or a refresh() renewed the token meanwhile and scheduled the next one.
+      if (this.#signaling !== signaling || this.#expiresAt !== expiresAt) return;
       const backoff = this.#options.backoff ?? defaultBackoff;
       const delay = Math.max(backoffDelay(attempt, backoff), retryAfter(error));
       if (Date.now() + delay >= expiresAt) return;
-      this.#refreshTimer = setTimeout(() => void this.#refresh(expiresAt, attempt + 1), delay);
+      this.#refreshTimer = setTimeout(() => void this.#refresh(attempt + 1), delay);
     }
   }
 }

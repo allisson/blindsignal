@@ -94,9 +94,9 @@ async function pair(user: string, namespace: string): Promise<void> {
   $('pairing').textContent = result.status;
   if (result.status !== 'approved') return;
   await post('/pairings', { deviceId, namespace, approval: result.approval });
-  // The next token holds the namespace: reconnect to use it.
+  // The next token holds the namespace.
   $('pair').hidden = true;
-  client.close();
+  await client.refresh();
   await start(user);
 }
 

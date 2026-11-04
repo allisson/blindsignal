@@ -867,6 +867,8 @@ client.on("sessionRequest", async (request) => {
   on its first successful authentication (ADR 0006). The application backend chooses and keeps the
   device ID.
 - **Token refresh** is automatic: `auth.refresh` with a new token from the provider before expiry.
+  `client.refresh()` sends one at once, for when the backend changed what the token grants, such
+  as a namespace after a pairing (`docs/adr/0046-sdk-public-api.md`).
 - **Errors.** Failed requests reject with `BlindSignalError`, whose `code` is the protocol error
   code (`docs/protocol.md` §9), `connection_closed`, or `protocol_error`, plus `retryAfterMs` for
   `rate_limited`. Retryable failures reconnect on their own; a terminal or superseded error stops
