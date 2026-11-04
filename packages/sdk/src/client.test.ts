@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { backoffDelay } from './backoff.ts';
-import { BlindSignalClient, type BlindSignalClientOptions, type SessionRequest } from './client.ts';
+import {
+  BlindSignalClient,
+  type BlindSignalClientOptions,
+  type PairingRequest,
+  type SessionRequest,
+} from './client.ts';
 import type { DeviceKey } from './device-key.ts';
 import { BlindSignalError } from './errors.ts';
 import { FakePeerConnection } from './testing/fake-peer.ts';
@@ -870,6 +875,157 @@ describe('BlindSignalClient sessions', () => {
     third.session.close();
     expect(harness.sent('session.close')).toHaveLength(0);
   });
+});
+
+describe('BlindSignalClient pairing', () => {
+  const namespace = 'notes:a';
+  const event = (type: string, payload: object) => ({ version: 1, type, payload });
+  const asked = { namespace, userId: 'alice', deviceId: 'tablet', jkt: 'new-key' };
+
+  async function paired(options: Partial<BlindSignalClientOptions> = {}) {
+    const approval = vi.fn((device: object) =>
+      Promise.resolve(`approved:${JSON.stringify(device)}`),
+    );
+    const deviceKey = {
+      thumbprint: 'jkt',
+      proof: () => Promise.resolve('proof'),
+      approval,
+    } as unknown as DeviceKey;
+    const harness = setup({ deviceKey, ...options });
+    const connecting = harness.client.connect();
+    await flush();
+    harness.socket().receive(event('auth.challenge', { nonce: 'n' }));
+    await authenticate(harness);
+    await connecting;
+    return { ...harness, approval };
+  }
+
+  async function asking(harness: Harness) {
+    const result = harness.client.requestPairing(namespace);
+    expect(harness.last()).toMatchObject({ type: 'pairing.create', payload: { namespace } });
+    const pairingId = crypto.randomUUID();
+    harness.reply('pairing.created', { pairingId });
+    await flush();
+    return { result, pairingId };
+  }
+
+  function requested(harness: Harness) {
+    const requests: PairingRequest[] = [];
+    harness.client.on('pairingRequest', (r) => requests.push(r));
+    const pairingId = crypto.randomUUID();
+    harness.socket().receive(event('pairing.request', { pairingId, ...asked }));
+    expect(requests).toHaveLength(1);
+    return { request: requests[0]!, pairingId };
+  }
+
+  it('resolves with the approval, once', async () => {
+    const harness = await paired();
+    const { result, pairingId } = await asking(harness);
+    harness.socket().receive(event('pairing.approved', { pairingId, approval: 'jwt' }));
+    harness.socket().receive(event('pairing.rejected', { pairingId }));
+    await expect(result).resolves.toEqual({ status: 'approved', approval: 'jwt' });
+  });
+
+  it('resolves with a rejection, or a timeout without telling pairingEnded', async () => {
+    const harness = await paired();
+    const ended: unknown[] = [];
+    harness.client.on('pairingEnded', (e) => ended.push(e));
+    const rejected = await asking(harness);
+    harness.socket().receive(event('pairing.rejected', { pairingId: rejected.pairingId }));
+    await expect(rejected.result).resolves.toEqual({ status: 'rejected' });
+    const timedOut = await asking(harness);
+    const pairingId = timedOut.pairingId;
+    harness.socket().receive(event('pairing.ended', { pairingId, reason: 'timeout' }));
+    await expect(timedOut.result).resolves.toEqual({ status: 'timeout' });
+    expect(ended).toEqual([]);
+  });
+
+  it('rejects with the server error, without a connection, or without a device key', async () => {
+    const harness = await paired();
+    const result = harness.client.requestPairing(namespace);
+    harness.reply('error', { code: 'peer_unavailable' });
+    await expect(result).rejects.toEqual(new BlindSignalError('peer_unavailable'));
+    harness.client.close();
+    await expect(harness.client.requestPairing(namespace)).rejects.toEqual(
+      new BlindSignalError('connection_closed'),
+    );
+    const keyless = await connected();
+    await expect(keyless.client.requestPairing(namespace)).rejects.toThrow(TypeError);
+    expect(keyless.sent('pairing.create')).toEqual([]);
+  });
+
+  it('rejects a pending request when the connection drops, before or after its reply', async () => {
+    const harness = await paired();
+    const { result, pairingId } = await asking(harness);
+    const unanswered = harness.client.requestPairing(namespace);
+    harness.reply('pairing.created', { pairingId: crypto.randomUUID() });
+    harness.socket().drop(1006);
+    await expect(result).rejects.toEqual(new BlindSignalError('connection_closed'));
+    await expect(unanswered).rejects.toEqual(new BlindSignalError('connection_closed'));
+    await flush();
+    harness.socket().receive(event('auth.challenge', { nonce: 'n2' }));
+    await authenticate(harness);
+    const ended: unknown[] = [];
+    harness.client.on('pairingEnded', (e) => ended.push(e));
+    harness.socket().receive(event('pairing.ended', { pairingId, reason: 'timeout' }));
+    expect(ended).toEqual([{ pairingId, reason: 'timeout' }]);
+  });
+
+  it('approves a request with an approval its device key signs', async () => {
+    const harness = await paired();
+    const { request, pairingId } = requested(harness);
+    expect(request).toMatchObject({ pairingId, ...asked });
+    const approving = request.approve();
+    await flush();
+    expect(harness.approval).toHaveBeenCalledWith({ pairingId, ...asked });
+    const approval = `approved:${JSON.stringify({ pairingId, ...asked })}`;
+    expect(harness.last()).toMatchObject({
+      type: 'pairing.approve',
+      payload: { pairingId, approval },
+    });
+    harness.reply('ack', {});
+    await expect(approving).resolves.toBeUndefined();
+  });
+
+  it('rejects a request', async () => {
+    const harness = await paired();
+    const { request, pairingId } = requested(harness);
+    const rejecting = request.reject();
+    expect(harness.last()).toMatchObject({ type: 'pairing.reject', payload: { pairingId } });
+    harness.reply('ack', {});
+    await expect(rejecting).resolves.toBeUndefined();
+  });
+
+  it('fails to answer a request already answered or without a connection', async () => {
+    const harness = await paired();
+    const { request } = requested(harness);
+    const approving = request.approve();
+    await flush();
+    harness.reply('error', { code: 'pairing_unavailable' });
+    await expect(approving).rejects.toEqual(new BlindSignalError('pairing_unavailable'));
+    harness.client.close();
+    await expect(request.approve()).rejects.toEqual(new BlindSignalError('connection_closed'));
+    await expect(request.reject()).rejects.toEqual(new BlindSignalError('connection_closed'));
+  });
+
+  it('refuses to approve without a device key', async () => {
+    const harness = await connected();
+    const { request } = requested(harness);
+    await expect(request.approve()).rejects.toThrow(TypeError);
+    expect(harness.sent('pairing.approve')).toEqual([]);
+  });
+
+  it.each(['answered', 'timeout', 'requester_gone'])(
+    'tells an asked device its request ended: %s',
+    async (reason) => {
+      const harness = await paired();
+      const { pairingId } = requested(harness);
+      const ended: unknown[] = [];
+      harness.client.on('pairingEnded', (e) => ended.push(e));
+      harness.socket().receive(event('pairing.ended', { pairingId, reason }));
+      expect(ended).toEqual([{ pairingId, reason }]);
+    },
+  );
 });
 
 describe('BlindSignalClient WebRTC', () => {

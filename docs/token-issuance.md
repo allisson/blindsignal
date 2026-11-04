@@ -162,6 +162,10 @@ you issue a token with the namespace.
 - Then record the pairing, and issue the new device's tokens with the namespace in `namespaces`.
   To revoke it, leave the namespace out of its next token, or revoke the device.
 
+With the SDK, the new device calls `client.requestPairing(namespace)` and sends you the `approval`
+of an `approved` result; the approving devices answer `pairingRequest` events
+(`packages/sdk/README.md`).
+
 ## Token endpoint
 
 - Require the user's authenticated session, and protect it from cross-site requests as any other

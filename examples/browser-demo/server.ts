@@ -51,6 +51,8 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     const sub = url.searchParams.get('user');
     const device_id = url.searchParams.get('device');
     const jkt = url.searchParams.get('jkt');
+    // A new device may only ask to be paired into the namespace (ADR 0042).
+    const pairing = url.searchParams.has('pairing');
     if (!sub || !device_id) {
       response.writeHead(400).end();
       return;
@@ -59,7 +61,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       app_id: 'notes',
       sub,
       device_id,
-      namespaces: [NAMESPACE],
+      ...(pairing ? { pairing: [NAMESPACE] } : { namespaces: [NAMESPACE] }),
       ...(jkt && { cnf: { jkt } }),
     });
     response

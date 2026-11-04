@@ -30,6 +30,35 @@ describe('DeviceKey', () => {
     expect(payload).toEqual({ nonce: 'nonce-1', ath: base64url.encode(digest) });
   });
 
+  it('signs a pairing approval the server accepts, valid for 5 minutes', async () => {
+    const key = await DeviceKey.from(await keyPair());
+    const device = {
+      pairingId: 'p1',
+      namespace: 'notes:a',
+      userId: 'alice',
+      deviceId: 'tablet',
+      jkt: 'new-key',
+    };
+    const before = Math.floor(Date.now() / 1000);
+    const approval = await key.approval(device);
+    const { payload, protectedHeader } = await jwtVerify(approval, EmbeddedJWK, {
+      typ: 'blindsignal-pairing+jwt',
+      algorithms: ['ES256'],
+    });
+    expect(Object.keys(protectedHeader)).toEqual(['typ', 'alg', 'jwk']);
+    expect(await calculateJwkThumbprint(protectedHeader.jwk as JWK, 'sha256')).toBe(key.thumbprint);
+    const { exp, ...claims } = payload;
+    expect(claims).toEqual({
+      pairing_id: 'p1',
+      namespace: 'notes:a',
+      sub: 'alice',
+      device_id: 'tablet',
+      jkt: 'new-key',
+    });
+    expect(exp).toBeGreaterThanOrEqual(before + 300);
+    expect(exp).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 300);
+  });
+
   it('signs a fresh proof each time', async () => {
     const key = await DeviceKey.from(await keyPair());
     expect(await key.proof('t', 'n')).not.toBe(await key.proof('t', 'n'));

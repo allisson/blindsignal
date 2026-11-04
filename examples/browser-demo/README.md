@@ -27,7 +27,9 @@ signaling server it uses; `&server=<url>` picks another one for a single page. A
 page's URL to connect through TURN only (`iceTransportPolicy: 'relay'`); the signaling server must
 configure TURN (ADR 0017). `&connectTimeout=<ms>` sets the SDK's `connectTimeoutMs` (ADR 0018). `&pop` loads the origin's
 device key and binds the page's tokens to it, as `cnf.jkt` (ADR 0041); the page shows the key's
-thumbprint.
+thumbprint. `&pairing` makes the page a new device: its token lists `notes:demo` in `pairing`
+instead of `namespaces`, and **Ask to pair** asks the user's other `&pop` pages in the namespace,
+which approve every request (ADR 0042). The page shows the approval a backend would check.
 
 ## Tests
 
@@ -45,3 +47,5 @@ directly, and a session forced to that relay closes once the connection timeout 
 
 The proof-of-possession tests run in both browsers: pages with `&pop` authenticate with a device
 key that a reload keeps, and a page whose proof is stripped on its way to the server is refused.
+The pairing test opens two `&pop` pages of one user, one with `&pairing`, and checks that the
+approval binds the new page's key and is signed by the other's.

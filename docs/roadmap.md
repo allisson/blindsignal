@@ -273,7 +273,8 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Finalize namespace authorization. *(MVP)*
 - [x] Implement session authorization: `session.create` and `session.accept` per namespace from
   the token's `permissions` claim (ADR 0040).
-- [x] Design and review pairing protocol (ADR 0042). *(The server side is done; the SDK's is next.)*
+- [x] Design and review pairing protocol (ADR 0042): served by the server, asked for and answered
+  by the SDK.
 - [x] Implement pairing approval policy: the user's own devices, holding `pairing.approve` and a
   device key, approve with a signed JWT (ADR 0042).
 - [x] Implement device revocation, including the control-plane operation (spec §5.6). *(MVP)*
@@ -646,4 +647,4 @@ credentials (ADR 0017), browsers relay through a test Coturn over UDP, TCP, and 
 a session that never connects (ADR 0018), and `docs/turn-operations.md` is the TURN operations
 guide. A cross-network test through a TURN server reachable from other networks is deferred, with
 no date (ADR 0017). Session authorization and proof-of-possession, post-MVP tasks of Phase 5, are done (ADR 0040,
-ADR 0041); pairing is designed and served by the server (ADR 0042), with the SDK side next.
+ADR 0041); pairing is done: the server serves it and the SDK asks for and answers it (ADR 0042).
