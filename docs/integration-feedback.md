@@ -28,5 +28,5 @@ from an outside application.
 
 | Finding | Where it showed up | Roadmap task |
 |---|---|---|
-| The SDK is not published (`private`, version `0.0.0`): the examples serve its source with the types stripped, and an application outside this repository has no package to install. | `examples/minimal-app/server.ts`, `examples/browser-demo/server.ts` | Phase 12: publish SDK documentation, at the version ADR 0043 defines |
+| The SDK is not published (`private`, version `0.0.0`): the examples serve its source with the types stripped, and an application outside this repository has no package to install. | `examples/minimal-app/server.ts`, `examples/browser-demo/server.ts` | Phase 12: the `0.1.0` release (ADR 0043); until then, `docs/onboarding.md` and `packages/sdk/README.md#installation` say how to depend on it |
 | No application outside this repository has integrated yet. | Phase 11 | Phase 11: integrate with BlindVault |
