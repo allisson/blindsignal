@@ -29,7 +29,8 @@ replaced by `packages/core`, a server-side package that the SDK never imports.
   by tests, `examples/`, and the Docker Compose development workflow.
 
 All packages use the `@blindsignal/*` scope and stay `"private": true` until Phase 12 defines
-semantic versioning and publication.
+semantic versioning and publication. ADR 0043 defined it (amended): the SDK, with `protocol`, and
+the server are versioned; `core`, `adapters/*`, `dev-issuer`, and `examples/*` stay private.
 
 ## Dependency rules
 

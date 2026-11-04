@@ -75,7 +75,8 @@ that issues tokens with its own key and grants pairings, and `examples/minimal-a
 it whose devices sign in, pair, and open a DataChannel; two applications on shared instances are
 isolated from each other, and the browser demo's `notes` and `chat` exchange their own payload
 formats; `docs/application-e2ee.md` states what applications must do for end-to-end encryption, and `docs/integration-feedback.md`
-what the examples taught about integrating. The workspace uses
+what the examples taught about integrating. Phase 12 has started: the SDK and the server follow
+semantic versioning, joined by the protocol major (ADR 0043). The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
