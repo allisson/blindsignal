@@ -26,6 +26,11 @@ connection with `1001`, and exits once each connection has released its sessions
   the delay. When it runs out, the server logs `server.shutdown_timeout` and exits with status 1;
   what the connections did not release expires with its lease (ADR 0022, ADR 0026).
 - **A shutdown that completes exits with status 0,** as before.
+- **`BLINDSIGNAL_STARTUP_TIMEOUT_SECONDS` bounds the startup;** default 30 (amended with the
+  operator robustness fixes). A server that is not listening by then, such as one waiting on an
+  unreachable Redis or a database that never answers, logs `server.start_failed` with reason
+  `startup timed out` and exits with status 1, so the platform restarts it instead of keeping an
+  instance that never becomes ready.
 
 ## Considered options
 

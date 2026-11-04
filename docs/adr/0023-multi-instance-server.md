@@ -20,7 +20,13 @@ reloads between instances.
   `server_error` (ADR 0021). Each failed reconnection logs `coordination.connection_lost`; the
   client reconnects with backoff and resubscribes its topics. Events published meanwhile are lost
   (ADR 0022). An upgrade, whose rate limit needs Redis, is dropped; the SDK reconnects with
-  backoff. At startup the server waits for Redis and listens only once both connections are up.
+  backoff. At startup the server waits for Redis and listens only once both connections are up,
+  within `BLINDSIGNAL_STARTUP_TIMEOUT_SECONDS` (ADR 0031).
+- **A Redis that does not answer fails operations too** (amended with the operator robustness
+  fixes). Each operation rejects once Redis has not answered within
+  `BLINDSIGNAL_REDIS_COMMAND_TIMEOUT_SECONDS`, default 2, as when it is unreachable; a reply that
+  comes later is discarded. The adapter bounds the wait itself: the client's own command timeout
+  stops once the command is written.
 - **The target's connection is found through coordination.** `CoordinationAdapter.connectionOf`
   reads the device's claim (ADR 0008), on any instance; the process no longer keeps its own map of
   devices to connections.

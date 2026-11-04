@@ -619,7 +619,7 @@ Requirements:
 - Support for configured UDP and TCP/TLS relay transports.
 - Reporting of direct versus relay connectivity.
 
-The server mints credentials with the TURN REST shared-secret scheme, scoped to one application and valid for a configured lifetime (`docs/adr/0017-turn-credentials.md`).
+The server mints credentials with the TURN REST shared-secret scheme, scoped to one application and valid for a configured lifetime of at most a day (`docs/adr/0017-turn-credentials.md`).
 
 ICE/WebRTC selects the viable candidate pair.
 

@@ -6,7 +6,7 @@ import {
   InMemoryApplicationRepository,
   InMemoryDeviceRepository,
 } from '@blindsignal/storage-memory';
-import { openPostgreSQLStorage } from '@blindsignal/storage-postgresql';
+import { openPostgreSQLStorage, SchemaVersionError } from '@blindsignal/storage-postgresql';
 import { loadConfig } from './config.ts';
 import { TokenVerifier } from './domain/auth.ts';
 import {
@@ -40,6 +40,17 @@ process.on('uncaughtException', (error, origin) => {
   process.exit(1);
 });
 
+// Node's default for SIGHUP ends the process: until the reload is wired, one is only remembered.
+let onReload: (() => void) | undefined;
+let reloadMissed = false;
+process.on('SIGHUP', () => {
+  if (onReload === undefined) reloadMissed = true;
+  else onReload();
+});
+
+/** A startup failure whose message names keys, never values, so it may be logged. */
+class StartupError extends Error {}
+
 async function readRegistry(
   path: string,
   stored: ApplicationRepository,
@@ -58,9 +69,14 @@ async function readRegistry(
 /** Wires the adapters and starts the server; the only module that imports adapters (ADR 0002). */
 async function main(): Promise<void> {
   const loaded = loadConfig(process.env);
-  if (!loaded.ok) throw new Error(`invalid configuration: ${loaded.error}`);
+  if (!loaded.ok) throw new StartupError(`invalid configuration: ${loaded.error}`);
   const config = loaded.config;
   logger = jsonLogger(undefined, undefined, config.logLevel);
+  // A dependency that never answers, such as an unreachable Redis, must not hold the start.
+  const startup = setTimeout(() => {
+    logger.log('error', 'server.start_failed', { reason: 'startup timed out' });
+    process.exit(1);
+  }, config.startupTimeoutMs);
   const startedAt = new Date();
   const { registryPath, development } = config;
 
@@ -92,7 +108,7 @@ async function main(): Promise<void> {
     now: startedAt,
     development,
   });
-  if (!initial.ok) throw new Error(`invalid registry: ${initial.error}`);
+  if (!initial.ok) throw new StartupError(`invalid registry: ${initial.error}`);
   let registry = initial.registry;
   await install(registry);
 
@@ -222,9 +238,10 @@ async function main(): Promise<void> {
   };
   // One change at a time, so each is checked against the registry the previous one installed.
   let reloading = Promise.resolve();
-  process.on('SIGHUP', () => {
+  onReload = () => {
     reloading = reloading.then(reload);
-  });
+  };
+  if (reloadMissed) onReload();
   const stopFollowing =
     config.redis === undefined
       ? () => Promise.resolve()
@@ -260,12 +277,22 @@ async function main(): Promise<void> {
     });
   }
   // Only now: a SIGTERM before the handlers above would kill the process without draining it.
+  clearTimeout(startup);
   logger.log('info', 'server.listening', { port, adminPort: admin.port });
 }
 
 main().catch((error: unknown) => {
-  // Configuration and registry errors name keys, never values.
-  const reason = error instanceof Error ? error.message : 'startup failed';
-  logger.log('error', 'server.start_failed', { reason });
+  // Any other message may quote a value, such as a database user or host: only its name and code.
+  const reason =
+    error instanceof StartupError || error instanceof SchemaVersionError
+      ? error.message
+      : error instanceof Error
+        ? error.name
+        : 'startup failed';
+  const code = (error as { code?: unknown } | undefined)?.code;
+  logger.log('error', 'server.start_failed', {
+    reason,
+    code: typeof code === 'string' ? code : undefined,
+  });
   process.exit(1);
 });

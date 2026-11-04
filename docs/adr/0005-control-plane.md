@@ -43,6 +43,10 @@ application-issued access token can never reach it.
   }
   ```
 
+- **A `SIGHUP` during startup is not lost** (amended with the operator robustness fixes). Node.js
+  ends a process on a `SIGHUP` it has no handler for, so the server handles it from its first
+  line; one that arrives before the reload is wired runs a reload as soon as it is, since the file
+  may have changed after the startup read it.
 - **Reload is all or nothing.** An unreadable or invalid file, or one that breaks a rule below,
   is rejected whole: the server keeps the previous registry and logs the reason without secrets.
 - **Reload applies the difference immediately.** Suspending or revoking an application, removing

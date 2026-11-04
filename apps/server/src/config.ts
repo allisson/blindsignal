@@ -103,7 +103,8 @@ const environment = z
     BLINDSIGNAL_ICE_SERVERS: json.pipe(iceServers).default([]),
     BLINDSIGNAL_TURN_URLS: turnUrls,
     BLINDSIGNAL_TURN_SECRET: z.string().default(''),
-    BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS: seconds.positive().default(900),
+    // A stolen credential opens allocations until it expires (ADR 0017).
+    BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS: seconds.positive().max(86_400).default(900),
     BLINDSIGNAL_TOKEN_MAX_LIFETIME_SECONDS: seconds.positive().default(600),
     BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS: seconds.default(60),
     BLINDSIGNAL_TOKEN_MAX_NAMESPACES: seconds.positive().default(100),
@@ -136,10 +137,15 @@ const environment = z
       }),
     // Starts every key and channel, so deployments sharing a Redis stay apart (ADR 0022).
     BLINDSIGNAL_REDIS_PREFIX: z.string().regex(/^\S+$/).default('blindsignal:'),
+    // A command Redis does not answer within it fails, as when Redis is unreachable (ADR 0023).
+    BLINDSIGNAL_REDIS_COMMAND_TIMEOUT_SECONDS: seconds.positive().default(2),
     // How often each instance rereads the stored registry, with Redis (ADR 0024).
     BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS: seconds.positive().default(60),
     // How long a scrape of /metrics waits for each dependency's probe (ADR 0028).
     BLINDSIGNAL_DEPENDENCY_PROBE_TIMEOUT_SECONDS: seconds.positive().default(2),
+    // Exits with status 1 when the server is not listening by then: a dependency that never
+    // answers must not hold the start forever (ADR 0031).
+    BLINDSIGNAL_STARTUP_TIMEOUT_SECONDS: seconds.positive().default(30),
     // On SIGTERM, readiness fails this long before the connections close (ADR 0031).
     BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS: seconds.default(0),
     // Exits with status 1 when the shutdown, delay included, takes longer (ADR 0031).
@@ -263,9 +269,15 @@ export interface ServerConfig {
   /** Absent when storage stays in memory. */
   readonly database?: { readonly url: string; readonly poolSize: number };
   /** Absent when coordination stays in memory. */
-  readonly redis?: { readonly url: string; readonly prefix: string };
+  readonly redis?: {
+    readonly url: string;
+    readonly prefix: string;
+    readonly commandTimeoutMs: number;
+  };
   readonly registrySyncIntervalMs: number;
   readonly dependencyProbeTimeoutMs: number;
+  /** Past it, a server that is not listening yet exits with status 1. */
+  readonly startupTimeoutMs: number;
   /** On SIGTERM, how long readiness fails before the connections close (ADR 0031). */
   readonly shutdownDelayMs: number;
   /** The shutdown's deadline, delay included; past it the process exits with status 1. */
@@ -350,6 +362,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
       deviceSweepIntervalMs: vars.BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS * 1000,
       registrySyncIntervalMs: vars.BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS * 1000,
       dependencyProbeTimeoutMs: vars.BLINDSIGNAL_DEPENDENCY_PROBE_TIMEOUT_SECONDS * 1000,
+      startupTimeoutMs: vars.BLINDSIGNAL_STARTUP_TIMEOUT_SECONDS * 1000,
       shutdownDelayMs: vars.BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS * 1000,
       shutdownTimeoutMs: vars.BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS * 1000,
       ...(vars.BLINDSIGNAL_DATABASE_URL === ''
@@ -362,7 +375,13 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
           }),
       ...(vars.BLINDSIGNAL_REDIS_URL === ''
         ? {}
-        : { redis: { url: vars.BLINDSIGNAL_REDIS_URL, prefix: vars.BLINDSIGNAL_REDIS_PREFIX } }),
+        : {
+            redis: {
+              url: vars.BLINDSIGNAL_REDIS_URL,
+              prefix: vars.BLINDSIGNAL_REDIS_PREFIX,
+              commandTimeoutMs: vars.BLINDSIGNAL_REDIS_COMMAND_TIMEOUT_SECONDS * 1000,
+            },
+          }),
       ...(vars.OTEL_EXPORTER_OTLP_ENDPOINT === '' && vars.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT === ''
         ? {}
         : { otlp: { intervalMs: vars.OTEL_METRIC_EXPORT_INTERVAL } }),

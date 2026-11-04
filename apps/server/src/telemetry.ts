@@ -47,13 +47,16 @@ export function jsonLogger(
  * stack frames, never its message, which may quote values (ADR 0037).
  */
 export function logCrash(logger: Logger, error: unknown, origin: string): void {
-  const frames =
-    error instanceof Error
-      ? (error.stack ?? '')
-          .split('\n')
-          .filter((line) => /^\s+at /.test(line))
-          .map((line) => line.trim())
-      : [];
+  // The stack starts with the name and the message, whose lines may look like frames.
+  const stack = error instanceof Error ? (error.stack ?? '') : '';
+  const header = error instanceof Error ? String(error) : '';
+  const frames = stack.startsWith(header)
+    ? stack
+        .slice(header.length)
+        .split('\n')
+        .filter((line) => /^\s+at /.test(line))
+        .map((line) => line.trim())
+    : [];
   logger.log('error', 'server.crashed', {
     origin,
     reason: error instanceof Error ? error.name : typeof error,

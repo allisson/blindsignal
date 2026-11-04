@@ -31,7 +31,10 @@ lands in the project your shell happens to point at.
   or Cloud SQL, and Memorystore for Valkey or Redis in a VPC the service joins through Direct VPC
   egress (`--network`, `--subnet`, `--vpc-egress=private-ranges-only`). Set its
   `maxmemory-policy` to `noeviction` (ADR 0035), and give each deployment that shares it a
-  `BLINDSIGNAL_REDIS_PREFIX` of its own.
+  `BLINDSIGNAL_REDIS_PREFIX` of its own. Turn on its in-transit encryption and its
+  authentication, and make `BLINDSIGNAL_REDIS_URL` a `rediss://` URL with the password: every
+  workload in the VPC reaches the instance, and Redis holds the `jti` claims and the device
+  claims.
 - TURN, when you need it, on a host of its own: Cloud Run serves HTTP, not the UDP a relay needs
   (`docs/turn-operations.md`, `docs/vps.md`).
 
@@ -154,7 +157,9 @@ service, and set `BLINDSIGNAL_TRUSTED_PROXIES` to the front end's range only.
 - **Metrics:** `/metrics` is on the admin port, which Cloud Run does not expose. Set
   `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP endpoint (ADR 0038): a backend that takes header
   credentials, through `OTEL_EXPORTER_OTLP_HEADERS`, or an OpenTelemetry Collector running as a
-  sidecar of the service, on `http://localhost:4318`, that forwards to Google Cloud. With
+  sidecar of the service, on `http://localhost:4318`, that forwards to Google Cloud. An endpoint
+  that takes credentials in `OTEL_EXPORTER_OTLP_HEADERS` must be `https://`: over `http://` they
+  cross the network in the clear. With
   `--no-cpu-throttling`, pushes run with no client connected.
 
 ## Releases and registry changes

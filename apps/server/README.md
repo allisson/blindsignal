@@ -47,7 +47,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_ICE_SERVERS` | `[]` | JSON array of `{ "urls": [...] }`, STUN only, sent in `rtc.ice_config` (ADR 0009). |
 | `BLINDSIGNAL_TURN_URLS` | none (off) | Comma-separated `turn:` and `turns:` URLs, sent in `rtc.ice_config` with a credential minted for each message (ADR 0017). |
 | `BLINDSIGNAL_TURN_SECRET` | none | The secret shared with the TURN server (Coturn `static-auth-secret`), at least 32 bytes; required with `BLINDSIGNAL_TURN_URLS`. |
-| `BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS` | `900` | Lifetime of each TURN credential, at least the maximum token lifetime plus the clock skew (ADR 0009). |
+| `BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS` | `900` | Lifetime of each TURN credential, at least the maximum token lifetime plus the clock skew (ADR 0009), and at most `86400` (ADR 0017). |
 | `BLINDSIGNAL_TOKEN_MAX_LIFETIME_SECONDS` | `600` | Maximum `exp - iat` (ADR 0006). |
 | `BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS` | `60` | Clock-skew tolerance on token times. |
 | `BLINDSIGNAL_TOKEN_MAX_NAMESPACES` | `100` | Maximum namespaces in one token. |
@@ -58,6 +58,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS` | `30` | WebSocket ping interval. |
 | `BLINDSIGNAL_CLOSE_TIMEOUT_SECONDS` | `5` | A connection the server closes is terminated when its client has not answered the close this long after (ADR 0011). |
 | `BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS` | `0` | On `SIGTERM`, readiness fails and upgrades get HTTP `503` this long before the connections close. Set it to the time the load balancer takes to stop routing to a failing instance (ADR 0031). |
+| `BLINDSIGNAL_STARTUP_TIMEOUT_SECONDS` | `30` | A server not listening this long after it started, such as one waiting on an unreachable Redis, logs `server.start_failed` and exits with `1` (ADR 0031). |
 | `BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS` | `8` | Deadline of the shutdown, delay included, above the delay; past it the server logs `server.shutdown_timeout` and exits with `1`. Keep it below the platform's grace period: 10 seconds on Cloud Run and in `docker stop` (ADR 0031). |
 | `BLINDSIGNAL_MAX_CONNECTION_SECONDS` | `0` (none) | Each connection is closed with `1001` between 90% and 100% of this lifetime; the SDK reconnects. Set it below the hosting platform's request timeout, such as Cloud Run's (ADR 0029). |
 | `BLINDSIGNAL_PRESENCE_LEASE_SECONDS` | `90` | Presence lease and quota-slot lease, renewed on every answered ping. |
@@ -68,6 +69,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_DATABASE_POOL_SIZE` | `10` | Connections in the PostgreSQL pool. |
 | `BLINDSIGNAL_REDIS_URL` | unset | A `redis://` or `rediss://` URL: presence, sessions, quotas, rate limits, and `jti` claims are shared by every instance through Redis or Valkey. Requires `BLINDSIGNAL_DATABASE_URL`. Unset keeps them in memory, for one instance (ADR 0023). Run it with `maxmemory-policy noeviction`, and restart every instance after it loses data: until then, a used token can authenticate again (ADR 0035). |
 | `BLINDSIGNAL_REDIS_PREFIX` | `blindsignal:` | Starts every Redis key and channel. Give each deployment sharing a Redis its own: pub/sub ignores the database number (ADR 0022). |
+| `BLINDSIGNAL_REDIS_COMMAND_TIMEOUT_SECONDS` | `2` | A Redis operation not answered within it fails, as when Redis is unreachable (ADR 0023). |
 | `BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS` | `60` | With `BLINDSIGNAL_REDIS_URL`, how often each instance rereads the stored registry, in case it missed another instance's reload (ADR 0024). |
 | `BLINDSIGNAL_DEPENDENCY_PROBE_TIMEOUT_SECONDS` | `2` | How long a scrape of `/metrics` waits for each dependency's probe before reporting it down (ADR 0028). |
 | `BLINDSIGNAL_MAX_MESSAGE_BYTES` | `65536` | Maximum message size in UTF-8 bytes, at most `65536` (docs/protocol.md §1). |
@@ -146,7 +148,7 @@ clients reconnect on the others, and their peers' sessions end within one heartb
 
 - `SIGHUP` reloads the registry file, all or nothing, and closes the connections of suspended,
   revoked, or removed applications and of revoked devices (ADR 0005). With Compose:
-  `docker compose kill -s SIGHUP server`.
+  `docker compose kill -s SIGHUP server`. One sent during startup reloads once the server can.
 - `SIGTERM` and `SIGINT` fail readiness, wait `BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS`, close every
   connection with `1001`, and exit with `0` once sessions and presence are released, or with `1`
   after `BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS` (ADR 0031).
@@ -165,7 +167,9 @@ SQLSTATE or name), `devices.expired`, and `devices.sweep_failed` (ADR 0021); coo
 `BLINDSIGNAL_LOG_LEVEL` drops the events below it; at `warn`, no per-connection event, and so no
 client IP, is written. An uncaught exception or unhandled rejection logs `server.crashed` with its
 `origin`, the error's name as `reason`, and its stack frames, never its message, then exits with
-`1` (ADR 0037).
+`1` (ADR 0037). A failed startup logs `server.start_failed` and exits with `1`: its `reason` is the
+message of a configuration, registry, or schema error, which names keys and versions only, and
+otherwise the error's name, with its `code` when it has one (ADR 0037).
 
 Metrics go through the OpenTelemetry SDK (ADR 0038). `GET /metrics` on the admin port serves
 them, process-local, in the Prometheus text format; a counter appears once first incremented.

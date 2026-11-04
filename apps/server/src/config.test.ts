@@ -50,6 +50,7 @@ describe('loadConfig', () => {
       deviceSweepIntervalMs: 3_600_000,
       registrySyncIntervalMs: 60_000,
       dependencyProbeTimeoutMs: 2_000,
+      startupTimeoutMs: 30_000,
       shutdownDelayMs: 0,
       shutdownTimeoutMs: 8_000,
       preAuthentication: {
@@ -118,10 +119,12 @@ describe('loadConfig', () => {
       BLINDSIGNAL_DATABASE_POOL_SIZE: '4',
       BLINDSIGNAL_REDIS_URL: 'rediss://default:pw@cache.example:6380',
       BLINDSIGNAL_REDIS_PREFIX: 'staging:',
+      BLINDSIGNAL_REDIS_COMMAND_TIMEOUT_SECONDS: '1',
       BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS: '20',
       BLINDSIGNAL_MAX_CONNECTION_SECONDS: '3300',
       BLINDSIGNAL_MAX_CONNECTIONS: '900',
       BLINDSIGNAL_DEPENDENCY_PROBE_TIMEOUT_SECONDS: '5',
+      BLINDSIGNAL_STARTUP_TIMEOUT_SECONDS: '90',
       BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS: '5',
       BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS: '25',
       BLINDSIGNAL_AUTHENTICATION_TIMEOUT_SECONDS: '4',
@@ -179,10 +182,15 @@ describe('loadConfig', () => {
       deviceSweepIntervalMs: 60_000,
       registrySyncIntervalMs: 20_000,
       dependencyProbeTimeoutMs: 5_000,
+      startupTimeoutMs: 90_000,
       shutdownDelayMs: 5_000,
       shutdownTimeoutMs: 25_000,
       database: { url: 'postgresql://bs:pw@db.example:5432/bs', poolSize: 4 },
-      redis: { url: 'rediss://default:pw@cache.example:6380', prefix: 'staging:' },
+      redis: {
+        url: 'rediss://default:pw@cache.example:6380',
+        prefix: 'staging:',
+        commandTimeoutMs: 1_000,
+      },
       preAuthentication: {
         authenticationTimeoutMs: 4_000,
         maxUnauthenticatedPerIp: 3,
@@ -298,6 +306,8 @@ describe('loadConfig', () => {
     ['BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS', '0'],
     ['BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS', '-1'],
     ['BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS', '0'],
+    ['BLINDSIGNAL_STARTUP_TIMEOUT_SECONDS', '0'],
+    ['BLINDSIGNAL_REDIS_COMMAND_TIMEOUT_SECONDS', '0'],
   ])('rejects %s=%s', (name, value) => {
     expect(error({ ...production, [name]: value })).toContain(name);
   });
@@ -345,6 +355,14 @@ describe('loadConfig', () => {
       }
     });
 
+    it('caps the lifetime at a day', () => {
+      expect(
+        config({ ...turn, BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS: '86400' }).turn,
+      ).toMatchObject({ credentialTtlSeconds: 86_400 });
+      const env = { ...turn, BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS: '86401' };
+      expect(error(env)).toContain('BLINDSIGNAL_TURN_CREDENTIAL_TTL_SECONDS');
+    });
+
     it('never echoes the secret', () => {
       const secret = 'short-secret-value';
       expect(error({ ...turn, BLINDSIGNAL_TURN_SECRET: secret })).not.toContain(secret);
@@ -365,6 +383,7 @@ describe('loadConfig', () => {
     expect(config({ ...database, BLINDSIGNAL_REDIS_URL: 'redis://cache' }).redis).toEqual({
       url: 'redis://cache',
       prefix: 'blindsignal:',
+      commandTimeoutMs: 2_000,
     });
     for (const prefix of ['', 'a b']) {
       expect(error({ ...database, BLINDSIGNAL_REDIS_PREFIX: prefix })).toContain(

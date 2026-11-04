@@ -104,19 +104,26 @@ export interface RedisCoordination {
 /**
  * Connects the server's two connections, for commands and for subscriptions. While the server is
  * unreachable, commands fail at once instead of waiting in a queue, and `onError` receives each
- * failed attempt to reconnect; the client resubscribes once it is back (ADR 0023).
+ * failed attempt to reconnect; the client resubscribes once it is back. A command the server does
+ * not answer within `commandTimeoutMs` fails too (ADR 0023).
  */
 export async function openRedisCoordination(options: {
   readonly url: string;
   readonly onError: (error: Error) => void;
   readonly prefix?: string;
+  readonly commandTimeoutMs?: number;
 }): Promise<RedisCoordination> {
   const client = createClient({ url: options.url, disableOfflineQueue: true });
   const subscriber = client.duplicate();
   for (const connection of [client, subscriber]) connection.on('error', options.onError);
   await Promise.all([client.connect(), subscriber.connect()]);
   return {
-    coordination: new RedisCoordinationAdapter({ client, subscriber, prefix: options.prefix }),
+    coordination: new RedisCoordinationAdapter({
+      client,
+      subscriber,
+      prefix: options.prefix,
+      commandTimeoutMs: options.commandTimeoutMs,
+    }),
     async ping() {
       if (!subscriber.isReady) throw new Error('the subscriber connection is down');
       await client.ping();
@@ -140,6 +147,11 @@ export interface RedisCoordinationOptions {
   readonly subscriber: RedisClient;
   /** Starts every key and channel, so deployments and tests can share one server. */
   readonly prefix?: string;
+  /**
+   * Each operation rejects once the server has not answered within it. The client's own command
+   * timeout stops at the write, so it never bounds a server that takes a command and hangs.
+   */
+  readonly commandTimeoutMs?: number | undefined;
 }
 
 /**
@@ -150,19 +162,28 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
   readonly #client: RedisClient;
   readonly #subscriber: RedisClient;
   readonly #prefix: string;
+  readonly #commandTimeoutMs: number | undefined;
 
-  constructor({ client, subscriber, prefix = 'blindsignal:' }: RedisCoordinationOptions) {
+  constructor({
+    client,
+    subscriber,
+    prefix = 'blindsignal:',
+    commandTimeoutMs,
+  }: RedisCoordinationOptions) {
     this.#client = client;
     this.#subscriber = subscriber;
     this.#prefix = prefix;
+    this.#commandTimeoutMs = commandTimeoutMs;
   }
 
   async claimJti(issuer: string, jti: string, ttlMs: number): Promise<boolean> {
     const key = this.#key('jti', JSON.stringify([issuer, jti]));
-    const reply = await this.#client.set(key, '1', {
-      expiration: { type: 'PX', value: Number(ms(ttlMs)) },
-      condition: 'NX',
-    });
+    const reply = await this.#bound(
+      this.#client.set(key, '1', {
+        expiration: { type: 'PX', value: Number(ms(ttlMs)) },
+        condition: 'NX',
+      }),
+    );
     return reply === 'OK';
   }
 
@@ -171,7 +192,7 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
     connectionId: string,
   ): Promise<string | undefined> {
     const key = this.#key('device', deviceKey(device));
-    const previous = await this.#client.set(key, connectionId, { GET: true });
+    const previous = await this.#bound(this.#client.set(key, connectionId, { GET: true }));
     return previous === null || previous === connectionId ? undefined : String(previous);
   }
 
@@ -184,7 +205,9 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
   }
 
   async connectionOf(device: DeviceIdentity): Promise<string | undefined> {
-    return (await this.#client.get(this.#key('device', deviceKey(device)))) ?? undefined;
+    return (
+      (await this.#bound(this.#client.get(this.#key('device', deviceKey(device))))) ?? undefined
+    );
   }
 
   async acquirePresence(
@@ -242,11 +265,11 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
   async releaseSlots(holder: string, keys: readonly string[]): Promise<void> {
     const transaction = this.#client.multi();
     for (const key of keys) transaction.zRem(this.#key('slots', key), holder);
-    await transaction.exec();
+    await this.#bound(transaction.exec());
   }
 
   async publish(topic: string, event: unknown): Promise<void> {
-    await this.#client.publish(this.#key('topic', topic), JSON.stringify(event));
+    await this.#bound(this.#client.publish(this.#key('topic', topic), JSON.stringify(event)));
   }
 
   async subscribe(topic: string, handler: (event: unknown) => void): Promise<() => Promise<void>> {
@@ -254,7 +277,7 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
     // One listener per call, so subscribing the same handler twice needs two unsubscribes. The
     // client ignores an unsubscribe of a listener it no longer has.
     const listener = (message: string) => handler(JSON.parse(message));
-    await this.#subscriber.subscribe(channel, listener);
+    await this.#bound(this.#subscriber.subscribe(channel, listener));
     return () => this.#subscriber.unsubscribe(channel, listener);
   }
 
@@ -267,13 +290,28 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
   }
 
   /** Runs a script by its hash, and sends its source once the server does not know it. */
-  async #run(script: Script, keys: string[], args: string[]): Promise<unknown> {
+  #run(script: Script, keys: string[], args: string[]): Promise<unknown> {
     const options = { keys, arguments: args };
+    return this.#bound(
+      this.#client.evalSha(script.sha, options).catch((error: unknown) => {
+        if (!(error instanceof Error) || !error.message.startsWith('NOSCRIPT')) throw error;
+        return this.#client.eval(script.source, options);
+      }),
+    );
+  }
+
+  /** The reply, or a rejection once the timeout passes; a late reply is then discarded. */
+  async #bound<T>(reply: Promise<T>): Promise<T> {
+    const timeoutMs = this.#commandTimeoutMs;
+    if (timeoutMs === undefined) return reply;
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Redis did not answer in time')), timeoutMs);
+    });
     try {
-      return await this.#client.evalSha(script.sha, options);
-    } catch (error) {
-      if (!(error instanceof Error) || !error.message.startsWith('NOSCRIPT')) throw error;
-      return this.#client.eval(script.source, options);
+      return await Promise.race([reply, timeout]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

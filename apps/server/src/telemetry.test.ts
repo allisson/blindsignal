@@ -67,6 +67,18 @@ describe('logCrash', () => {
     ]);
   });
 
+  it('drops a line of the message that looks like a frame', () => {
+    const error = new Error('one\n    at secret-value (x)');
+    error.stack = `Error: one\n    at secret-value (x)\n    at f (/app/a.ts:1:2)`;
+    expect(crash(error)).toMatchObject([{ stack: 'at f (/app/a.ts:1:2)' }]);
+  });
+
+  it('logs no stack when it does not start with the message', () => {
+    const error = new Error('changed');
+    error.stack = `Error: before\n    at secret-value (x)`;
+    expect(crash(error)).toMatchObject([{ reason: 'Error', stack: undefined }]);
+  });
+
   it('logs the type of a value thrown that is not an error, with no stack', () => {
     expect(crash('secret-value')).toEqual([
       { level: 'error', event: 'server.crashed', origin: 'o', reason: 'string', stack: undefined },
