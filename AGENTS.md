@@ -28,6 +28,7 @@ server. Initial target: browser / PWA.
 - `docs/cloud-run.md`: Cloud Run, with the registry in Secret Manager (untested on Cloud Run).
 - `docs/tailscale.md`: a laptop and devices on one tailnet, pairing in `examples/minimal-app`.
 - `docs/application-e2ee.md`: what BlindSignal protects in a payload, and what E2EE leaves to applications.
+- `docs/integration-feedback.md`: what the Phase 11 examples taught, fixed, documented, and open.
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
 raise it; do not silently diverge. A change that alters a documented contract updates the spec,
@@ -73,7 +74,8 @@ namespace (ADR 0042). Phase 11 has started: `examples/backend-issuer` is an appl
 that issues tokens with its own key and grants pairings, and `examples/minimal-app` is a page on
 it whose devices sign in, pair, and open a DataChannel; two applications on shared instances are
 isolated from each other, and the browser demo's `notes` and `chat` exchange their own payload
-formats; `docs/application-e2ee.md` states what applications must do for end-to-end encryption. The workspace uses
+formats; `docs/application-e2ee.md` states what applications must do for end-to-end encryption, and `docs/integration-feedback.md`
+what the examples taught about integrating. The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
