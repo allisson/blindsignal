@@ -41,8 +41,8 @@ pkey=/etc/coturn/key.pem
 external-ip=203.0.113.10/10.0.0.10
 min-port=49152
 max-port=65535
-no-cli
 no-multicast-peers
+no-tcp-relay
 denied-peer-ip=0.0.0.0-0.255.255.255
 denied-peer-ip=10.0.0.0-10.255.255.255
 denied-peer-ip=100.64.0.0-100.127.255.255
@@ -67,15 +67,20 @@ prometheus-address=10.0.0.10
   reaches the network that hosts it: private ranges, loopback, link-local, and the cloud metadata
   address `169.254.169.254` (threat model §4.4). The IPv4-mapped (`::ffff:0:0/96`) and NAT64
   (`64:ff9b::/96`) ranges are denied whole, since each holds an IPv4 address the IPv4 lines deny;
-  Coturn takes ranges as `first-last`, not CIDR, and refuses to start on an invalid one. Never set `allow-loopback-peers`. The test Coturn
-  of `compose.yaml` denies none of these, because its relay addresses are private container
+  Coturn takes ranges as `first-last`, not CIDR, and refuses to start on an invalid one. Never set
+  `allow-loopback-peers`. `no-tcp-relay` turns off TCP relays (RFC 6062), which browsers never
+  ask for, and which would reach any TCP service, mail servers included, from the TURN server's
+  address. The test Coturn of `compose.yaml` denies none of these, because its relay addresses are private container
   addresses; never copy it to production.
 - **Ports.** `3478` over UDP and TCP, `443` over TCP for `turns:`, and the relay range over UDP,
   open to clients. `turns:` on `443` passes networks that allow only HTTPS. A `turns:` URL needs a
   certificate browsers trust, for the host name in the URL; Firefox rejects any other.
 - **Limits.** Each credential is its own Coturn user, since its username carries its expiry:
   `user-quota` bounds the allocations of one credential, `total-quota` those of the server,
-  `max-bps` the bandwidth of each. Size them for the expected concurrent relayed sessions.
+  `max-bps` the bandwidth of each, in bytes per second. Size them for the expected concurrent
+  relayed sessions; `examples/self-hosted/turnserver.conf` starts from `user-quota=48` (16
+  sessions of up to 3 allocations), `total-quota=1000`, and `max-bps=125000`. Never leave them
+  unset: Coturn's default is no limit, and the threat model counts on them (§4.4).
 
 ## Credential expiry
 

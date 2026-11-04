@@ -692,6 +692,29 @@ describe('Connection', () => {
       );
     });
 
+    it('issues no TURN credential to a refused authentication or refresh (ADR 0009)', async () => {
+      const turn = {
+        urls: ['turn:turn.example:3478'],
+        secret: '0123456789abcdef0123456789abcdef',
+        credentialTtlSeconds: 900,
+      };
+      const { connect, load } = await setup(
+        [{ ...devApplication('notes'), revokedDevices: [{ userId: 'u1', deviceId: 'd1' }] }],
+        { turn },
+      );
+      const revoked = connect();
+      await revoked.authenticate();
+      expect(revoked.errors()).toEqual(['device_revoked']);
+      const client = connect();
+      await client.authenticate({ device_id: 'd2' });
+      expect(client.sent.filter((m) => m.type === 'rtc.ice_config')).toHaveLength(1);
+      await load([{ ...devApplication('notes'), status: 'suspended' }]);
+      await client.refresh();
+      expect(client.errors()).toEqual(['application_unavailable']);
+      expect(client.sent.filter((m) => m.type === 'rtc.ice_config')).toHaveLength(1);
+      expect(revoked.sent.filter((m) => m.type === 'rtc.ice_config')).toEqual([]);
+    });
+
     it('counts no TURN credential when none is configured', async () => {
       const { connect, metrics } = await setup();
       await connect().authenticate();

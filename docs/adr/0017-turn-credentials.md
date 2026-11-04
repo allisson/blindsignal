@@ -64,6 +64,8 @@ call to another service on the authentication path.
   link-local, and cloud metadata ranges, since a relay otherwise reaches the network that hosts it;
   never `allow-loopback-peers`; `turns:` on port 443 for networks that block everything else;
   `user-quota`, `max-bps`, and `total-quota` to bound what one credential and the server relay.
+  Amended by the Phase 12 abuse-resistance review: `examples/self-hosted/turnserver.conf` sets
+  all three rather than leaving Coturn's unlimited default, and `no-tcp-relay`.
 
 ## Considered options
 
