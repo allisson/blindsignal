@@ -66,7 +66,7 @@ export class DeviceKey {
     return new DeviceKey(privateKey, jwk, await sha256(JSON.stringify(jwk)));
   }
 
-  /** Proves possession for one token on the connection whose challenge sent `nonce`. */
+  /** @internal Proves possession for one token on the connection whose challenge sent `nonce`. */
   async proof(token: string, nonce: string): Promise<string> {
     return this.#sign(PROOF_TYPE, { nonce, ath: await sha256(token) });
   }

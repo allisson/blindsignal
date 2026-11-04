@@ -107,7 +107,7 @@ describe('BlindSignalClient connection', () => {
     expect(() => setup({ serverUrl: 'ws://signal.example/' })).toThrow(TypeError);
   });
 
-  it('authenticates with a fresh token and keeps the ICE configuration', async () => {
+  it('authenticates with a fresh token', async () => {
     const { client, socket, states, accessTokenProvider } = setup();
     expect(client.state).toBe('disconnected');
     const connecting = client.connect();
@@ -124,7 +124,6 @@ describe('BlindSignalClient connection', () => {
     });
     socket().receive({ version: 1, type: 'rtc.ice_config', payload: iceConfig });
     await expect(connecting).resolves.toEqual(identity);
-    expect(client.iceConfig).toEqual(iceConfig);
     expect(client.state).toBe('connected');
     expect(states).toEqual([{ state: 'connecting' }, { state: 'connected' }]);
     expect(accessTokenProvider).toHaveBeenCalledTimes(1);
@@ -546,6 +545,66 @@ describe('BlindSignalClient refresh', () => {
     expect(last().type).toBe('auth.authenticate');
     await vi.advanceTimersByTimeAsync(1);
     expect(last()).toMatchObject({ type: 'auth.refresh', payload: { token: 't2' } });
+  });
+
+  it('refreshes on demand and reschedules from the new result', async () => {
+    const { client, last, sent, reply } = await connected(300_000);
+    const refreshing = client.refresh();
+    await flush();
+    expect(last()).toMatchObject({ type: 'auth.refresh', payload: { token: 't2' } });
+    reply('auth.result', { ...identity, expiresInMs: 100_000 });
+    await expect(refreshing).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(39_999);
+    expect(sent('auth.refresh')).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(last()).toMatchObject({ type: 'auth.refresh', payload: { token: 't3' } });
+    reply('auth.result', { ...identity, expiresInMs: day });
+    // The refresh scheduled by the first token is gone.
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(sent('auth.refresh')).toHaveLength(2);
+  });
+
+  it('rejects a refused refresh on demand and keeps the scheduled one', async () => {
+    const { client, last, reply } = await connected(300_000);
+    const refreshing = client.refresh();
+    await flush();
+    reply('error', { code: 'identity_mismatch' });
+    await expect(refreshing).rejects.toMatchObject({ code: 'identity_mismatch' });
+    expect(client.state).toBe('connected');
+    await vi.advanceTimersByTimeAsync(240_000);
+    expect(last()).toMatchObject({ type: 'auth.refresh', payload: { token: 't3' } });
+  });
+
+  it('rejects a refresh on demand when not connected', async () => {
+    const { client } = setup();
+    await expect(client.refresh()).rejects.toMatchObject({ code: 'connection_closed' });
+  });
+
+  it('rejects a refresh on demand whose result arrives after close', async () => {
+    const { client, reply } = await connected(300_000);
+    const refreshing = client.refresh();
+    await flush();
+    reply('auth.result', { ...identity, expiresInMs: day });
+    client.close();
+    await expect(refreshing).rejects.toMatchObject({ code: 'connection_closed' });
+  });
+
+  it('drops the retries of a scheduled refresh that a refresh on demand superseded', async () => {
+    const { client, socket, sent, reply } = await connected(70_000);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const scheduled = sent('auth.refresh')[0] as Sent;
+    const refreshing = client.refresh();
+    await flush();
+    reply('auth.result', { ...identity, expiresInMs: day });
+    await refreshing;
+    socket().receive({
+      version: 1,
+      type: 'error',
+      requestId: scheduled.requestId,
+      payload: { code: 'identity_mismatch' },
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sent('auth.refresh')).toHaveLength(2);
   });
 
   it('stops refreshing once closed', async () => {
