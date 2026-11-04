@@ -70,7 +70,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_MAX_UNAUTHENTICATED` | `1000` | Concurrent unauthenticated connections in all; more get HTTP `429` at the upgrade. |
 | `BLINDSIGNAL_MAX_CONNECTIONS` | `0` (none) | Open connections on this instance, authenticated or not; more get HTTP `503` at the upgrade. Set it at or below the platform's concurrency per instance, such as Cloud Run's (ADR 0030). |
 | `BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS` | `5,20` | Connection attempts per client IP, as `rate,burst`; more get HTTP `429` with `Retry-After`. |
-| `BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION` | `1,10` | `auth.authenticate` and `auth.refresh` per client IP, as `rate,burst`; more get `rate_limited`. |
+| `BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION` | `1,10` | `auth.authenticate` and `auth.refresh` per client IP, as `rate,burst`; more get `rate_limited`. Devices on one development machine share `127.0.0.1`: tests with many of them raise this and `BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS`, as `examples/minimal-app/playwright.config.ts` does. |
 | `BLINDSIGNAL_MAX_QUEUED_MESSAGES` | `1024` | Frames and events waiting on one connection, at least `2`; reading pauses at half, and a full queue closes with `1013` (ADR 0013). |
 | `BLINDSIGNAL_MAX_BUFFERED_BYTES` | `1048576` | Bytes waiting in one connection's send buffer, at least `65536`; more close with `1013` (ADR 0013). |
 | `BLINDSIGNAL_ABUSE_ALERT_THRESHOLD` | `0` (off) | An application's `rate_limited` and `quota_exceeded` errors within one window that raise an abuse alert (ADR 0016). |
