@@ -16,6 +16,7 @@ server. Initial target: browser / PWA.
 - `docs/adr/`: architecture decision records.
 - `GLOSSARY.md`: canonical domain terms; use them in code, docs, and messages.
 - `docs/protocol.md`, `docs/threat-model.md`: Phase 0 deliverables.
+- `docs/onboarding.md`: an application team's path from registration to production.
 - `docs/token-issuance.md`: what an application backend must do to issue accepted tokens.
 - `docs/external-testing.md`: the Compose workflow and the cross-network test setup (Phase 7).
 - `docs/turn-operations.md`: running Coturn for BlindSignal (Phase 8).
@@ -86,7 +87,8 @@ reasons that a later release adds (ADR 0045), and the SDK's public API is review
 and major release, with Dependabot, pinned actions, and `pnpm audit --prod` in CI (ADR 0048), and
 the abuse review left none open either; load tests validate the quota and rate-limit defaults
 before every minor and major release (ADR 0049); the SDK README documents every export, and a
-test keeps it so (ADR 0046). The workspace uses
+test keeps it so (ADR 0046); `docs/onboarding.md` takes an application team from registration
+to production. The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10

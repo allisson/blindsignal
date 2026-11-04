@@ -3,7 +3,8 @@
 How an operator registers an application, changes it, and suspends or revokes it or one of its
 devices. Every step edits the registry file, the control plane of
 `docs/adr/0005-control-plane.md`; the server has no admin API. What the application's backend
-must do is in `docs/token-issuance.md`, and its keys in `docs/secrets-and-keys.md`.
+must do is in `docs/token-issuance.md`, its team's whole path in `docs/onboarding.md`, and its
+keys in `docs/secrets-and-keys.md`.
 
 ## Onboarding
 
