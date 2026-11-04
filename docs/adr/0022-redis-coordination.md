@@ -42,6 +42,11 @@ Phase 9 task.
   server and each test runs under a prefix of its own. Amended by the Phase 12 security review:
   `BLINDSIGNAL_REDIS_PREFIX` sets it, one per deployment, since pub/sub ignores the database
   number and a database of its own does not keep a deployment apart.
+- **Presence answers one device, or one user, without listing the namespace** (amended by the
+  Phase 12 abuse review). `isPresent(namespace, device)` reads the device's score; `listPresence`
+  with a `userId` reads a sorted set per namespace and user, which the presence scripts keep with
+  the namespace's own. `session.create` checks its target, and `pairing.create` lists its user's
+  devices, at a cost that no longer grows with the namespace.
 - **Standalone or Sentinel, never Cluster.** `acquireSlots` spans an application's and two
   devices' keys in one script, which Cluster refuses across hash slots.
 - **Testing:** one contract suite in `@blindsignal/core/testing` runs against the in-memory adapter

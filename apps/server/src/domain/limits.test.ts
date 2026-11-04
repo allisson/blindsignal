@@ -11,11 +11,13 @@ const defaults: Limits = {
     sessionsPerDevice: 4,
     namespacesPerDevice: 5,
     sessionDurationSeconds: 0,
+    pairingApprovers: 3,
   },
   rateLimits: {
     discovery: policy(1, 2),
     session_create: policy(1, 3),
     pairing: policy(1, 1),
+    presence: policy(1, 4),
     signaling: policy(10, 20),
     rtc: policy(5, 10),
     rtc_ice_candidate: policy(5, 15),

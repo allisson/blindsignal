@@ -39,8 +39,9 @@ redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
 return 1`);
 
 /**
- * KEYS: the namespace's leases (a sorted set scored by expiry) and their holders (a hash).
- * ARGV: the device, the connection, the ttl.
+ * KEYS: the namespace's leases (a sorted set scored by expiry), their holders (a hash), and the
+ * device's user's leases in the namespace (a sorted set like the first, for `listPresence` by
+ * user). ARGV: the device, the connection, the ttl.
  */
 const ACQUIRE_PRESENCE = script(`
 local ttl = tonumber(ARGV[3])
@@ -48,10 +49,13 @@ for _, device in ipairs(redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now)) do
   redis.call('HDEL', KEYS[2], device)
 end
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+redis.call('ZREMRANGEBYSCORE', KEYS[3], '-inf', now)
 redis.call('ZADD', KEYS[1], now + ttl, ARGV[1])
+redis.call('ZADD', KEYS[3], now + ttl, ARGV[1])
 redis.call('HSET', KEYS[2], ARGV[1], ARGV[2])
 extend(KEYS[1], ttl)
 extend(KEYS[2], ttl)
+extend(KEYS[3], ttl)
 return 0`);
 
 /** KEYS: as for `ACQUIRE_PRESENCE`. ARGV: the device, the connection. */
@@ -59,11 +63,18 @@ const RELEASE_PRESENCE = script(`
 if redis.call('HGET', KEYS[2], ARGV[1]) ~= ARGV[2] then return 0 end
 redis.call('HDEL', KEYS[2], ARGV[1])
 redis.call('ZREM', KEYS[1], ARGV[1])
+redis.call('ZREM', KEYS[3], ARGV[1])
 return 1`);
 
-/** KEYS: the namespace's leases. */
+/** KEYS: the namespace's leases, or one user's. */
 const LIST_PRESENCE = script(`
 return redis.call('ZRANGEBYSCORE', KEYS[1], '(' .. now, '+inf')`);
+
+/** KEYS: the namespace's leases. ARGV: the device. */
+const IS_PRESENT = script(`
+local expiry = redis.call('ZSCORE', KEYS[1], ARGV[1])
+if expiry and tonumber(expiry) > now then return 1 end
+return 0`);
 
 /**
  * A token bucket per key, created full (ADR 0011), kept until it is full again. KEYS: the bucket.
@@ -238,7 +249,7 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
     connectionId: string,
     ttlMs: number,
   ): Promise<void> {
-    await this.#run(ACQUIRE_PRESENCE, this.#presenceKeys(namespace), [
+    await this.#run(ACQUIRE_PRESENCE, this.#presenceKeys(namespace, device.userId), [
       deviceKey(device),
       connectionId,
       ms(ttlMs),
@@ -250,20 +261,30 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
     device: DeviceIdentity,
     connectionId: string,
   ): Promise<boolean> {
-    const released = await this.#run(RELEASE_PRESENCE, this.#presenceKeys(namespace), [
-      deviceKey(device),
-      connectionId,
-    ]);
+    const released = await this.#run(
+      RELEASE_PRESENCE,
+      this.#presenceKeys(namespace, device.userId),
+      [deviceKey(device), connectionId],
+    );
     return released === 1;
   }
 
-  async listPresence(namespace: string): Promise<readonly DeviceIdentity[]> {
-    const [leases] = this.#presenceKeys(namespace);
+  async listPresence(
+    namespace: string,
+    filter?: { readonly userId: string },
+  ): Promise<readonly DeviceIdentity[]> {
+    const keys = this.#presenceKeys(namespace, filter?.userId ?? '');
+    const leases = filter === undefined ? keys[0] : keys[2];
     const devices = (await this.#run(LIST_PRESENCE, [leases], [])) as string[];
     return devices.map((device) => {
       const [appId, userId, deviceId] = JSON.parse(device) as [string, string, string];
       return { appId, userId, deviceId };
     });
+  }
+
+  async isPresent(namespace: string, device: DeviceIdentity): Promise<boolean> {
+    const [leases] = this.#presenceKeys(namespace, device.userId);
+    return (await this.#run(IS_PRESENT, [leases], [deviceKey(device)])) === 1;
   }
 
   async consumeRateLimit(
@@ -316,8 +337,12 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
     return `${this.#prefix}${kind}:${name}`;
   }
 
-  #presenceKeys(namespace: string): [string, string] {
-    return [this.#key('presence', namespace), this.#key('presence_holders', namespace)];
+  #presenceKeys(namespace: string, userId: string): [string, string, string] {
+    return [
+      this.#key('presence', namespace),
+      this.#key('presence_holders', namespace),
+      this.#key('presence_user', JSON.stringify([namespace, userId])),
+    ];
   }
 
   /** Runs a script by its hash, and sends its source once the server does not know it. */

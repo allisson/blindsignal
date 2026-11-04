@@ -86,7 +86,7 @@ if (device) {
 |---|---|
 | `connect()` | Connects, retrying with backoff; resolves to an `Identity`, `{ userId, deviceId }`, once authenticated, and rejects with a `BlindSignalError` when the client stops. |
 | `join(namespace)`, `leave(namespace)` | Presence in a namespace; joined namespaces are joined again after a reconnect. |
-| `discover(namespace)` | The other devices present in a joined namespace: each a `Device`, `{ userId, deviceId }`. |
+| `discover(namespace)` | The other devices present in a joined namespace: each a `Device`, `{ userId, deviceId }`. A namespace too large for one message lists only the devices that fit; `presence` events report every change. |
 | `createSession({ namespace, userId, deviceId })` | A requester's `Session`, `pending` until the target accepts. |
 | `requestPairing(namespace)` | Asks this user's devices in `namespace` to approve this one; see [Pairing](#pairing). |
 | `refresh()` | Sends `auth.refresh` now with a new token, for when the backend changed what the token grants; rejects with a `BlindSignalError` and keeps the current token. Refreshes before expiry need no call. |

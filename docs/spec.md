@@ -386,6 +386,7 @@ Initial rate-limit categories:
 - Concurrent connections per application.
 - Concurrent connections per device.
 - Discovery requests.
+- Presence changes: the namespace joins and leaves that fan out to a namespace's devices.
 - Session creation.
 - Signaling messages per connection and session.
 - Pairing attempts.

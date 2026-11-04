@@ -169,6 +169,7 @@ const environment = z
     BLINDSIGNAL_MAX_SESSIONS_PER_APP: count.default(10_000),
     BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE: count.default(16),
     BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE: count.default(100),
+    BLINDSIGNAL_MAX_PAIRING_APPROVERS: count.default(10),
     // Open connections on this instance, upgrades in progress included; 0 sets no limit (ADR 0030).
     BLINDSIGNAL_MAX_CONNECTIONS: z.coerce.number().int().nonnegative().default(0),
     // 0 sets no limit; set it below the hosting platform's request timeout (ADR 0029).
@@ -178,6 +179,7 @@ const environment = z
     BLINDSIGNAL_RATE_LIMIT_DISCOVERY: rateLimit(2, 10),
     BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE: rateLimit(2, 10),
     BLINDSIGNAL_RATE_LIMIT_PAIRING: rateLimit(0.1, 3),
+    BLINDSIGNAL_RATE_LIMIT_PRESENCE: rateLimit(1, 10),
     BLINDSIGNAL_RATE_LIMIT_SIGNALING: rateLimit(50, 100),
     BLINDSIGNAL_RATE_LIMIT_RTC: rateLimit(10, 30),
     BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE: rateLimit(20, 50),
@@ -403,11 +405,13 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
           sessionsPerDevice: vars.BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE,
           namespacesPerDevice: vars.BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE,
           sessionDurationSeconds: vars.BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS,
+          pairingApprovers: vars.BLINDSIGNAL_MAX_PAIRING_APPROVERS,
         },
         rateLimits: {
           discovery: vars.BLINDSIGNAL_RATE_LIMIT_DISCOVERY,
           session_create: vars.BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE,
           pairing: vars.BLINDSIGNAL_RATE_LIMIT_PAIRING,
+          presence: vars.BLINDSIGNAL_RATE_LIMIT_PRESENCE,
           signaling: vars.BLINDSIGNAL_RATE_LIMIT_SIGNALING,
           rtc: vars.BLINDSIGNAL_RATE_LIMIT_RTC,
           rtc_ice_candidate: vars.BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE,

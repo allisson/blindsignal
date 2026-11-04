@@ -24,6 +24,14 @@ bounded per connection, and a full one closes the connection.
   the message would wait behind the backlog that caused the close. What was queued is dropped, and
   the connection releases its sessions and presence as after any close. The SDK reconnects with
   backoff, like after an abnormal closure.
+- **A relayed message never closes its recipient** (amended by the Phase 12 abuse review). An
+  `rtc.*` message for a connection whose send buffer holds more than half of
+  `BLINDSIGNAL_MAX_BUFFERED_BYTES` is dropped and counted in
+  `blindsignal_coordination_events_dropped_total{reason="overloaded"}`: a peer that floods its
+  session loses its own negotiation, which the SDK's connection timeout ends (ADR 0018), instead
+  of closing the other device's connection with `1013`. Size limits for `sdp` and `candidate`
+  were considered and left out: sixteen sessions, each within its `rtc` bucket, would still fill
+  the buffer.
 - Each close is logged (`connection.overloaded`, with the limit reached) and counted
   (`blindsignal_overloaded_connections_total`). The defaults are starting values until load
   testing sets them (spec §8.2).

@@ -84,6 +84,12 @@ ADR 0013, ADR 0016, and ADR 0017.
 |---|---|---|
 | Server ↔ adapters | Redis commands have no timeout, so an upgrade waits on `consumeRateLimit` while Redis does not answer | `BLINDSIGNAL_REDIS_COMMAND_TIMEOUT_SECONDS`, default 2: an operation fails as when Redis is unreachable (ADR 0023) |
 | Tests | No test sends `rtc.ice_config` from a client (spec §21), or runs the abuse rules against Redis and two instances | A client-sent `rtc.ice_config` and `session.terminated` get `invalid_message`; on two instances sharing Redis, the per-IP connection-attempt limit and a target's session slots count across both |
+| SDK ↔ server | `sdp` and `candidate` have no size limit of their own, so one peer can fill the other's send buffer and have it closed with `1013` | An `rtc.*` for a connection whose send buffer is above half its limit is dropped, never closing it (ADR 0013) |
+| SDK ↔ server | Joining and leaving a namespace in a loop fans presence out to its devices, with no rate limit of its own | A `presence` bucket per connection, `BLINDSIGNAL_RATE_LIMIT_PRESENCE` (ADR 0011) |
+| SDK ↔ server | A `discovery.result` can exceed 64 KiB, which the SDK drops | The result lists the devices that fit, with `truncated: true` (ADR 0011) |
+| SDK ↔ server | `session.create` and `pairing.create` read the namespace's whole presence to check one device | `isPresent` and `listPresence` by user, a sorted set per namespace and user in Redis (ADR 0022) |
+| SDK ↔ server | Pending sessions can hold the 16 session slots of a target, and raise no alert | One pending session per requester and target, and a full target counts toward the abuse alert (ADR 0011) |
+| SDK ↔ server | A pairing request fans out to every present device of its user, with no cap | `pairingApprovers`, `BLINDSIGNAL_MAX_PAIRING_APPROVERS`, default 10 (ADR 0042) |
 
 ### Non-blocking, accepted
 
@@ -95,14 +101,8 @@ ADR 0013, ADR 0016, and ADR 0017.
 
 | Boundary | Finding |
 |---|---|
-| SDK ↔ server | `sdp` and `candidate` have no size limit of their own, so one peer can fill the other's send buffer and have it closed with `1013` |
-| SDK ↔ server | Joining and leaving a namespace in a loop fans presence out to its devices, with no rate limit of its own |
-| SDK ↔ server | A `discovery.result` can exceed 64 KiB, which the SDK drops |
-| SDK ↔ server | `session.create` and `pairing.create` read the namespace's whole presence to check one device |
-| SDK ↔ server | Pending sessions can hold the 16 session slots of a target, and raise no alert |
 | SDK ↔ server | One user can fill its application's device quota for the 30 days of the device TTL |
 | SDK ↔ server | One application can fill an instance's connection cap |
-| SDK ↔ server | A pairing request fans out to every present device of its user, with no cap |
 | SDK ↔ server | A session's duration timer uses the requester's limits only |
 | SDK ↔ server | A heartbeat whose renewal fails, or a lower `namespacesPerDevice`, does not trim what the connection holds |
 | SDK ↔ server | Per-connection rate limits start again at each reconnection |
