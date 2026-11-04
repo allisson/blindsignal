@@ -60,7 +60,7 @@ export class SignalingServer {
     const maxBytes = options.connection.maxMessageBytes ?? MAX_MESSAGE_BYTES;
     // shortcut: frames up to twice the limit reach the parser, which answers message_too_large;
     // larger ones are cut by ws with 1009 before being buffered (docs/protocol.md §9).
-    this.#wss = new WebSocketServer({ noServer: true, maxPayload: 2 * maxBytes });
+    this.#wss = new WebSocketServer({ noServer: true, maxPayload: 2 * maxBytes, autoPong: false });
     this.#http.on('upgrade', (request, socket: Socket, head) =>
       this.#upgrade(request, socket, head),
     );
@@ -222,7 +222,16 @@ export class SignalingServer {
     ws.on('message', (data, isBinary) => {
       void connection.receive(isBinary ? '' : (data as Buffer).toString('utf8'));
     });
+    // Answered here, not by ws, so pings from a client that never reads cannot grow the send
+    // buffer past its limit (ADR 0013). Browsers never send pings.
+    ws.on('ping', (data) => {
+      if (ws.bufferedAmount > this.#options.connection.maxBufferedBytes) ws.terminate();
+      else ws.pong(data);
+    });
+    // Only the pong answering this server's ping renews leases: unsolicited pongs are not
+    // rate-limited (ADR 0011).
     ws.on('pong', () => {
+      if (this.#alive.has(ws)) return;
       this.#alive.add(ws);
       void connection.heartbeat();
     });

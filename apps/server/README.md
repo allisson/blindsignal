@@ -61,7 +61,8 @@ names the variable, never its value.
 | `BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS` | `3600` | How often expired device records are deleted (ADR 0012). |
 | `BLINDSIGNAL_DATABASE_URL` | unset | A `postgres://` URL: device records and the last accepted registry go to PostgreSQL, shared by every instance. Unset keeps them in memory, for one instance (ADR 0021). Connect as the role that owns the tables, as the migration command does (ADR 0027); for Supabase, see `docs/supabase.md`. |
 | `BLINDSIGNAL_DATABASE_POOL_SIZE` | `10` | Connections in the PostgreSQL pool. |
-| `BLINDSIGNAL_REDIS_URL` | unset | A `redis://` or `rediss://` URL: presence, sessions, quotas, rate limits, and `jti` claims are shared by every instance through Redis or Valkey. Requires `BLINDSIGNAL_DATABASE_URL`. Unset keeps them in memory, for one instance (ADR 0023). |
+| `BLINDSIGNAL_REDIS_URL` | unset | A `redis://` or `rediss://` URL: presence, sessions, quotas, rate limits, and `jti` claims are shared by every instance through Redis or Valkey. Requires `BLINDSIGNAL_DATABASE_URL`. Unset keeps them in memory, for one instance (ADR 0023). Run it with `maxmemory-policy noeviction`, and restart every instance after it loses data: until then, a used token can authenticate again (ADR 0035). |
+| `BLINDSIGNAL_REDIS_PREFIX` | `blindsignal:` | Starts every Redis key and channel. Give each deployment sharing a Redis its own: pub/sub ignores the database number (ADR 0022). |
 | `BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS` | `60` | With `BLINDSIGNAL_REDIS_URL`, how often each instance rereads the stored registry, in case it missed another instance's reload (ADR 0024). |
 | `BLINDSIGNAL_DEPENDENCY_PROBE_TIMEOUT_SECONDS` | `2` | How long a scrape of `/metrics` waits for each dependency's probe before reporting it down (ADR 0028). |
 | `BLINDSIGNAL_MAX_MESSAGE_BYTES` | `65536` | Maximum message size in UTF-8 bytes, at most `65536` (docs/protocol.md §1). |

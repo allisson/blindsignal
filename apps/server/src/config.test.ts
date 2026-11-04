@@ -106,6 +106,7 @@ describe('loadConfig', () => {
       BLINDSIGNAL_DATABASE_URL: 'postgresql://bs:pw@db.example:5432/bs',
       BLINDSIGNAL_DATABASE_POOL_SIZE: '4',
       BLINDSIGNAL_REDIS_URL: 'rediss://default:pw@cache.example:6380',
+      BLINDSIGNAL_REDIS_PREFIX: 'staging:',
       BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS: '20',
       BLINDSIGNAL_MAX_CONNECTION_SECONDS: '3300',
       BLINDSIGNAL_MAX_CONNECTIONS: '900',
@@ -164,7 +165,7 @@ describe('loadConfig', () => {
       shutdownDelayMs: 5_000,
       shutdownTimeoutMs: 25_000,
       database: { url: 'postgresql://bs:pw@db.example:5432/bs', poolSize: 4 },
-      redis: { url: 'rediss://default:pw@cache.example:6380' },
+      redis: { url: 'rediss://default:pw@cache.example:6380', prefix: 'staging:' },
       preAuthentication: {
         authenticationTimeoutMs: 4_000,
         maxUnauthenticatedPerIp: 3,
@@ -345,7 +346,13 @@ describe('loadConfig', () => {
     const database = { ...production, BLINDSIGNAL_DATABASE_URL: 'postgres://db/bs' };
     expect(config({ ...database, BLINDSIGNAL_REDIS_URL: 'redis://cache' }).redis).toEqual({
       url: 'redis://cache',
+      prefix: 'blindsignal:',
     });
+    for (const prefix of ['', 'a b']) {
+      expect(error({ ...database, BLINDSIGNAL_REDIS_PREFIX: prefix })).toContain(
+        'BLINDSIGNAL_REDIS_PREFIX',
+      );
+    }
     expect(config(database).redis).toBeUndefined();
     const invalid = error({ ...database, BLINDSIGNAL_REDIS_URL: 'http://u:secret-pw@cache' });
     expect(invalid).toContain('BLINDSIGNAL_REDIS_URL');

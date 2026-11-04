@@ -422,9 +422,24 @@ describe('TokenVerifier', () => {
         const result = await verifier.verify(await mint(second.privateKey, 'k2'));
         expect(result).toEqual({ ok: false, code: 'invalid_token' });
       }
+      // An unknown kid is no failed fetch: the cached keys still verify.
+      expect((await verifier.verify(await mint(first.privateKey, 'k1'))).ok).toBe(true);
       expect(fetch).toHaveBeenCalledTimes(1);
       vi.setSystemTime(at(30));
       expect((await verifier.verify(await mint(second.privateKey, 'k2'))).ok).toBe(true);
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('waits a cooldown after a failed fetch, then fetches again', async () => {
+      const { verifier, fetch, first, mint } = await remote();
+      fetch.mockResolvedValueOnce(new Response('down', { status: 503 }));
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const result = await verifier.verify(await mint(first.privateKey, 'k1'));
+        expect(result).toEqual({ ok: false, code: 'invalid_token' });
+      }
+      expect(fetch).toHaveBeenCalledTimes(1);
+      vi.setSystemTime(at(30));
+      expect((await verifier.verify(await mint(first.privateKey, 'k1'))).ok).toBe(true);
       expect(fetch).toHaveBeenCalledTimes(2);
     });
 

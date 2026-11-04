@@ -34,7 +34,9 @@ Phase 9 task.
   is disconnected is lost, as the protocol's events already allow: presence is listed again on
   discovery, and a session whose peer missed an event times out.
 - **Keys and channels start with a prefix,** `blindsignal:` by default, so deployments can share a
-  server and each test runs under a prefix of its own.
+  server and each test runs under a prefix of its own. Amended by the Phase 12 security review:
+  `BLINDSIGNAL_REDIS_PREFIX` sets it, one per deployment, since pub/sub ignores the database
+  number and a database of its own does not keep a deployment apart.
 - **Standalone or Sentinel, never Cluster.** `acquireSlots` spans an application's and two
   devices' keys in one script, which Cluster refuses across hash slots.
 - **Testing:** one contract suite in `@blindsignal/core/testing` runs against the in-memory adapter

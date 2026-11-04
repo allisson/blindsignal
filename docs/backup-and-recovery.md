@@ -11,7 +11,7 @@ What to back up in a BlindSignal deployment, and how to restore it. The decision
 | Registry file | Every application, its keys, and its status | Rebuild it from the applications' backend teams; revoked applications can be reactivated by mistake |
 | Environment or secret store | `BLINDSIGNAL_*` settings and the three secrets of `docs/secrets-and-keys.md` | Rotate every secret |
 | PostgreSQL | The last registry accepted, with `createdAt` and `updatedAt`, and the device records | Start on an empty database: see [Without a backup](#without-a-backup) |
-| Redis or Valkey | Coordination state only | Nothing: clients reconnect and rebuild it |
+| Redis or Valkey | Coordination state, and the `jti` claims | Restart every server instance: until then, a used token can authenticate again (ADR 0035) |
 
 - **Keep the registry file and the environment off the host,** with every change: in a private
   repository or your configuration management. Never commit the secrets themselves to it.

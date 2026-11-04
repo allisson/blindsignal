@@ -150,8 +150,14 @@ export async function syncRegistry(
   stored: Pick<ApplicationRepository, 'getAll'>,
   copy: Pick<ApplicationRepository, 'replaceAll'>,
   current: Registry,
+  development: boolean,
 ): Promise<Registry> {
   const next = await storedRegistry(stored, current);
+  // Another instance, in development mode by mistake, may have stored it (spec §14.1).
+  const dev = next.applications.some(({ issuer, keys }) =>
+    trustsDevIssuer(issuer, 'publicKeys' in keys ? keys.publicKeys : undefined),
+  );
+  if (dev && !development) throw new Error('the stored registry trusts the dev issuer');
   await copy.replaceAll(next.applications);
   return next;
 }
@@ -177,6 +183,15 @@ export async function followRegistry(
 export type RegistryResult =
   | { readonly ok: true; readonly registry: Registry }
   | { readonly ok: false; readonly error: string };
+
+/** Whether an application trusts the dev issuer, whose private key is public (spec §14.1). */
+function trustsDevIssuer(
+  issuer: string,
+  publicKeys: readonly { readonly [parameter: string]: unknown }[] | undefined,
+): boolean {
+  const devKey = publicKeys?.some((key) => key.x === DEV_PUBLIC_KEY_X) ?? false;
+  return issuer.startsWith(DEV_ISSUER_ORIGIN) || devKey;
+}
 
 /**
  * Parses and validates the registry file. A reload passes the current registry; the result is
@@ -207,8 +222,7 @@ export function parseRegistry(
     if (previous?.revoked.has(entry.appId) && entry.status !== 'revoked') {
       errors.push(`${entry.appId}: a revoked application cannot be reactivated`);
     }
-    const devKey = entry.publicKeys?.some((key) => key.x === DEV_PUBLIC_KEY_X) ?? false;
-    if (!development && (entry.issuer.startsWith(DEV_ISSUER_ORIGIN) || devKey)) {
+    if (!development && trustsDevIssuer(entry.issuer, entry.publicKeys)) {
       errors.push(`${entry.appId}: the dev issuer is trusted only in development mode`);
     }
     seenApps.add(entry.appId);

@@ -282,13 +282,27 @@ describe('syncRegistry', () => {
     await stored.replaceAll(applications);
     const copy = new InMemoryApplicationRepository();
     const current = load(file(app({ appId: 'vault', issuer: 'https://vault.example' })));
-    const synced = await syncRegistry(stored, copy, {
-      ...current,
-      revoked: new Set(['removed']),
-    });
+    const synced = await syncRegistry(
+      stored,
+      copy,
+      { ...current, revoked: new Set(['removed']) },
+      false,
+    );
     expect(synced.applications).toEqual(applications);
     expect(await copy.getAll()).toEqual(applications);
     expect(synced.revoked).toEqual(new Set(['removed']));
+  });
+
+  it('refuses a stored registry that trusts the dev issuer, outside development mode', async () => {
+    const stored = new InMemoryApplicationRepository();
+    const dev = parseRegistry(file(devApplication('notes')), { now: t0, development: true });
+    if (!dev.ok) throw new Error(dev.error);
+    await stored.replaceAll(dev.registry.applications);
+    const copy = new InMemoryApplicationRepository();
+    const current = load(file(app()));
+    await expect(syncRegistry(stored, copy, current, false)).rejects.toThrow('dev issuer');
+    expect(await copy.getAll()).toEqual([]);
+    expect((await syncRegistry(stored, copy, current, true)).applications).toHaveLength(1);
   });
 });
 

@@ -22,6 +22,10 @@ must back up, how, and what a restore brings back.
   `firstSeenAt` and lets devices that never return stop counting at once.
 - **Redis holds nothing to back up.** Presence, sessions, rate-limit windows, and connection slots
   are rebuilt as clients reconnect (ADR 0023); its persistence settings are the operator's choice.
+  Amended by the Phase 12 security review: it also holds the `jti` claims, so data it loses while
+  the instances run lets a used token authenticate again until it expires. Redis runs with
+  `maxmemory-policy noeviction`, and every instance restarts after Redis loses data, since an
+  instance rejects tokens issued before it started (ADR 0006).
 
 ## Rules
 

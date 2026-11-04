@@ -257,12 +257,27 @@ export class TokenVerifier {
 
   #createKeySet(keys: IssuerKeys): JWTVerifyGetKey {
     if ('publicKeys' in keys) return createLocalJWKSet({ keys: keys.publicKeys as JWK[] });
-    const { timeoutMs, cacheMaxAgeMs, cooldownMs, fetch } = this.#options.jwks ?? {};
-    return createRemoteJWKSet(new URL(keys.jwksUri), {
+    const { timeoutMs, cacheMaxAgeMs, cooldownMs = 30_000, fetch } = this.#options.jwks ?? {};
+    const remote = createRemoteJWKSet(new URL(keys.jwksUri), {
       timeoutDuration: timeoutMs,
       cacheMaxAge: cacheMaxAgeMs,
       cooldownDuration: cooldownMs,
       [customFetch]: fetch,
     });
+    // jose starts its cooldown only after a fetch succeeds: while the issuer's endpoint fails,
+    // every token would fetch again (spec §5.3).
+    let failedAt = -Infinity;
+    return async (header, token) => {
+      if (Date.now() - failedAt < cooldownMs) throw new errors.JWKSNoMatchingKey();
+      try {
+        return await remote(header, token);
+      } catch (error) {
+        const fetched =
+          error instanceof errors.JWKSNoMatchingKey ||
+          error instanceof errors.JWKSMultipleMatchingKeys;
+        if (!fetched) failedAt = Date.now();
+        throw error;
+      }
+    };
   }
 }

@@ -62,7 +62,10 @@ the decisions behind them are in `docs/adr/0032-self-hosted-compose.md`.
   connections with `1001` (ADR 0031). Upgrade one minor version at a time, and roll back by
   redeploying the previous one; migrations are never reverted (ADR 0044).
 - **Logs:** `docker compose logs -f server`, one JSON object per line, with no token, secret, or
-  payload (`apps/server/README.md`).
+  payload (`apps/server/README.md`). Docker keeps them until the container is removed, and logs
+  with a client IP may stay 14 days at most (ADR 0012): once the checks above pass, set
+  `BLINDSIGNAL_LOG_LEVEL=warn` in `.env`, which writes no client IP, or ship the logs to a store
+  that deletes them after 14 days.
 - **TURN:** the `turn` profile runs Coturn on this host (`docs/vps.md`), or run it elsewhere as
   `docs/turn-operations.md` describes; either way, set `BLINDSIGNAL_TURN_URLS` and
   `BLINDSIGNAL_TURN_SECRET` in `.env`.

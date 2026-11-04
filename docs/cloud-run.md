@@ -29,7 +29,9 @@ lands in the project your shell happens to point at.
 - A service account for the service, with `roles/secretmanager.secretAccessor` on its secrets.
 - With PostgreSQL and Redis: a database the instances reach, such as Supabase (`docs/supabase.md`)
   or Cloud SQL, and Memorystore for Valkey or Redis in a VPC the service joins through Direct VPC
-  egress (`--network`, `--subnet`, `--vpc-egress=private-ranges-only`).
+  egress (`--network`, `--subnet`, `--vpc-egress=private-ranges-only`). Set its
+  `maxmemory-policy` to `noeviction` (ADR 0035), and give each deployment that shares it a
+  `BLINDSIGNAL_REDIS_PREFIX` of its own.
 - TURN, when you need it, on a host of its own: Cloud Run serves HTTP, not the UDP a relay needs
   (`docs/turn-operations.md`, `docs/vps.md`).
 
@@ -145,7 +147,10 @@ service, and set `BLINDSIGNAL_TRUSTED_PROXIES` to the front end's range only.
 ## Metrics and logs
 
 - **Logs:** Cloud Run collects stdout. Each line is one JSON object with `level` and `event`
-  (ADR 0037), so Cloud Logging can filter on `jsonPayload.event`.
+  (ADR 0037), so Cloud Logging can filter on `jsonPayload.event`. The `_Default` bucket keeps
+  logs 30 days, and logs with a client IP may stay 14 at most (ADR 0012): set
+  `BLINDSIGNAL_LOG_LEVEL=warn`, which writes no client IP, or route the service's logs to a
+  bucket created with `--retention-days=14` and exclude them from `_Default`.
 - **Metrics:** `/metrics` is on the admin port, which Cloud Run does not expose. Set
   `OTEL_EXPORTER_OTLP_ENDPOINT` to an OTLP/HTTP endpoint (ADR 0038): a backend that takes header
   credentials, through `OTEL_EXPORTER_OTLP_HEADERS`, or an OpenTelemetry Collector running as a
