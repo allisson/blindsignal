@@ -85,8 +85,8 @@ to every application, which is not known yet (ADR 0011). The unauthenticated cap
 instance's connections; the rate-limit buckets live in the coordination adapter.
 
 Quotas and rate limits (ADR 0011) are server defaults: an application's registry entry overrides
-each one under `quotas` and `rateLimits`. The defaults are starting values until load testing sets
-them (spec §8.2). A rate limit is `rate,burst`: tokens added per second, and the bucket's size.
+each one under `quotas` and `rateLimits`. Load tests validate the defaults before every minor and
+major release (ADR 0049); `docs/load-report.md` has each run's results. A rate limit is `rate,burst`: tokens added per second, and the bucket's size.
 
 | Variable | Default | Registry key |
 |---|---|---|

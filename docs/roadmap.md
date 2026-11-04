@@ -559,14 +559,15 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Review protocol compatibility: ADR 0045.
 - [x] Complete security review: ADR 0048, `docs/security-review.md`.
 - [x] Complete abuse-resistance review: `docs/security-review.md`.
-- [ ] Complete performance and load tests.
+- [x] Complete performance and load tests: ADR 0049, `docs/load-report.md`.
 - [x] Complete browser compatibility tests: ADR 0047.
 - [ ] Publish SDK documentation.
 - [ ] Publish application onboarding documentation.
 - [ ] Publish deployment documentation.
 - [x] Define semantic versioning: ADR 0043.
 - [x] Define support and upgrade policy: ADR 0044.
-- [ ] Fix or accept the open findings of the security and abuse reviews (`docs/security-review.md`).
+- [ ] Fix or accept the open findings of the security and abuse reviews (`docs/security-review.md`)
+  and of the load tests (`docs/load-report.md`).
 
 ### Deliverables
 
@@ -664,4 +665,5 @@ accept error codes and end reasons that a later release adds (ADR 0045), and the
 is reviewed, with `refresh()` on demand (ADR 0046), and the SDK names its supported browsers, with
 WebKit in CI (ADR 0047); the security review left no blocking finding open, and repeats before
 every minor and major release (ADR 0048, `docs/security-review.md`), and the abuse review left
-none open either.
+none open either; load tests validate the quota and rate-limit defaults before every minor and
+major release too (ADR 0049, `docs/load-report.md`).

@@ -408,7 +408,7 @@ Application-level configurable quotas should include:
 
 Device-level limits should prevent a single device from exhausting an application's allocation.
 
-Initial values must be configurable and validated through load testing rather than treated as universal constants.
+Initial values must be configurable and validated through load testing rather than treated as universal constants. `docs/adr/0049-load-tests.md` defines the load tests, and `docs/load-report.md` records their results.
 
 The MVP quotas, where each is checked, and the `quota_exceeded` error are in `docs/adr/0011-quotas-and-rate-limits.md`.
 

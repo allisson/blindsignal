@@ -26,6 +26,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test:coverage
+      # Keeps the load test working; its numbers are not recorded (ADR 0049).
+      - run: node tests/load/load.ts --smoke
 
   browser:
     runs-on: ubuntu-latest
