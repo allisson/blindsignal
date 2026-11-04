@@ -107,6 +107,11 @@ const environment = z
     BLINDSIGNAL_TOKEN_MAX_LIFETIME_SECONDS: seconds.positive().default(600),
     BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS: seconds.default(60),
     BLINDSIGNAL_TOKEN_MAX_NAMESPACES: seconds.positive().default(100),
+    // Remote key sets (spec §5.3): jose's defaults, and a size limit on the response.
+    BLINDSIGNAL_JWKS_TIMEOUT_SECONDS: seconds.positive().default(5),
+    BLINDSIGNAL_JWKS_CACHE_SECONDS: seconds.positive().default(600),
+    BLINDSIGNAL_JWKS_COOLDOWN_SECONDS: seconds.positive().default(30),
+    BLINDSIGNAL_JWKS_MAX_BYTES: count.default(65_536),
     BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS: seconds.positive().default(30),
     // How long a closing connection waits for the client's close before it is terminated (ADR 0011).
     BLINDSIGNAL_CLOSE_TIMEOUT_SECONDS: seconds.positive().default(5),
@@ -238,6 +243,12 @@ export interface ServerConfig {
     readonly maxLifetimeSeconds: number;
     readonly clockSkewSeconds: number;
     readonly maxNamespaces: number;
+    readonly jwks: {
+      readonly timeoutMs: number;
+      readonly cacheMaxAgeMs: number;
+      readonly cooldownMs: number;
+      readonly maxBytes: number;
+    };
   };
   readonly heartbeatIntervalMs: number;
   readonly closeTimeoutMs: number;
@@ -322,6 +333,12 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
         maxLifetimeSeconds: vars.BLINDSIGNAL_TOKEN_MAX_LIFETIME_SECONDS,
         clockSkewSeconds: vars.BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS,
         maxNamespaces: vars.BLINDSIGNAL_TOKEN_MAX_NAMESPACES,
+        jwks: {
+          timeoutMs: vars.BLINDSIGNAL_JWKS_TIMEOUT_SECONDS * 1000,
+          cacheMaxAgeMs: vars.BLINDSIGNAL_JWKS_CACHE_SECONDS * 1000,
+          cooldownMs: vars.BLINDSIGNAL_JWKS_COOLDOWN_SECONDS * 1000,
+          maxBytes: vars.BLINDSIGNAL_JWKS_MAX_BYTES,
+        },
       },
       heartbeatIntervalMs: vars.BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS * 1000,
       closeTimeoutMs: vars.BLINDSIGNAL_CLOSE_TIMEOUT_SECONDS * 1000,

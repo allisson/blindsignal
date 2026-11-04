@@ -22,6 +22,7 @@ import {
   type JWTVerifyGetKey,
 } from 'jose';
 import { z } from 'zod';
+import { DEV_PUBLIC_KEY_X } from './registry.ts';
 
 const REQUIRED_CLAIMS = [
   'iss',
@@ -36,6 +37,9 @@ const REQUIRED_CLAIMS = [
 ];
 
 const claims = z.object({
+  // jwtVerify checks that the audience is the application's; a token for other services too is
+  // refused, since any of them could use it here (spec §5.3).
+  aud: z.union([z.string(), z.tuple([z.string()])]),
   sub: userId,
   app_id: z.string(),
   device_id: deviceId,
@@ -89,13 +93,57 @@ export interface TokenVerifierOptions {
   /** Tokens issued before it are rejected, since `jti` tracking does not survive a restart. */
   readonly startedAt: Date;
   readonly now?: () => Date;
-  /** Remote key set fetching, spec §5.3; the defaults are jose's. */
+  /** Trust a remote key set that holds the dev issuer's key; only in development mode. */
+  readonly development?: boolean;
+  /** Remote key set fetching, spec §5.3; the defaults are jose's, and the server's size limit. */
   readonly jwks?: {
     readonly timeoutMs?: number;
     readonly cacheMaxAgeMs?: number;
     readonly cooldownMs?: number;
+    readonly maxBytes?: number;
     readonly fetch?: FetchImplementation;
   };
+}
+
+/** The body, or an error once it exceeds `maxBytes`, which stops reading it. */
+async function readLimited(response: Response, maxBytes: number): Promise<string> {
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for await (const chunk of response.body ?? []) {
+    size += chunk.byteLength;
+    if (size > maxBytes) throw new Error('the key set exceeds its size limit');
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
+ * Fetches a key set within `maxBytes` and, outside development mode, refuses one that holds the
+ * dev issuer's key, whose private half is public (spec §14.1). Either fails the fetch.
+ */
+function keySetFetch(
+  fetchImpl: FetchImplementation,
+  maxBytes: number,
+  development: boolean,
+): FetchImplementation {
+  return async (url, options) => {
+    const response = await fetchImpl(url, options);
+    if (response.status !== 200) return response;
+    const text = await readLimited(response, maxBytes);
+    if (!development && holdsDevKey(text)) throw new Error('the key set holds the dev key');
+    return new Response(text, { status: 200, headers: response.headers });
+  };
+}
+
+function holdsDevKey(text: string): boolean {
+  try {
+    const { keys } = JSON.parse(text) as { keys?: unknown };
+    return (
+      Array.isArray(keys) && keys.some((key) => (key as { x?: unknown })?.x === DEV_PUBLIC_KEY_X)
+    );
+  } catch {
+    return false; // jose rejects it as JSON.
+  }
 }
 
 /** A verified token: the connection context minus what the protocol layer adds. */
@@ -257,12 +305,18 @@ export class TokenVerifier {
 
   #createKeySet(keys: IssuerKeys): JWTVerifyGetKey {
     if ('publicKeys' in keys) return createLocalJWKSet({ keys: keys.publicKeys as JWK[] });
-    const { timeoutMs, cacheMaxAgeMs, cooldownMs = 30_000, fetch } = this.#options.jwks ?? {};
+    const {
+      timeoutMs,
+      cacheMaxAgeMs,
+      cooldownMs = 30_000,
+      maxBytes = 65_536,
+      fetch: fetchImpl = fetch,
+    } = this.#options.jwks ?? {};
     const remote = createRemoteJWKSet(new URL(keys.jwksUri), {
       timeoutDuration: timeoutMs,
       cacheMaxAge: cacheMaxAgeMs,
       cooldownDuration: cooldownMs,
-      [customFetch]: fetch,
+      [customFetch]: keySetFetch(fetchImpl, maxBytes, this.#options.development ?? false),
     });
     // jose starts its cooldown only after a fetch succeeds: while the issuer's endpoint fails,
     // every token would fetch again (spec §5.3).

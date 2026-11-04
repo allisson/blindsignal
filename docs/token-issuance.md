@@ -37,8 +37,9 @@ The BlindSignal operator registers the application in the registry file
 - The private key stays on the backend. It never reaches browser code, the SDK, or a client
   bundle (spec §5.2).
 - Every key has a `kid`, and every token names it in its header.
-- A JWKS endpoint answers within 5 seconds. The server caches the set for 10 minutes and, on an
-  unknown `kid`, refetches at most once every 30 seconds per issuer.
+- A JWKS endpoint answers within 5 seconds, with `200` and at most 64 KiB, never a redirect. The
+  server caches the set for 10 minutes and, on an unknown `kid` or a failed fetch, refetches at
+  most once every 30 seconds per issuer. The operator may change each value.
 
 ## Token
 
@@ -47,7 +48,7 @@ Header: `{ "alg": "EdDSA" | "ES256", "kid": "<key id>" }`.
 | Claim        | Requirement                                                                              |
 | ------------ | ---------------------------------------------------------------------------------------- |
 | `iss`        | The registered issuer.                                                                   |
-| `aud`        | The registered audience.                                                                 |
+| `aud`        | The registered audience, as a string or an array holding only it.                        |
 | `sub`        | The user's stable ID in the application, 1–256 characters.                               |
 | `app_id`     | The registered `appId`.                                                                  |
 | `device_id`  | The device's stable ID for this user, 1–256 characters.                                  |
