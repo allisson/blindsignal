@@ -3,7 +3,7 @@ import type { AddressInfo, Socket } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { ApplicationRecord, CoordinationAdapter } from '@blindsignal/core';
 import { MAX_MESSAGE_BYTES } from '@blindsignal/protocol';
-import { WebSocketServer, type WebSocket } from 'ws';
+import { WebSocketServer, type ServerOptions, type WebSocket } from 'ws';
 import type { PreAuthentication } from './config.ts';
 import { clientIp, type ProxyTrust } from './domain/client-ip.ts';
 import { isOriginAllowed, type AllowedOrigins } from './domain/origin.ts';
@@ -14,6 +14,8 @@ export interface SignalingServerOptions {
   /** Which forwarding headers to trust when deriving the client IP for logs (spec §8.1). */
   readonly proxyTrust: ProxyTrust;
   readonly heartbeatIntervalMs: number;
+  /** How long a close waits for the client's before the socket is terminated (ADR 0011). */
+  readonly closeTimeoutMs: number;
   /** Closes each connection with 1001 before this lifetime ends; 0 or absent for none (ADR 0029). */
   readonly maxConnectionMs?: number;
   /** Open connections, upgrades in progress included; more get HTTP 503. 0 or absent for none (ADR 0030). */
@@ -60,7 +62,14 @@ export class SignalingServer {
     const maxBytes = options.connection.maxMessageBytes ?? MAX_MESSAGE_BYTES;
     // shortcut: frames up to twice the limit reach the parser, which answers message_too_large;
     // larger ones are cut by ws with 1009 before being buffered (docs/protocol.md §9).
-    this.#wss = new WebSocketServer({ noServer: true, maxPayload: 2 * maxBytes, autoPong: false });
+    // ws 8.22 takes closeTimeout, which @types/ws 8.18 does not declare yet.
+    const wsOptions: ServerOptions & { readonly closeTimeout: number } = {
+      noServer: true,
+      maxPayload: 2 * maxBytes,
+      autoPong: false,
+      closeTimeout: options.closeTimeoutMs,
+    };
+    this.#wss = new WebSocketServer(wsOptions);
     this.#http.on('upgrade', (request, socket: Socket, head) =>
       this.#upgrade(request, socket, head),
     );
@@ -146,6 +155,8 @@ export class SignalingServer {
   }
 
   #upgrade(request: IncomingMessage, socket: Socket, head: Buffer): void {
+    // Node stops handling the socket's errors at the upgrade: unhandled, a reset would crash.
+    socket.on('error', () => socket.destroy());
     // Defense in depth only: non-browser clients send no Origin (spec §16).
     if (this.#draining) return refuse(socket, 503);
     if (!isOriginAllowed(request.headers.origin, this.#options.allowedOrigins)) {
@@ -263,8 +274,11 @@ export class SignalingServer {
 
 const reasons = { 403: 'Forbidden', 429: 'Too Many Requests', 503: 'Service Unavailable' };
 
-/** Answers an upgrade with an HTTP status and no WebSocket (ADR 0011). */
+/**
+ * Answers an upgrade with an HTTP status and no WebSocket (ADR 0011), then destroys the socket:
+ * a client that never closes its side would otherwise hold its slot.
+ */
 function refuse(socket: Socket, status: keyof typeof reasons, retryAfterSeconds?: number): void {
   const retryAfter = retryAfterSeconds === undefined ? '' : `Retry-After: ${retryAfterSeconds}\r\n`;
-  socket.end(`HTTP/1.1 ${status} ${reasons[status]}\r\n${retryAfter}\r\n`);
+  socket.end(`HTTP/1.1 ${status} ${reasons[status]}\r\n${retryAfter}\r\n`, () => socket.destroy());
 }

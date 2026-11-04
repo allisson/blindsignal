@@ -119,6 +119,7 @@ async function main(): Promise<void> {
     allowedOrigins: config.allowedOrigins,
     proxyTrust: config.proxyTrust,
     heartbeatIntervalMs: config.heartbeatIntervalMs,
+    closeTimeoutMs: config.closeTimeoutMs,
     maxConnectionMs: config.maxConnectionMs,
     maxConnections: config.maxConnections,
     preAuthentication: config.preAuthentication,

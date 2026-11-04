@@ -69,8 +69,8 @@ own; start it after Caddy has obtained the certificate.
    ```
 
 2. Review `turnserver.conf`: set `external-ip` if the VPS sits behind NAT, as on AWS or Google
-   Cloud, where its interface has a private address; and set `user-quota`, `total-quota`, and
-   `max-bps` for the relayed sessions you expect (`docs/turn-operations.md`).
+   Cloud, where its interface has a private address; and adjust `user-quota`, `total-quota`, and
+   `max-bps` to the relayed sessions you expect (`docs/turn-operations.md`).
 3. Start it; `up` also recreates the server with the new variables, so it issues credentials:
 
    ```sh

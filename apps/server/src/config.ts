@@ -108,6 +108,8 @@ const environment = z
     BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS: seconds.default(60),
     BLINDSIGNAL_TOKEN_MAX_NAMESPACES: seconds.positive().default(100),
     BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS: seconds.positive().default(30),
+    // How long a closing connection waits for the client's close before it is terminated (ADR 0011).
+    BLINDSIGNAL_CLOSE_TIMEOUT_SECONDS: seconds.positive().default(5),
     BLINDSIGNAL_PRESENCE_LEASE_SECONDS: seconds.positive().default(90),
     BLINDSIGNAL_NEGOTIATION_TIMEOUT_SECONDS: seconds.positive().default(30),
     BLINDSIGNAL_DEVICE_TTL_DAYS: seconds.positive().default(30),
@@ -238,6 +240,7 @@ export interface ServerConfig {
     readonly maxNamespaces: number;
   };
   readonly heartbeatIntervalMs: number;
+  readonly closeTimeoutMs: number;
   /** 0 when connections have no maximum lifetime. */
   readonly maxConnectionMs: number;
   /** 0 when the instance has no connection cap. */
@@ -321,6 +324,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
         maxNamespaces: vars.BLINDSIGNAL_TOKEN_MAX_NAMESPACES,
       },
       heartbeatIntervalMs: vars.BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS * 1000,
+      closeTimeoutMs: vars.BLINDSIGNAL_CLOSE_TIMEOUT_SECONDS * 1000,
       maxConnectionMs: vars.BLINDSIGNAL_MAX_CONNECTION_SECONDS * 1000,
       maxConnections: vars.BLINDSIGNAL_MAX_CONNECTIONS,
       presenceLeaseMs: vars.BLINDSIGNAL_PRESENCE_LEASE_SECONDS * 1000,

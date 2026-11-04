@@ -37,6 +37,8 @@ import { Metrics } from './telemetry.ts';
 interface Options {
   readonly allowedOrigins?: AllowedOrigins;
   readonly heartbeatIntervalMs?: number;
+  readonly closeTimeoutMs?: number;
+  readonly authenticationTimeoutMs?: number;
   readonly maxConnectionMs?: number;
   readonly maxConnections?: number;
   readonly presenceLeaseMs?: number;
@@ -78,6 +80,7 @@ async function start(options: Options = {}) {
       header: 'x-forwarded-for',
     },
     heartbeatIntervalMs: options.heartbeatIntervalMs ?? 60_000,
+    closeTimeoutMs: options.closeTimeoutMs ?? defaults.closeTimeoutMs,
     maxConnectionMs: options.maxConnectionMs,
     maxConnections: options.maxConnections,
     preAuthentication,
@@ -96,7 +99,7 @@ async function start(options: Options = {}) {
       coordination,
       iceServers: [],
       clockSkewSeconds: 60,
-      authenticationTimeoutMs: 10_000,
+      authenticationTimeoutMs: options.authenticationTimeoutMs ?? 10_000,
       authenticationAttempts: preAuthentication.authenticationAttempts,
       deviceTtlMs: 86_400_000,
       limits: defaults.limits,
@@ -395,6 +398,82 @@ describe('SignalingServer', () => {
       const limited = await client(from('203.0.113.1'));
       limited.send('auth.authenticate', { token: 'unverified' });
       expect(await limited.next('error')).toMatchObject({ payload: { code: 'rate_limited' } });
+    });
+
+    /**
+     * Sends an upgrade over raw TCP and resolves to the response's status line and a socket that
+     * never closes its side; `ended` resolves once the server closes its own.
+     */
+    const rawUpgrade = (url: string, headers: Record<string, string> = {}) =>
+      new Promise<{ socket: Socket; status: string; ended: Promise<void> }>((resolve) => {
+        const { hostname, port } = new URL(url);
+        const socket = connect({ host: hostname, port: Number(port), allowHalfOpen: true });
+        const ended = new Promise<void>((done) => socket.once('end', () => done()));
+        socket.on('error', () => {});
+        socket.once('connect', () => {
+          const lines = Object.entries(headers).map(([name, value]) => `${name}: ${value}\r\n`);
+          socket.write(
+            'GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+              'Sec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n' +
+              `${lines.join('')}\r\n`,
+          );
+        });
+        socket.once('data', (data) =>
+          resolve({ socket, status: data.toString().split('\r\n')[0] ?? '', ended }),
+        );
+      });
+
+    it('frees the slot of a refused upgrade whose client never closes its side', async () => {
+      const { client, url } = await start({
+        trustedProxies: proxied,
+        maxConnections: 2,
+        preAuthentication: { maxUnauthenticatedPerIp: 1 },
+      });
+      await client(from('203.0.113.1'));
+      const refused = await rawUpgrade(url, ip('203.0.113.1'));
+      expect(refused.status).toBe('HTTP/1.1 429 Too Many Requests');
+      await refused.ended;
+      await vi.waitFor(() => client(from('203.0.113.2')));
+      refused.socket.destroy();
+    });
+
+    it('terminates a client that misses the deadline and never answers the close', async () => {
+      const { server, url } = await start({ authenticationTimeoutMs: 50, closeTimeoutMs: 100 });
+      const opened = await rawUpgrade(url);
+      expect(opened.status).toBe('HTTP/1.1 101 Switching Protocols');
+      expect(server.connections).toBe(1);
+      await opened.ended;
+      await vi.waitFor(() => expect(server.connections).toBe(0));
+      opened.socket.destroy();
+    });
+
+    it('survives a client that resets its socket during the upgrade', async () => {
+      // The upgrade waits on the connection-attempt rate limit until the client has reset.
+      const coordination = new InMemoryCoordinationAdapter();
+      const consume = coordination.consumeRateLimit.bind(coordination);
+      let reached = () => {};
+      const waiting = new Promise<void>((resolve) => (reached = resolve));
+      let reset = () => {};
+      const gate = new Promise<void>((resolve) => (reset = resolve));
+      coordination.consumeRateLimit = async (...args) => {
+        reached();
+        await gate;
+        return consume(...args);
+      };
+      const { http, url } = await start({ coordination });
+      const { hostname, port } = new URL(url);
+      const socket = connect({ host: hostname, port: Number(port) });
+      socket.on('error', () => {});
+      socket.once('connect', () =>
+        socket.write(
+          'GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n',
+        ),
+      );
+      await waiting;
+      socket.resetAndDestroy();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      reset();
+      expect(await http('/healthz')).toBe(200);
     });
 
     it('releases the count of an attempt refused by the rate limit', async () => {

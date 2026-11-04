@@ -50,7 +50,11 @@ Initial values are set through load testing (spec §8.2).
 - **Token bucket:** each category has a configurable rate and burst. A message takes one token
   from every bucket that applies to it.
 - **Before the upgrade:** connection attempts above the limit, or beyond the unauthenticated
-  connection cap, are refused with HTTP `429` and no WebSocket is opened.
+  connection cap, are refused with HTTP `429` and no WebSocket is opened. Amended by the Phase 12
+  abuse-resistance review: the refused socket is destroyed once the response is written, so a
+  client that never closes its side, or resets it, holds no slot and cannot end the process; and a
+  connection the server closes, at the authentication deadline or otherwise, is terminated when
+  its client has not answered the close within `BLINDSIGNAL_CLOSE_TIMEOUT_SECONDS` (default 5).
 - **After the upgrade:** a message above a limit gets `error` `rate_limited` with `retryAfterMs`
   from the bucket and is dropped; the connection stays open. `invalid_message` replies count
   toward the connection's signaling bucket, so malformed traffic is limited too.

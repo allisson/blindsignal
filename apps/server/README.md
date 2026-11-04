@@ -52,6 +52,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_TOKEN_CLOCK_SKEW_SECONDS` | `60` | Clock-skew tolerance on token times. |
 | `BLINDSIGNAL_TOKEN_MAX_NAMESPACES` | `100` | Maximum namespaces in one token. |
 | `BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS` | `30` | WebSocket ping interval. |
+| `BLINDSIGNAL_CLOSE_TIMEOUT_SECONDS` | `5` | A connection the server closes is terminated when its client has not answered the close this long after (ADR 0011). |
 | `BLINDSIGNAL_SHUTDOWN_DELAY_SECONDS` | `0` | On `SIGTERM`, readiness fails and upgrades get HTTP `503` this long before the connections close. Set it to the time the load balancer takes to stop routing to a failing instance (ADR 0031). |
 | `BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS` | `8` | Deadline of the shutdown, delay included, above the delay; past it the server logs `server.shutdown_timeout` and exits with `1`. Keep it below the platform's grace period: 10 seconds on Cloud Run and in `docker stop` (ADR 0031). |
 | `BLINDSIGNAL_MAX_CONNECTION_SECONDS` | `0` (none) | Each connection is closed with `1001` between 90% and 100% of this lifetime; the SDK reconnects. Set it below the hosting platform's request timeout, such as Cloud Run's (ADR 0029). |
