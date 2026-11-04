@@ -521,8 +521,8 @@ Operating TURN is not required to complete the initial local MVP.
 
 - [ ] Build a minimal SDK example.
 - [ ] Integrate with BlindVault.
-- [ ] Implement backend token issuance examples, building on the Phase 2 development issuer.
-- [ ] Document trusted issuer and JWKS setup.
+- [x] Implement backend token issuance examples, building on the Phase 2 development issuer.
+- [x] Document trusted issuer and JWKS setup.
 - [ ] Document application-level E2EE responsibilities.
 - [ ] Validate namespace isolation between applications.
 - [ ] Validate independent application protocols.
@@ -648,3 +648,5 @@ a session that never connects (ADR 0018), and `docs/turn-operations.md` is the T
 guide. A cross-network test through a TURN server reachable from other networks is deferred, with
 no date (ADR 0017). Session authorization and proof-of-possession, post-MVP tasks of Phase 5, are done (ADR 0040,
 ADR 0041); pairing is done: the server serves it and the SDK asks for and answers it (ADR 0042).
+Phase 11 has started: `examples/backend-issuer` issues tokens with its own key, documents the
+registry and JWKS setup, and grants pairings (`docs/token-issuance.md`).

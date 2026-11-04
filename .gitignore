@@ -154,3 +154,4 @@ vite.config.ts.timestamp-*
 
 # Self-hosted deployment: the operator's own files (docs/self-hosted.md)
 examples/self-hosted/registry.json
+examples/backend-issuer/registry.json

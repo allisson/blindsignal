@@ -67,7 +67,8 @@ tasks, session authorization is done: the token's `permissions` claim narrows `s
 device key with `cnf.jkt` needs a proof that the SDK's non-extractable `DeviceKey` signs
 (ADR 0041); pairing is done: a new device asks its user's present devices with the SDK's
 `requestPairing()`, and one approves with a JWT its `DeviceKey` signs, for the backend to grant the
-namespace (ADR 0042). The workspace uses
+namespace (ADR 0042). Phase 11 has started: `examples/backend-issuer` is an application backend
+that issues tokens with its own key and grants pairings. The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
