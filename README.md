@@ -8,4 +8,5 @@ Use it from a browser with the SDK: see [`packages/sdk/README.md`](packages/sdk/
 [`examples/minimal-app`](examples/minimal-app/README.md) adds a backend that issues tokens and grants
 pairings; [`docs/token-issuance.md`](docs/token-issuance.md) says what such a backend must do.
 
-Integrating an application: start with [`docs/onboarding.md`](docs/onboarding.md).
+Integrating an application: start with [`docs/onboarding.md`](docs/onboarding.md). Deploying the
+server: start with [`docs/deployment.md`](docs/deployment.md).
