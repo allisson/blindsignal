@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/backend.ts",
+    "./config": "./src/config.ts"
+  },
   "scripts": {
     "start": "node src/main.ts",
     "keygen": "node src/keygen.ts",

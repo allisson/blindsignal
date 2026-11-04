@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>BlindSignal minimal app</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "@blindsignal/sdk": "/sdk/index.ts",
+          "@blindsignal/protocol": "/protocol/index.ts",
+          "zod": "/zod/index.js"
+        }
+      }
+    </script>
+    <script type="module" src="/app.ts"></script>
+  </head>
+  <body>
+    <h1>BlindSignal minimal app</h1>
+    <form id="login">
+      <label>User <input id="user" autocomplete="username" required /></label>
+      <button type="submit">Sign in</button>
+    </form>
+    <p>Device: <span id="device"></span>. Signaling: <span id="state">disconnected</span></p>
+    <p id="pair" hidden>
+      This device is new: <button id="ask" type="button">Ask to pair</button>
+      <span id="pairing"></span>
+    </p>
+    <h2>Devices</h2>
+    <ul id="devices"></ul>
+    <form id="send">
+      <label>Message <input id="message" autocomplete="off" /></label>
+      <button type="submit">Send</button>
+    </form>
+    <ul id="log"></ul>
+  </body>
+</html>

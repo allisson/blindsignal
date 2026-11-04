@@ -519,7 +519,7 @@ Operating TURN is not required to complete the initial local MVP.
 
 ### Tasks
 
-- [ ] Build a minimal SDK example.
+- [x] Build a minimal SDK example: `examples/minimal-app`, on the backend of `examples/backend-issuer`.
 - [ ] Integrate with BlindVault.
 - [x] Implement backend token issuance examples, building on the Phase 2 development issuer.
 - [x] Document trusted issuer and JWKS setup.

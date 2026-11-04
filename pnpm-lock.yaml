@@ -312,6 +312,25 @@ importers:
         specifier: ^1.64.1
         version: 1.64.1
 
+  examples/minimal-app:
+    dependencies:
+      '@blindsignal/backend-issuer':
+        specifier: workspace:*
+        version: link:../backend-issuer
+      '@blindsignal/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@blindsignal/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@playwright/test':
+        specifier: ^1.64.1
+        version: 1.64.1
+
   packages/core: {}
 
   packages/dev-issuer:
