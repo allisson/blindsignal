@@ -93,7 +93,7 @@ Application payloads are not an asset of the server: they never reach it (spec �
 
 | Threat | Mitigation | Reference |
 |---|---|---|
-| Payload read by the server or a TURN relay | Payload only over DTLS-encrypted DataChannels; application E2EE on top | spec §4.1, §12.3 |
+| Payload read by the server or a TURN relay | Payload only over DTLS-encrypted DataChannels; against the server, whose relayed SDP carries the DTLS fingerprints, only application E2EE protects it | spec §4.1, §12.3, `docs/application-e2ee.md` |
 | TURN credentials stolen or reused | Temporary credentials scoped to one application, delivered only through `rtc.ice_config`; a long random shared secret; per-credential and server quotas on the TURN server | ADR 0009, ADR 0017 |
 | A relay used to reach the network that hosts the TURN server | `denied-peer-ip` for private, loopback, link-local, and metadata ranges; no loopback peers outside tests | ADR 0017 |
 | A revoked device keeps talking to its peers | Peers notified with `session.terminated`; the SDK closes the session | spec §6.4 |
@@ -137,10 +137,15 @@ Application payloads are not an asset of the server: they never reach it (spec �
     stolen one opens allocations for at most the configured lifetime, and each relays for as long
     as the thief refreshes it, within the TURN server's quotas; restarting the TURN server ends
     them all. It never gives payload access (ADR 0017, `docs/turn-operations.md`).
+12. **DTLS trusts the signaling server.** The DTLS fingerprints travel in the `sdp` the server
+    relays, so a server that rewrites them can read DataChannel payloads. Only application E2EE,
+    with peer keys authenticated outside BlindSignal, keeps payloads from it
+    (`docs/application-e2ee.md`).
 
 ## 6. Out of scope
 
-- Application payload formats, E2EE, and business rules (spec §4.1).
+- Application payload formats, E2EE, and business rules (spec §4.1); `docs/application-e2ee.md`
+  states what an application must do for E2EE.
 - How the issuer authenticates its users.
 - A compromised server host, operator, or issuer signing key; their protection is the deployer's.
 - Cross-instance propagation of status changes, handled with distributed adapters (roadmap

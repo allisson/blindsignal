@@ -525,7 +525,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [ ] Integrate with BlindVault.
 - [x] Implement backend token issuance examples, building on the Phase 2 development issuer.
 - [x] Document trusted issuer and JWKS setup.
-- [ ] Document application-level E2EE responsibilities.
+- [x] Document application-level E2EE responsibilities: `docs/application-e2ee.md`.
 - [x] Validate namespace isolation between applications: `apps/server/src/server.test.ts`, on
   instances sharing in-memory or Redis coordination, and the browser demo's `chat` application.
 - [x] Validate independent application protocols: in the browser demo, `notes` exchanges strings
@@ -654,4 +654,5 @@ no date (ADR 0017). Session authorization and proof-of-possession, post-MVP task
 ADR 0041); pairing is done: the server serves it and the SDK asks for and answers it (ADR 0042).
 Phase 11 has started: `examples/backend-issuer` issues tokens with its own key, documents the
 registry and JWKS setup, and grants pairings (`docs/token-issuance.md`); two applications sharing
-the server's instances reach nothing of each other, and exchange their own payload formats.
+the server's instances reach nothing of each other, and exchange their own payload formats;
+`docs/application-e2ee.md` states what applications must do for end-to-end encryption.

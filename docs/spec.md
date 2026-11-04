@@ -752,7 +752,7 @@ A PWA may be suspended or terminated by the browser or operating system. BlindSi
 - Session expiration and cleanup.
 - Regular dependency and security reviews.
 
-Application-level E2EE is the responsibility of each consuming application.
+Application-level E2EE is the responsibility of each consuming application (`docs/application-e2ee.md`).
 
 ## 17. Privacy and metadata
 
