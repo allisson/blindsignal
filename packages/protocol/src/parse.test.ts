@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { messages, type MessageType } from './messages.ts';
 import { MAX_MESSAGE_BYTES, parseClientMessage, parseServerMessage } from './parse.ts';
 
 const sessionId = '0b6c1a52-6f0c-4c1e-9f3a-2d7e8c4b5a61';
@@ -159,10 +160,10 @@ describe('parseServerMessage', () => {
 
   it.each([
     ['a client-only type', frame({ version: 1, type: 'auth.refresh', payload: { token: 't' } })],
-    ['an unknown error code', frame({ version: 1, type: 'error', payload: { code: 'oops' } })],
+    ['an empty error code', frame({ version: 1, type: 'error', payload: { code: '' } })],
     [
-      'an unknown termination reason',
-      frame({ version: 1, type: 'session.terminated', payload: { sessionId, reason: 'gone' } }),
+      'an empty termination reason',
+      frame({ version: 1, type: 'session.terminated', payload: { sessionId, reason: '' } }),
     ],
     [
       'an ICE server without urls',
@@ -170,5 +171,79 @@ describe('parseServerMessage', () => {
     ],
   ])('rejects %s', (_, text) => {
     expect(parseServerMessage(text)).toMatchObject({ ok: false, code: 'invalid_message' });
+  });
+});
+
+// What docs/protocol.md §2 lets a later release of version 1 send to a client of this one.
+describe('a client of this release reading a later release of the same version', () => {
+  const device = { namespace: 'chat:room-1', userId: 'u', deviceId: 'd' };
+  const pairing = { pairingId: sessionId };
+  const sent: Record<string, object> = {
+    'auth.challenge': { nonce: 'n' },
+    'auth.result': { userId: 'u', deviceId: 'd', expiresInMs: 1000 },
+    'presence.changed': { ...device, present: true },
+    'discovery.result': { namespace: device.namespace, devices: [{ deviceId: 'd', userId: 'u' }] },
+    'session.created': { sessionId },
+    'session.request': { sessionId, ...device },
+    'session.accepted': { sessionId },
+    'session.rejected': { sessionId },
+    'session.terminated': { sessionId, reason: 'timeout' },
+    'pairing.created': pairing,
+    'pairing.request': { ...pairing, ...device, jkt: 'k' },
+    'pairing.approved': { ...pairing, approval: 'a.b.c' },
+    'pairing.rejected': pairing,
+    'pairing.ended': { ...pairing, reason: 'timeout' },
+    'rtc.offer': { sessionId, sdp: 'v=0' },
+    'rtc.answer': { sessionId, sdp: 'v=0' },
+    'rtc.ice_candidate': { sessionId, candidate: 'candidate:1' },
+    'rtc.ice_config': { iceServers: [{ urls: ['turn:t'], username: 'u', credential: 'c' }] },
+    'connection.pong': {},
+    ack: {},
+    error: { code: 'rate_limited', retryAfterMs: 500 },
+  };
+  /** The same value with a field this release does not know in every object. */
+  const extended = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(extended)
+      : typeof value === 'object' && value !== null
+        ? {
+            ...Object.fromEntries(Object.entries(value).map(([k, v]) => [k, extended(v)])),
+            later: 1,
+          }
+        : value;
+
+  it('has a sample of every type the server sends', () => {
+    const received = (Object.keys(messages) as MessageType[]).filter(
+      (type) => messages[type].direction !== 'client',
+    );
+    expect(Object.keys(sent).sort()).toEqual(received.sort());
+  });
+
+  it.each(Object.entries(sent))(
+    'reads %s with optional fields it does not know',
+    (type, payload) => {
+      const message = { version: 1, type, requestId: 'r-1', payload };
+      expect(parseServerMessage(frame(extended(message)))).toEqual({ ok: true, message });
+    },
+  );
+
+  it('rejects a server message type it does not know, for the SDK to ignore', () => {
+    const text = client('session.moved', { sessionId });
+    expect(parseServerMessage(text)).toEqual({
+      ok: false,
+      code: 'invalid_message',
+      requestId: 'r-1',
+    });
+  });
+
+  it.each([
+    ['error', { code: 'server_draining', retryAfterMs: 500 }],
+    ['session.terminated', { sessionId, reason: 'peer_moved' }],
+    ['pairing.ended', { pairingId: sessionId, reason: 'cancelled' }],
+  ])('keeps a %s value that a later release adds (ADR 0045)', (type, payload) => {
+    expect(parseServerMessage(frame({ version: 1, type, payload }))).toEqual({
+      ok: true,
+      message: { version: 1, type, payload },
+    });
   });
 });

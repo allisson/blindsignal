@@ -16,8 +16,10 @@ import {
   PROTOCOL_VERSION,
   type ClientMessage,
   type ErrorCode,
+  type PairingEndReason,
   type Payload,
   type ServerMessage,
+  type TerminationReason,
 } from '@blindsignal/protocol';
 import type { AbuseMonitor } from '../domain/abuse.ts';
 import { unavailability, type TokenVerifier } from '../domain/auth.ts';
@@ -130,7 +132,6 @@ type Outbound = Omit<ServerMessage, 'version'>;
 const deliver = (message: Outbound) => ({ type: 'deliver', message }) as const;
 
 type PresenceChanged = Payload<'presence.changed'>;
-type TerminationReason = Payload<'session.terminated'>['reason'];
 
 /**
  * What one participant's connection tells the other's, on any instance, so both copies of a
@@ -153,7 +154,7 @@ type PairingEvent =
   | {
       readonly type: 'pairing.ended';
       readonly pairingId: string;
-      readonly reason: Payload<'pairing.ended'>['reason'];
+      readonly reason: PairingEndReason;
     };
 type SessionMessage = ClientMessage & {
   type: 'session.accept' | 'session.reject' | 'session.close';
