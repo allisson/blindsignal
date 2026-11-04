@@ -29,12 +29,12 @@ application-issued access token can never reach it.
   {
     "applications": [
       {
-        "appId": "blindnotes",
-        "name": "BlindNotes",
+        "appId": "blindvault",
+        "name": "BlindVault",
         "status": "active",
-        "issuer": "https://api.blindnotes.example",
+        "issuer": "https://api.blindvault.example",
         "audience": "blindsignal",
-        "jwksUri": "https://api.blindnotes.example/.well-known/jwks.json",
+        "jwksUri": "https://api.blindvault.example/.well-known/jwks.json",
         "algorithms": ["EdDSA"],
         "quotas": { "devices": 1000 },
         "revokedDevices": [{ "userId": "user_123", "deviceId": "device_456" }]

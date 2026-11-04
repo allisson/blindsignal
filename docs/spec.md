@@ -8,7 +8,7 @@
 
 BlindSignal is an independent connectivity infrastructure that allows authorized applications and devices to discover each other and establish peer-to-peer communication sessions.
 
-It is designed to be consumed by multiple applications, including BlindNotes, BlindVault, and BlindChat.
+It is designed to be consumed by multiple applications, such as BlindVault.
 
 BlindSignal provides application access control, authentication, device identity, authorization, discovery, signaling, and connection lifecycle management.
 
@@ -132,13 +132,6 @@ Each application record should include:
 Example:
 
 ```text
-Application: blindnotes
-  app_id: blindnotes
-  status: active
-  issuer: https://api.blindnotes.example
-  audience: blindsignal
-  jwks_uri: https://api.blindnotes.example/.well-known/jwks.json
-
 Application: blindvault
   app_id: blindvault
   status: active
@@ -185,15 +178,15 @@ Example JWT payload:
 
 ```json
 {
-  "iss": "https://api.blindnotes.example",
+  "iss": "https://api.blindvault.example",
   "aud": "blindsignal",
   "sub": "user_123",
-  "app_id": "blindnotes",
+  "app_id": "blindvault",
   "device_id": "device_456",
   "iat": 1793500000,
   "exp": 1793500600,
   "jti": "unique-token-id",
-  "namespaces": ["blindnotes:workspace-789"]
+  "namespaces": ["blindvault:vault-789"]
 }
 ```
 
@@ -355,10 +348,7 @@ Device revocation is an operator action through the control plane; it is not ava
 
 Namespaces isolate devices and sessions by application and logical scope.
 
-Examples:
-- `blindnotes:<workspace-scope>`
-- `blindvault:<vault-scope>`
-- `blindchat:<conversation-scope>`
+Example: `blindvault:<vault-scope>`.
 
 Namespace identifiers are not credentials.
 
@@ -847,11 +837,11 @@ client.on("state", ({ state, error }) => {
 });
 
 await client.connect(); // resolves to { userId, deviceId } from the token
-await client.join("blindnotes:workspace");
-const [device] = await client.discover("blindnotes:workspace");
+await client.join("blindvault:vault-1");
+const [device] = await client.discover("blindvault:vault-1");
 
 const session = await client.createSession({
-  namespace: "blindnotes:workspace",
+  namespace: "blindvault:vault-1",
   userId: device.userId,
   deviceId: device.deviceId,
 });
