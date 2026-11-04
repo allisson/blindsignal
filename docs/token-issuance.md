@@ -64,15 +64,15 @@ Other claims are ignored. Example:
 
 ```json
 {
-  "iss": "https://api.blindnotes.example",
+  "iss": "https://api.blindvault.example",
   "aud": "blindsignal",
   "sub": "user_123",
-  "app_id": "blindnotes",
+  "app_id": "blindvault",
   "device_id": "device_456",
   "iat": 1793500000,
   "exp": 1793500300,
   "jti": "5f0c1c3e-7d64-4f43-9a51-1c0a7a3b9e21",
-  "namespaces": ["blindnotes:workspace-789"]
+  "namespaces": ["blindvault:vault-789"]
 }
 ```
 

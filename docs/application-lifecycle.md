@@ -19,12 +19,12 @@ must do is in `docs/token-issuance.md`, and its keys in `docs/secrets-and-keys.m
 
    ```json
    {
-     "appId": "blindnotes",
-     "name": "BlindNotes",
+     "appId": "blindvault",
+     "name": "BlindVault",
      "status": "active",
-     "issuer": "https://api.blindnotes.example",
+     "issuer": "https://api.blindvault.example",
      "audience": "blindsignal",
-     "jwksUri": "https://api.blindnotes.example/.well-known/jwks.json",
+     "jwksUri": "https://api.blindvault.example/.well-known/jwks.json",
      "algorithms": ["EdDSA"],
      "quotas": { "devices": 50000 }
    }
