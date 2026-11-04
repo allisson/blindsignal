@@ -56,6 +56,7 @@ session.on("open", () => session.send("hello"));
 | `join(namespace)`, `leave(namespace)` | Presence in a namespace; joined namespaces are joined again after a reconnect. |
 | `discover(namespace)` | The other devices present in a joined namespace. |
 | `createSession({ namespace, userId, deviceId })` | A requester's `Session`, `pending` until the target accepts. |
+| `requestPairing(namespace)` | Asks this user's devices in `namespace` to approve this one; see [Pairing](#pairing). |
 | `close()` | Closes the connection and stops reconnecting; open DataChannels stay until their sessions close. |
 | `state` | `disconnected`, `connecting`, or `connected`. |
 
@@ -65,6 +66,8 @@ session.on("open", () => session.send("hello"));
 | `presence` | `{ namespace, userId, deviceId, present }` |
 | `rejoinFailed` | `{ namespace, error }`: a namespace not joined again after a reconnect. |
 | `sessionRequest` | A `SessionRequest`: the peer, `sessionId`, `accept()`, and `reject()`. |
+| `pairingRequest` | A `PairingRequest`: `pairingId`, the new device's `namespace`, `userId`, `deviceId`, and `jkt`, `approve()`, and `reject()`. |
+| `pairingEnded` | `{ pairingId, reason }`: a pairing request ended without this device's answer: `answered`, `timeout`, or `requester_gone`. |
 
 `on(event, listener)` returns the function that removes the listener.
 
@@ -91,6 +94,30 @@ const client = new BlindSignalClient({
 With `deviceKey`, the client waits for the server's `auth.challenge`, up to `heartbeat.timeoutMs`,
 and signs a proof for each token. Clearing the site's data loses the key: the backend then binds
 the new one. `DeviceKey.from(keyPair)` wraps a P-256 ECDSA pair kept elsewhere.
+
+## Pairing
+
+A device the user adds asks the user's devices already in a namespace to approve it, then takes
+the approval to the backend, which issues it tokens with the namespace (`docs/adr/0042-pairing.md`,
+`docs/token-issuance.md#pairing`). Both sides need a `deviceKey` and tokens bound to it; the new
+device's token lists the namespace in `pairing`.
+
+```typescript
+// The new device; requestPairing() without a deviceKey rejects with a TypeError.
+const result = await client.requestPairing("notes:workspace");
+if (result.status === "approved") await fetch("/pairings", { method: "POST", body: result.approval });
+
+// A device already in the namespace, joined there.
+client.on("pairingRequest", (request) => {
+  // The application asks its user; approve() signs the approval with the device key.
+  void request.approve();
+});
+```
+
+`requestPairing` resolves to `{ status: "approved", approval }`, `{ status: "rejected" }`, or
+`{ status: "timeout" }`, and rejects with a `BlindSignalError`: `peer_unavailable` when no device
+can be asked, `not_authorized`, `rate_limited`, or `connection_closed` when the connection drops
+before an answer. `deviceKey.approval(...)` is the JWT `approve()` sends, valid for 5 minutes.
 
 ## Session
 

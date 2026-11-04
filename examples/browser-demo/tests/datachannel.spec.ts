@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
+import { createHash } from 'node:crypto';
 
 /** Each browser its own context, as two devices; a suffix keeps parallel projects apart. */
 async function open(browser: Browser, user: string, device: string, query: object = {}) {
@@ -93,6 +94,40 @@ test('a bound token without its proof is refused', async ({ browser }, info) => 
   await page.goto(`/?${new URLSearchParams(query)}`);
   await expect.poll(() => received.some((frame) => frame.includes('"invalid_token"'))).toBe(true);
   await expect(page.locator('#state')).not.toHaveText('connected');
+});
+
+test("a new device is approved by its user's device in the namespace", async ({
+  browser,
+}, info) => {
+  // A user of its own per project: devices of the same user in parallel runs would be asked too.
+  const user = `carol-${info.project.name}`;
+  const laptop = await open(browser, user, 'laptop', { pop: '' });
+  const tablet = await open(browser, user, 'tablet', { pop: '', pairing: '' });
+
+  await tablet.page.getByRole('button', { name: 'Ask to pair' }).click();
+  await expect(tablet.page.locator('#pairing')).toHaveText('approved');
+  await expect(laptop.page.locator('#log')).toContainText(`approved ${user}/tablet`);
+
+  // The server checked the signature; the claims bind the tablet's key, the key is the laptop's.
+  const approval = await tablet.page.locator('#approval').textContent();
+  const [header, claims] = approval!
+    .split('.')
+    .slice(0, 2)
+    .map(
+      (part) => JSON.parse(Buffer.from(part, 'base64url').toString()) as Record<string, unknown>,
+    );
+  expect(header).toMatchObject({ typ: 'blindsignal-pairing+jwt', alg: 'ES256' });
+  const { crv, kty, x, y } = header!.jwk as Record<string, string>;
+  const thumbprint = createHash('sha256')
+    .update(JSON.stringify({ crv, kty, x, y }))
+    .digest('base64url');
+  expect(thumbprint).toBe(await laptop.page.locator('#key').textContent());
+  expect(claims).toMatchObject({
+    namespace: 'notes:demo',
+    sub: user,
+    device_id: 'tablet',
+    jkt: await tablet.page.locator('#key').textContent(),
+  });
 });
 
 // Each signaling server of playwright.config.ts offers one TURN URL, so a forced relay uses it.

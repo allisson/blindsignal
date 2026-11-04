@@ -60,6 +60,25 @@ export type Presence = Payload<'presence.changed'>;
 
 export type Device = Payload<'discovery.result'>['devices'][number];
 
+/**
+ * A new device of this user asks to be paired into a namespace (ADR 0042). approve() signs the
+ * approval with this client's device key. Unanswered, it ends with `pairingEnded`.
+ */
+export interface PairingRequest {
+  readonly pairingId: string;
+  readonly namespace: string;
+  readonly userId: string;
+  readonly deviceId: string;
+  /** The new device's key thumbprint, which the approval binds. */
+  readonly jkt: string;
+  approve(): Promise<void>;
+  reject(): Promise<void>;
+}
+
+/** How a pairing request ended for the device that asked; `approval` goes to its backend. */
+export type PairingResult =
+  { status: 'approved'; approval: string } | { status: 'rejected' } | { status: 'timeout' };
+
 /** A peer asks for a session; answer with accept() or reject(). Unanswered, it times out. */
 export interface SessionRequest extends Peer {
   readonly sessionId: string;
@@ -75,6 +94,9 @@ export interface ClientEvents extends Record<string, unknown> {
   /** A namespace could not be joined again after a reconnect, and is no longer joined. */
   rejoinFailed: { namespace: string; error: BlindSignalError['code'] };
   sessionRequest: SessionRequest;
+  pairingRequest: PairingRequest;
+  /** A pairing request this device was asked ended unanswered by it. */
+  pairingEnded: Payload<'pairing.ended'>;
 }
 
 type IceConfig = Payload<'rtc.ice_config'>;
@@ -106,6 +128,8 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
   readonly #sessions = new Map<string, Session>();
   /** Every RTCPeerConnection not yet closed, its session ended or not. */
   readonly #links = new Set<PeerLink>();
+  /** Pairings this device asked for and awaits, by ID. They fail when the connection drops. */
+  readonly #pairings = new Map<string, PromiseWithResolvers<PairingResult>>();
   /** Bumped by close(), so an attempt in flight discards its result. */
   #generation = 0;
   #attempts = 0;
@@ -181,6 +205,22 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
     const created = await signaling.request('session.create', peer);
     if (this.#signaling !== signaling) throw new BlindSignalError('connection_closed');
     return this.#track(created.payload.sessionId, peer, 'requester', 'pending');
+  }
+
+  /**
+   * Asks this user's devices present in `namespace` to approve this one (ADR 0042). Needs a
+   * `deviceKey`, and a token listing the namespace in its `pairing` claim.
+   */
+  async requestPairing(namespace: string): Promise<PairingResult> {
+    if (this.#options.deviceKey === undefined) {
+      throw new TypeError('pairing needs a deviceKey');
+    }
+    const signaling = this.#current();
+    const created = await signaling.request('pairing.create', { namespace });
+    if (this.#signaling !== signaling) throw new BlindSignalError('connection_closed');
+    const pending = Promise.withResolvers<PairingResult>();
+    this.#pairings.set(created.payload.pairingId, pending);
+    return pending.promise;
   }
 
   /** Closes the connection and stops reconnecting. Open DataChannels stay open until their sessions close. */
@@ -279,6 +319,23 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
       case 'session.terminated':
         this.#end(message.payload.sessionId, message.payload.reason);
         return;
+      case 'pairing.request':
+        this.emit('pairingRequest', this.#pairingRequest(message.payload));
+        return;
+      case 'pairing.approved':
+        return this.#settle(message.payload.pairingId, {
+          status: 'approved',
+          approval: message.payload.approval,
+        });
+      case 'pairing.rejected':
+        return this.#settle(message.payload.pairingId, { status: 'rejected' });
+      case 'pairing.ended':
+        // The device that asked hears only of its timeout; an asked one, of any end.
+        if (this.#pairings.has(message.payload.pairingId)) {
+          return this.#settle(message.payload.pairingId, { status: 'timeout' });
+        }
+        this.emit('pairingEnded', message.payload);
+        return;
       case 'rtc.offer':
       case 'rtc.answer':
       case 'rtc.ice_candidate':
@@ -301,6 +358,31 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
         await this.#current().request('session.reject', { sessionId });
       },
     };
+  }
+
+  #pairingRequest(asked: Payload<'pairing.request'>): PairingRequest {
+    const { pairingId } = asked;
+    return {
+      ...asked,
+      approve: async () => {
+        const key = this.#options.deviceKey;
+        // The server asks only devices whose tokens are bound, and those need the key.
+        if (key === undefined) throw new TypeError('pairing needs a deviceKey');
+        const signaling = this.#current();
+        await signaling.request('pairing.approve', {
+          pairingId,
+          approval: await key.approval(asked),
+        });
+      },
+      reject: async () => {
+        await this.#current().request('pairing.reject', { pairingId });
+      },
+    };
+  }
+
+  #settle(pairingId: string, result: PairingResult): void {
+    this.#pairings.get(pairingId)?.resolve(result);
+    this.#pairings.delete(pairingId);
   }
 
   #track(id: string, peer: Peer, role: Session['role'], state: 'pending' | 'active'): Session {
@@ -386,6 +468,10 @@ export class BlindSignalClient extends Emitter<ClientEvents> {
     this.#signaling?.close();
     this.#signaling = undefined;
     for (const id of [...this.#sessions.keys()]) this.#end(id, 'disconnected');
+    for (const pending of this.#pairings.values()) {
+      pending.reject(new BlindSignalError('connection_closed'));
+    }
+    this.#pairings.clear();
   }
 
   #heartbeat(signaling: Signaling): void {

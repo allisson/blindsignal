@@ -14,11 +14,13 @@ export {
   type Device,
   type HeartbeatOptions,
   type Identity,
+  type PairingRequest,
+  type PairingResult,
   type Presence,
   type SessionRequest,
 } from './client.ts';
 export type { BackoffOptions } from './backoff.ts';
-export { DeviceKey } from './device-key.ts';
+export { DeviceKey, type ApprovedDevice } from './device-key.ts';
 export {
   Session,
   type Peer,

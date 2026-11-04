@@ -70,4 +70,7 @@ proof with.
 - Both devices need proof-of-possession, and so the SDK's `DeviceKey`.
 - An answer sent while the requester's copy has already timed out, and the asked device's has not,
   gets `ack` and reaches no one; the requester has already received `timeout`.
-- The SDK side, answering and asking for pairing, lands apart from the server side.
+- The SDK side lands apart from the server side (amended with it): `requestPairing(namespace)`
+  resolves to `approved` with the approval, `rejected`, or `timeout`, and rejects only on errors;
+  asked devices get `pairingRequest`, whose `approve()` signs an approval valid for 5 minutes, and
+  `pairingEnded` when the request ends without their answer.

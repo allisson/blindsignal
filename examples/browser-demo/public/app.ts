@@ -10,6 +10,8 @@ const relay = params.has('relay');
 const connectTimeout = params.get('connectTimeout');
 // `?pop` binds the tokens to this origin's device key (ADR 0041).
 const deviceKey = params.has('pop') ? await DeviceKey.load() : undefined;
+// `?pairing` makes this a new device, which asks the user's other devices to approve it (ADR 0042).
+const pairing = params.has('pairing');
 
 const $ = (id: string) => document.getElementById(id)!;
 const log = (line: string) =>
@@ -26,7 +28,12 @@ const client = new BlindSignalClient({
   serverUrl,
   accessTokenProvider: async () => {
     // The backend binds the token to the key whose thumbprint the device sends.
-    const query = { user, device, ...(deviceKey && { jkt: deviceKey.thumbprint }) };
+    const query = {
+      user,
+      device,
+      ...(deviceKey && { jkt: deviceKey.thumbprint }),
+      ...(pairing && { pairing: '' }),
+    };
     const response = await fetch(`/token?${new URLSearchParams(query)}`);
     if (!response.ok) throw new Error(`token request failed: ${response.status}`);
     return response.text();
@@ -85,6 +92,26 @@ client.on('presence', (presence) => present(presence, presence.present));
 client.on('sessionRequest', (request) => {
   request.accept().then(attach, (error: unknown) => log(`accept failed: ${String(error)}`));
 });
+// Likewise for pairing: an application would show its user the new device first.
+client.on('pairingRequest', (request) => {
+  log(`pairing request from ${name(request)}`);
+  request.approve().then(
+    () => log(`approved ${name(request)}`),
+    (error: unknown) => log(`approve failed: ${String(error)}`),
+  );
+});
+client.on('pairingEnded', ({ reason }) => log(`pairing request ended: ${reason}`));
+$('pair').addEventListener('click', () => {
+  $('pairing').textContent = 'asking';
+  client.requestPairing(NAMESPACE).then(
+    // The approval goes to the backend, which then issues tokens with the namespace.
+    (result) => {
+      $('pairing').textContent = result.status;
+      if (result.status === 'approved') $('approval').textContent = result.approval;
+    },
+    (error: unknown) => ($('pairing').textContent = `failed: ${String(error)}`),
+  );
+});
 
 $('send').addEventListener('submit', (event) => {
   event.preventDefault();
@@ -101,5 +128,8 @@ $('send').addEventListener('submit', (event) => {
 $('close').addEventListener('click', () => session?.close());
 
 await client.connect();
-await client.join(NAMESPACE);
-for (const peer of await client.discover(NAMESPACE)) present(peer, true);
+// A device being paired holds no namespace yet.
+if (!pairing) {
+  await client.join(NAMESPACE);
+  for (const peer of await client.discover(NAMESPACE)) present(peer, true);
+}
