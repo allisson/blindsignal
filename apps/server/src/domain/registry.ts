@@ -54,6 +54,7 @@ const applicationEntry = z
         sessionsPerDevice: positiveInt,
         namespacesPerDevice: positiveInt,
         sessionDurationSeconds: positiveInt,
+        pairingApprovers: positiveInt,
       })
       .partial()
       .default({}),
@@ -62,6 +63,7 @@ const applicationEntry = z
         discovery: rateLimitPolicy,
         session_create: rateLimitPolicy,
         pairing: rateLimitPolicy,
+        presence: rateLimitPolicy,
         signaling: rateLimitPolicy,
         rtc: rateLimitPolicy,
         rtc_ice_candidate: rateLimitPolicy,

@@ -80,7 +80,7 @@ names the variable, never its value.
 | `BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS` | `5,20` | Connection attempts per client IP, as `rate,burst`; more get HTTP `429` with `Retry-After`. |
 | `BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION` | `1,10` | `auth.authenticate` and `auth.refresh` per client IP, as `rate,burst`; more get `rate_limited`. Devices on one development machine share `127.0.0.1`: tests with many of them raise this and `BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS`, as `examples/minimal-app/playwright.config.ts` does. |
 | `BLINDSIGNAL_MAX_QUEUED_MESSAGES` | `1024` | Frames and events waiting on one connection, at least `2`; reading pauses at half, and a full queue closes with `1013` (ADR 0013). |
-| `BLINDSIGNAL_MAX_BUFFERED_BYTES` | `1048576` | Bytes waiting in one connection's send buffer, at least `65536`; more close with `1013` (ADR 0013). |
+| `BLINDSIGNAL_MAX_BUFFERED_BYTES` | `1048576` | Bytes waiting in one connection's send buffer, at least `65536`; more close with `1013`, and above half of it the `rtc.*` a peer relays are dropped (ADR 0013). |
 | `BLINDSIGNAL_ABUSE_ALERT_THRESHOLD` | `0` (off) | An application's `rate_limited` and `quota_exceeded` errors within one window that raise an abuse alert (ADR 0016). |
 | `BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS` | `60` | The abuse alert's window. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset (off) | An OTLP/HTTP endpoint, such as `http://collector:4318`: metrics are also pushed there (ADR 0038). `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, the full URL, turns it on too, and `OTEL_EXPORTER_OTLP_HEADERS` adds headers, such as a backend's credentials. |
@@ -102,19 +102,24 @@ major release (ADR 0049); `docs/load-report.md` has each run's results. A rate l
 | `BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE` | `16` | `quotas.sessionsPerDevice` |
 | `BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE` | `100` | `quotas.namespacesPerDevice` |
 | `BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS` | `0` (no limit) | `quotas.sessionDurationSeconds` |
+| `BLINDSIGNAL_MAX_PAIRING_APPROVERS` | `10` | `quotas.pairingApprovers` |
 | `BLINDSIGNAL_RATE_LIMIT_DISCOVERY` | `2,10` | `rateLimits.discovery` |
 | `BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE` | `2,10` | `rateLimits.session_create` |
 | `BLINDSIGNAL_RATE_LIMIT_PAIRING` | `0.1,3` | `rateLimits.pairing` |
+| `BLINDSIGNAL_RATE_LIMIT_PRESENCE` | `1,10` | `rateLimits.presence` |
 | `BLINDSIGNAL_RATE_LIMIT_SIGNALING` | `50,100` | `rateLimits.signaling` |
 | `BLINDSIGNAL_RATE_LIMIT_RTC` | `10,30` | `rateLimits.rtc` |
 | `BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE` | `20,50` | `rateLimits.rtc_ice_candidate` |
 
-Every quota and rate limit is enforced. Signaling, discovery, session creation, and
-`pairing.create` are counted per connection, and `rtc.*` per session; every frame takes a signaling token, malformed ones and those
+Every quota and rate limit is enforced. Signaling, discovery, session creation, the
+`namespace.join` and `namespace.leave` that change presence, and `pairing.create` are counted per
+connection, and `rtc.*` per session; every frame takes a signaling token, malformed ones and those
 sent before authentication too, under the server default until the application is known. A
 message above a limit gets `rate_limited` with `retryAfterMs` and is dropped; the connection stays
 open. A connection reads its application's limits at `auth.authenticate` and each `auth.refresh`,
-so a reloaded registry's limits apply from its next refresh.
+so a reloaded registry's limits apply from its next refresh. A requester holds one `pending`
+session per target at a time, and a `pairing.create` reaches at most `pairingApprovers` of its
+user's devices (ADR 0011, ADR 0042).
 
 ## PostgreSQL
 

@@ -92,7 +92,7 @@ rebuilt by the server for the other session participant.
 | `namespace.leave` | C→S | `{ namespace }` | — |
 | `presence.changed` | S→C | `{ namespace, userId, deviceId, present }` | — |
 | `discovery.request` | C→S | `{ namespace }` | `namespace.discover` |
-| `discovery.result` | S→C | `{ namespace, devices: [{ deviceId, userId }] }` | — |
+| `discovery.result` | S→C | `{ namespace, devices: [{ deviceId, userId }], truncated? }` | — |
 | `session.create` | C→S | `{ namespace, userId, deviceId }` | `session.create` |
 | `session.created` | S→C | `{ sessionId }` | — |
 | `session.request` | S→C | `{ sessionId, namespace, userId, deviceId }` | — |
@@ -166,7 +166,12 @@ sender, such as a client-sent `session.request` or `rtc.ice_config`.
   joined are acknowledged without effect.
 - Neither `presence.changed` nor `discovery.result` includes the receiving device itself.
 - `discovery.request` is accepted only for a namespace the connection has joined (`not_joined`
-  otherwise) and returns the devices present in it.
+  otherwise) and returns the devices present in it. A result holds only the devices that fit in
+  the maximum message size, 64 KiB; `truncated: true` says some were left out, and
+  `presence.changed` still reports every change (ADR 0011).
+- A `namespace.join` or `namespace.leave` that changes presence takes a token from the
+  connection's `presence` bucket (ADR 0011); a repeated join and a leave of a namespace not
+  joined take none.
 - An unauthorized namespace and a nonexistent one get the same `not_authorized`, so namespaces
   cannot be enumerated (spec §7.3).
 
@@ -193,7 +198,9 @@ disconnect; `active` → `ended` on close, disconnect, revocation, or the maximu
   `not_authorized` on `session.accept`, and the session stays `pending` (ADR 0040).
 - A target that does not exist, is not authorized in the namespace, has not joined it, is the
   requester itself, or has no free session slot gets the same `peer_unavailable`, so devices and
-  their load cannot be enumerated. A session holds its quota slots from creation (ADR 0011).
+  their load cannot be enumerated. A session holds its quota slots from creation (ADR 0011). A
+  requester holds one `pending` session per target: another `session.create` to it gets
+  `quota_exceeded` until the first is accepted or ends.
 - A `pending` session expires after a configurable negotiation timeout; both sides get
   `session.terminated` with reason `timeout`. An answer that races the timeout may end the
   target's side first: the target's `session.reject` is acknowledged, or its `session.accept`
@@ -254,7 +261,8 @@ which issues tokens with the namespace (ADR 0042). The server grants nothing and
   is A's `cnf.jkt`, and every claim; a failure gets `invalid_message` and leaves the request open.
 - `pairing.create` without the namespace in the `pairing` claim, or from an unbound token, gets
   `not_authorized`; with no other device of the user present, `peer_unavailable`. It counts
-  toward the application's `pairing` rate limit.
+  toward the application's `pairing` rate limit, and reaches at most the application's
+  `pairingApprovers` quota of the user's devices (ADR 0042).
 - `pairing.approve` from a device whose refresh withdrew `pairing.approve` gets `not_authorized`.
   An answer to a pairing already answered, ended, or unknown gets `pairing_unavailable`.
 - A request lasts the negotiation timeout of §7: N and each asked device get `pairing.ended`
@@ -314,7 +322,8 @@ Five closures carry no `error`:
   backoff, like after an abnormal closure.
 - **Backpressure.** A connection whose queue of messages waiting to be handled, or whose send
   buffer, is full is closed with `1013` (Try Again Later) (ADR 0013). The SDK reconnects with
-  backoff, like after an abnormal closure.
+  backoff, like after an abnormal closure. An `rtc.*` message for a connection whose send buffer
+  is above half that limit is dropped instead, so a peer cannot close it by flooding a session.
 
 Initial catalog:
 
@@ -331,7 +340,7 @@ Initial catalog:
 | `session_unavailable` | retryable | no | Unknown session, wrong state, or sender not a participant. |
 | `pairing_unavailable` | retryable | no | Answer to a pairing request already answered, ended, or unknown (§7a). |
 | `rate_limited` | retryable | no | Rate limit exceeded; carries `retryAfterMs`. |
-| `quota_exceeded` | retryable | on `auth.authenticate` | Application connection or device-count quota on authentication; application or device session quota on `session.create`; joined-namespace quota on `namespace.join` (ADR 0011). |
+| `quota_exceeded` | retryable | on `auth.authenticate` | Application connection or device-count quota on authentication; application or device session quota, or a `pending` session to the same target, on `session.create`; joined-namespace quota on `namespace.join` (ADR 0011). |
 | `invalid_token` | retryable | on `auth.authenticate` | Bad signature, header, or claims (including a namespace without the application's prefix); lifetime above the maximum; future `iat`; `iat` before the server started (ADR 0006); replayed `jti`; unknown issuer or application; a `cnf` without a valid `proof`, or no `cnf` where the application requires one (ADR 0041). |
 | `token_expired` | retryable | except on `auth.refresh` | Token past `exp` plus the clock-skew tolerance, at authentication or on an open connection. |
 | `identity_mismatch` | retryable | no | `auth.refresh` token with a different `app_id`, `sub`, `device_id`, or `cnf.jkt`, or one that adds or drops `cnf`. |

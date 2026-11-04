@@ -101,9 +101,22 @@ describe.skipIf(url === undefined)('RedisCoordinationAdapter', () => {
     await coordination.acquirePresence('notes:a', device, 'c1', 100);
     await coordination.acquireSlots('h1', [{ key: 'app', limit: 1 }], 100);
     await coordination.consumeRateLimit('k', { ratePerSecond: 10, burst: 1 });
-    expect((await client.keys(`${prefix}*`)).length).toBe(7);
+    // The presence lease is three keys: the namespace's, its holders, and its user's.
+    expect((await client.keys(`${prefix}*`)).length).toBe(8);
     await sleep(250);
     expect(await client.keys(`${prefix}*`)).toEqual([]);
+  });
+
+  it("prunes a user's expired leases whenever that user's presence is written", async () => {
+    const { client, prefix, coordination } = await instance();
+    const device = { appId: 'notes', userId: 'u1', deviceId: 'd1' };
+    await coordination.acquirePresence('notes:a', device, 'c1', 100);
+    await coordination.acquirePresence('notes:a', { ...device, deviceId: 'd2' }, 'c2', 1000);
+    await sleep(150);
+    await coordination.acquirePresence('notes:a', { ...device, deviceId: 'd2' }, 'c2', 1000);
+    expect(await client.zCard(`${prefix}presence_user:${JSON.stringify(['notes:a', 'u1'])}`)).toBe(
+      1,
+    );
   });
 
   it('sends a script again once the server has forgotten it', async () => {

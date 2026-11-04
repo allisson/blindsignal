@@ -130,10 +130,21 @@ export class InMemoryCoordinationAdapter implements CoordinationAdapter {
     return Promise.resolve(true);
   }
 
-  listPresence(namespace: string): Promise<readonly DeviceIdentity[]> {
+  listPresence(
+    namespace: string,
+    filter?: { readonly userId: string },
+  ): Promise<readonly DeviceIdentity[]> {
     const now = this.#now();
-    const leases = [...(this.#presence.get(namespace)?.values() ?? [])];
-    return Promise.resolve(leases.filter((lease) => lease.expiresAt > now).map((l) => l.device));
+    const leases = [...(this.#presence.get(namespace)?.values() ?? [])].filter(
+      ({ device, expiresAt }) =>
+        expiresAt > now && (filter === undefined || device.userId === filter.userId),
+    );
+    return Promise.resolve(leases.map((lease) => lease.device));
+  }
+
+  isPresent(namespace: string, device: DeviceIdentity): Promise<boolean> {
+    const lease = this.#presence.get(namespace)?.get(deviceKey(device));
+    return Promise.resolve(lease !== undefined && lease.expiresAt > this.#now());
   }
 
   /** A token bucket per key, created full (ADR 0011). */

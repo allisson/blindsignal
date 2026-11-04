@@ -53,8 +53,13 @@ export interface CoordinationAdapter {
     device: DeviceIdentity,
     connectionId: string,
   ): Promise<boolean>;
-  /** Devices with a live lease in the namespace. */
-  listPresence(namespace: string): Promise<readonly DeviceIdentity[]>;
+  /** Devices with a live lease in the namespace; with `userId`, only that user's. */
+  listPresence(
+    namespace: string,
+    filter?: { readonly userId: string },
+  ): Promise<readonly DeviceIdentity[]>;
+  /** The device holds a live lease in the namespace, read without listing the others. */
+  isPresent(namespace: string, device: DeviceIdentity): Promise<boolean>;
 
   /** Takes one token from the key's bucket. */
   consumeRateLimit(key: string, policy: RateLimitPolicy): Promise<RateLimitDecision>;

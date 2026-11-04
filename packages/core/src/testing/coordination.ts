@@ -124,6 +124,32 @@ export function describeCoordinationContract(
       expect(await coordination.listPresence('notes:c')).toEqual([]);
     });
 
+    it("lists one user's live leases, and reads one device's", async () => {
+      const { coordination, elapse } = await create();
+      const phone = { ...alice, deviceId: 'd2' };
+      await coordination.acquirePresence('notes:a', alice, 'c1', TTL);
+      await coordination.acquirePresence('notes:a', bob, 'c2', TTL);
+      await coordination.acquirePresence('notes:b', phone, 'c3', TTL);
+      expect(await coordination.listPresence('notes:a', { userId: 'alice' })).toEqual([alice]);
+      expect(await coordination.listPresence('notes:a', { userId: 'carol' })).toEqual([]);
+      expect(await coordination.isPresent('notes:a', alice)).toBe(true);
+      expect(await coordination.isPresent('notes:a', phone)).toBe(false);
+      expect(await coordination.isPresent('notes:b', phone)).toBe(true);
+      expect(await coordination.isPresent('notes:a', { ...alice, appId: 'chat' })).toBe(false);
+      await coordination.acquirePresence('notes:a', phone, 'c3', TTL);
+      expect(
+        [...(await coordination.listPresence('notes:a', { userId: 'alice' }))].sort((a, b) =>
+          a.deviceId.localeCompare(b.deviceId),
+        ),
+      ).toEqual([alice, phone]);
+      expect(await coordination.releasePresence('notes:a', alice, 'c1')).toBe(true);
+      expect(await coordination.listPresence('notes:a', { userId: 'alice' })).toEqual([phone]);
+      expect(await coordination.isPresent('notes:a', alice)).toBe(false);
+      await elapse(TTL + 200);
+      expect(await coordination.listPresence('notes:a', { userId: 'alice' })).toEqual([]);
+      expect(await coordination.isPresent('notes:a', bob)).toBe(false);
+    });
+
     it('expires a lease unless renewed', async () => {
       const { coordination, elapse } = await create();
       await coordination.acquirePresence('notes:a', alice, 'c1', TTL);
@@ -132,6 +158,9 @@ export function describeCoordinationContract(
       await coordination.acquirePresence('notes:a', bob, 'c2', TTL);
       await elapse(TTL / 2 + 100);
       expect(await coordination.listPresence('notes:a')).toEqual([bob]);
+      // Expired while the namespace's other lease keeps it.
+      expect(await coordination.isPresent('notes:a', alice)).toBe(false);
+      expect(await coordination.isPresent('notes:a', bob)).toBe(true);
       await elapse(TTL / 2);
       expect(await coordination.listPresence('notes:a')).toEqual([]);
     });

@@ -18,6 +18,8 @@ Initial values are set through load testing (spec §8.2). Amended by the Phase 1
 | Application | Concurrent sessions | `session.create` |
 | Device | Concurrent sessions | `session.create`, for both devices |
 | Device | Joined namespaces | `namespace.join` |
+| Device | Pending sessions to one target: 1, not configurable | `session.create` |
+| Application | Devices one pairing request reaches (`pairingApprovers`, ADR 0042) | `pairing.create` |
 | Server | Maximum message size | every frame |
 
 - **A session takes a slot from creation,** while still `pending`, for the application and for
@@ -47,6 +49,7 @@ Initial values are set through load testing (spec §8.2). Amended by the Phase 1
 | `rtc.*` messages | Session |
 | `rtc.ice_candidate` | Session, in its own bucket |
 | Pairing attempts | Connection (ADR 0042) |
+| Presence changes (`namespace.join`, `namespace.leave`) | Connection |
 
 - **Token bucket:** each category has a configurable rate and burst. A message takes one token
   from every bucket that applies to it.
@@ -59,6 +62,27 @@ Initial values are set through load testing (spec §8.2). Amended by the Phase 1
 - **After the upgrade:** a message above a limit gets `error` `rate_limited` with `retryAfterMs`
   from the bucket and is dropped; the connection stays open. `invalid_message` replies count
   toward the connection's signaling bucket, so malformed traffic is limited too.
+
+## Amended by the Phase 12 abuse review: size and fan-out
+
+- **Presence changes take a token** from a `presence` bucket per connection
+  (`BLINDSIGNAL_RATE_LIMIT_PRESENCE`, default `1,10`), since each one fans out to every device of
+  the namespace. Only a join or leave that changes presence takes one: a repeated join renews the
+  lease, and a leave of a namespace not joined does nothing.
+- **One pending session per requester and target.** A slot keyed by both devices, limit 1, is held
+  from `session.create` until the target accepts or the session ends; another `session.create` to
+  the same target gets `quota_exceeded`. A single device can then no longer hold every session slot
+  of a target with requests it never lets finish. The limit is fixed: it is a rule of the protocol,
+  not a capacity.
+- **A full target counts toward the abuse alert** (ADR 0016), as a `quota_exceeded` does, while
+  the requester still gets `peer_unavailable`: the operator learns of a target held busy, and the
+  requester still learns nothing of its load.
+- **A `discovery.result` fits in the protocol's maximum message size,** which the SDK enforces:
+  the server lists the devices that fit and sets `truncated: true` when it left some out. Paging
+  was considered and left out: a namespace that large is outside the per-user namespaces the
+  examples use, and presence events still report every change.
+- **`pairingApprovers`** (`BLINDSIGNAL_MAX_PAIRING_APPROVERS`, default 10) bounds the devices one
+  `pairing.create` reaches (ADR 0042).
 
 ## Client IP
 

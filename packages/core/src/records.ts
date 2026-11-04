@@ -29,6 +29,8 @@ export interface Quotas {
   readonly namespacesPerDevice: number;
   /** How long a session may stay active; 0 sets no limit (ADR 0014). */
   readonly sessionDurationSeconds: number;
+  /** The user's present devices that one pairing request reaches (ADR 0042). */
+  readonly pairingApprovers: number;
 }
 
 export interface RateLimitPolicy {
@@ -38,7 +40,13 @@ export interface RateLimitPolicy {
 
 /** Rate-limit categories keyed after authentication, so an application can override them. */
 export type ApplicationRateLimit =
-  'discovery' | 'session_create' | 'pairing' | 'signaling' | 'rtc' | 'rtc_ice_candidate';
+  | 'discovery'
+  | 'session_create'
+  | 'pairing'
+  | 'presence'
+  | 'signaling'
+  | 'rtc'
+  | 'rtc_ice_candidate';
 
 /** A registry entry (spec §5.1, ADR 0005). Limits it leaves out take the server defaults. */
 export interface ApplicationRecord {

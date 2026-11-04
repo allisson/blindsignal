@@ -44,6 +44,10 @@ proof with.
   device.
 - **`pairing.create` takes a token from the `pairing` bucket,** per connection, which an
   application may override (ADR 0011).
+- **A request reaches at most `pairingApprovers` devices** (amended by the Phase 12 abuse review):
+  `BLINDSIGNAL_MAX_PAIRING_APPROVERS`, default 10, which an application may override in
+  `quotas`. The server lists only the user's devices present in the namespace, and asks the first
+  that many.
 - **The server stores no pairing.** Each connection keeps its copy in memory, and the copies stay
   in step through events on each connection's topic (ADR 0023). The requester's instance logs
   `pairing.requested`, `pairing.approved`, `pairing.rejected`, and `pairing.expired` with `appId`

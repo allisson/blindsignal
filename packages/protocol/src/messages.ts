@@ -66,7 +66,12 @@ export const messages = {
   'discovery.request': { direction: 'client', payload: namespace, reply: 'discovery.result' },
   'discovery.result': {
     direction: 'server',
-    payload: z.object({ namespace: namespaceId, devices: z.array(z.object({ deviceId, userId })) }),
+    // `truncated`: the devices that fit in one message only, the rest left out (ADR 0011).
+    payload: z.object({
+      namespace: namespaceId,
+      devices: z.array(z.object({ deviceId, userId })),
+      truncated: z.boolean().optional(),
+    }),
   },
   'session.create': { direction: 'client', payload: z.object(device), reply: 'session.created' },
   'session.created': { direction: 'server', payload: session },

@@ -18,6 +18,7 @@ import { Metrics } from '../telemetry.ts';
 import {
   Connection,
   connectionTopic,
+  fitting,
   POLICY_VIOLATION,
   presenceTopic,
   TRY_AGAIN_LATER,
@@ -1298,6 +1299,25 @@ describe('Connection', () => {
       );
     });
 
+    it('limits the joins and leaves that change presence, per connection', async () => {
+      const { connect } = await setup(limited({ presence: ONE_PER_SECOND }));
+      const client = connect();
+      await client.authenticate({ namespaces: ['notes:a', 'notes:b'] });
+      await client.request('namespace.join', { namespace: 'notes:a' });
+      // A repeated join and a leave of a namespace not joined change nothing, and take no token.
+      await client.request('namespace.join', { namespace: 'notes:a' });
+      await client.request('namespace.leave', { namespace: 'notes:b' });
+      expect(client.errors()).toEqual([]);
+      await client.request('namespace.join', { namespace: 'notes:b' });
+      expect(client.last()).toEqual(rateLimited('r5'));
+      await client.request('namespace.leave', { namespace: 'notes:a' });
+      expect(client.last()).toEqual(rateLimited('r6'));
+      expect(client.closes).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await client.request('namespace.leave', { namespace: 'notes:a' });
+      expect(client.last()?.type).toBe('ack');
+    });
+
     it('never forwards an event about the device itself', async () => {
       const { connect, coordination } = await setup();
       const alice = await joined(connect, d1);
@@ -1325,6 +1345,54 @@ describe('Connection', () => {
               { userId: 'u1', deviceId: 'd3' },
             ],
           },
+        });
+      });
+
+      it('lists only the devices that fit in one message, and says so', async () => {
+        const { connect, coordination } = await setup();
+        const alice = await joined(connect, d1);
+        const long = (n: number) => `${n}`.padEnd(256, 'x');
+        for (let n = 0; n < 200; n++) {
+          const device = { appId: 'notes', userId: long(n), deviceId: long(n) };
+          await coordination.acquirePresence('notes:a', device, `c${n}`, LEASE_MS);
+        }
+        await alice.request(
+          'discovery.request',
+          { namespace: 'notes:a' },
+          { requestId: 'r'.repeat(64) },
+        );
+        const result = alice.last();
+        if (result?.type !== 'discovery.result') throw new Error(`no result: ${result?.type}`);
+        expect(result.payload.truncated).toBe(true);
+        expect(result.payload.devices.length).toBeGreaterThan(100);
+        expect(result.payload.devices.length).toBeLessThan(200);
+        const size = Buffer.byteLength(JSON.stringify(result));
+        expect(size).toBeLessThanOrEqual(65_536);
+        // One more device would not have fit.
+        expect(
+          size + Buffer.byteLength(JSON.stringify({ userId: long(0), deviceId: long(0) })),
+        ).toBeGreaterThan(65_536 - 64);
+      });
+
+      it('never fills a result past the maximum size, whatever the lengths', () => {
+        for (let pad = 0; pad < 600; pad += 3) {
+          const devices = Array.from({ length: 300 }, (_, n) => ({
+            userId: `${n}`.padEnd(150 + (n === 0 ? pad : 0), 'u'),
+            deviceId: `${n}`.padEnd(100, 'd'),
+          }));
+          const payload = fitting('notes:a', devices);
+          const message = {
+            version: 1,
+            type: 'discovery.result',
+            requestId: 'r'.repeat(64),
+            payload,
+          };
+          expect(Buffer.byteLength(JSON.stringify(message))).toBeLessThanOrEqual(65_536);
+          expect(payload.truncated).toBe(true);
+        }
+        expect(fitting('notes:a', [{ userId: 'u', deviceId: 'd' }])).toEqual({
+          namespace: 'notes:a',
+          devices: [{ userId: 'u', deviceId: 'd' }],
         });
       });
 
@@ -1506,9 +1574,21 @@ describe('Connection', () => {
       });
     });
 
-    it('allows concurrent sessions between the same devices', async () => {
-      const { alice } = await pair();
-      expect(await create(alice)).not.toBe(await create(alice));
+    it('allows concurrent sessions between the same devices, one pending at a time', async () => {
+      const { alice, bob } = await pair();
+      const first = await create(alice);
+      await alice.request('session.create', bobDevice);
+      expect(alice.errors()).toEqual(['quota_exceeded']);
+      expect(bob.sent.filter((m) => m.type === 'session.request')).toHaveLength(1);
+      await bob.request('session.accept', { sessionId: first });
+      await settle();
+      // An active session no longer holds the pending slot, and a heartbeat does not take it back.
+      for (const client of [alice, bob]) await client.connection.heartbeat();
+      const second = await create(alice);
+      expect(second).not.toBe(first);
+      await alice.request('session.close', { sessionId: second });
+      await settle();
+      await create(alice);
     });
 
     describe('session permissions (ADR 0040)', () => {
@@ -1619,6 +1699,25 @@ describe('Connection', () => {
         expect(alice.errors()).toEqual(['peer_unavailable']);
         await alice.request('session.create', to('u4', 'd4'));
         expect(alice.last()?.type).toBe('session.created');
+      });
+
+      it('counts a full target toward the abuse alert, still answering peer_unavailable', async () => {
+        const abuse = new AbuseMonitor({ threshold: 1, windowMs: 60_000 });
+        const { connect, logs } = await setup(quotas({ sessionsPerDevice: 1 }), { abuse });
+        const alice = await member(connect, d1);
+        await member(connect, bobClaims);
+        const carol = await member(connect, carolClaims);
+        await carol.request('session.create', bobDevice);
+        expect(logs).not.toContainEqual(
+          expect.objectContaining({ event: 'application.abuse_suspected' }),
+        );
+        await alice.request('session.create', bobDevice);
+        expect(alice.errors()).toEqual(['peer_unavailable']);
+        expect(logs).toContainEqual({
+          level: 'warn',
+          event: 'application.abuse_suspected',
+          appId: 'notes',
+        });
       });
 
       it("refuses beyond the application's quota, and frees a slot on reject and timeout", async () => {
@@ -2222,6 +2321,22 @@ describe('Connection', () => {
           payload: { sessionId: context.sessionId, ...fields },
         });
         expect(context[from].sent).toHaveLength(before);
+      });
+
+      it("drops what a peer relays while the target's send buffer is half full", async () => {
+        const { alice, bob, sessionId, metrics } = await active();
+        bob.buffer(maxBufferedBytes / 2 + 1);
+        await alice.request('rtc.offer', { sessionId, sdp: 'v=0 dropped' });
+        await settle();
+        expect(bob.sent.filter((m) => m.type === 'rtc.offer')).toEqual([]);
+        expect(bob.closes).toEqual([]);
+        expect(await metrics.render()).toContain(
+          'blindsignal_coordination_events_dropped_total{reason="overloaded"} 1\n',
+        );
+        bob.buffer(maxBufferedBytes / 2);
+        await alice.request('rtc.offer', { sessionId, sdp: 'v=0 relayed' });
+        await settle();
+        expect(bob.last()).toMatchObject({ type: 'rtc.offer', payload: { sdp: 'v=0 relayed' } });
       });
 
       it('limits rtc.* per session, with rtc.ice_candidate in its own bucket', async () => {
@@ -3006,6 +3121,15 @@ describe('pairing (ADR 0042)', () => {
     await approver.request('pairing.reject', { pairingId });
     await settle();
     expect(of(requester, 'pairing.rejected')).toHaveLength(1);
+  });
+
+  it("reaches only the quota's number of the user's devices", async () => {
+    const { approver, other, requester } = await devices([
+      { ...devApplication('notes'), quotas: { pairingApprovers: 1 } },
+    ]);
+    await request(requester);
+    const asked = [approver, other].filter((client) => of(client, 'pairing.request').length > 0);
+    expect(asked).toHaveLength(1);
   });
 
   it('rate-limits pairing.create per connection', async () => {

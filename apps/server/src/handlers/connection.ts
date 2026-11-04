@@ -12,6 +12,7 @@ import type {
 import {
   closeCodeFor,
   errorClasses,
+  MAX_MESSAGE_BYTES,
   parseClientMessage,
   PROTOCOL_VERSION,
   type ClientMessage,
@@ -62,6 +63,7 @@ export interface ConnectionDependencies {
     | 'acquirePresence'
     | 'releasePresence'
     | 'listPresence'
+    | 'isPresent'
     | 'publish'
     | 'subscribe'
     | 'consumeRateLimit'
@@ -125,7 +127,37 @@ const sessionSlots = (
     },
   ] as const;
 
+/**
+ * One pending session per requester and target, so a single device cannot hold every session slot
+ * of a target with requests it never lets finish (ADR 0011).
+ */
+const pendingSlot = (requester: DeviceIdentity, target: DeviceIdentity): Slot => ({
+  key: `pending_sessions:${JSON.stringify([requester.appId, requester.userId, requester.deviceId, target.userId, target.deviceId])}`,
+  limit: 1,
+});
+
 type Outbound = Omit<ServerMessage, 'version'>;
+
+/**
+ * The devices of a `discovery.result` that fit in the protocol's maximum message size, which the
+ * SDK enforces: the rest are left out, and `truncated` says so (ADR 0011).
+ */
+export function fitting(
+  namespace: string,
+  devices: readonly { userId: string; deviceId: string }[],
+): Payload<'discovery.result'> {
+  const message = { version: PROTOCOL_VERSION, type: 'discovery.result', requestId: '' };
+  // The longest `requestId` and the `truncated` flag, which the message may still need.
+  const reserved = 64 + ',"truncated":true'.length;
+  let size = Buffer.byteLength(JSON.stringify({ ...message, payload: { namespace, devices: [] } }));
+  for (const [index, device] of devices.entries()) {
+    size += Buffer.byteLength(JSON.stringify(device)) + (index === 0 ? 0 : 1);
+    if (size + reserved > MAX_MESSAGE_BYTES) {
+      return { namespace, devices: devices.slice(0, index), truncated: true };
+    }
+  }
+  return { namespace, devices: [...devices] };
+}
 
 type PresenceChanged = Payload<'presence.changed'>;
 
@@ -278,12 +310,11 @@ export class Connection {
           await this.#terminate(session, 'peer_disconnected', true);
           continue;
         }
-        const slots = sessionSlots(
-          session.requester.device,
-          session.target.device,
-          this.#limits.quotas,
-        );
-        await this.#acquireSessionSlots(session.id, slots);
+        const { requester, target } = session;
+        const slots = sessionSlots(requester.device, target.device, this.#limits.quotas);
+        const pending =
+          session.state === 'pending' ? [pendingSlot(requester.device, target.device)] : [];
+        await this.#acquireSessionSlots(session.id, [...slots, ...pending]);
       }
     });
   }
@@ -378,6 +409,13 @@ export class Connection {
       case 'namespace.join':
         return this.#join(message);
       case 'namespace.leave':
+        // Only a leave that changes presence takes a token, as only it fans out.
+        if (
+          this.#joined.has(message.payload.namespace) &&
+          !(await this.#limit('presence', this.id, message.requestId))
+        ) {
+          return;
+        }
         await this.#leave(message.payload.namespace);
         return this.#ack(message.requestId);
       case 'discovery.request':
@@ -563,6 +601,8 @@ export class Connection {
     if (joining && this.#joined.size >= this.#limits.quotas.namespacesPerDevice) {
       return this.#error('quota_exceeded', requestId);
     }
+    // A join fans out to every device of the namespace; a repeated one renews the lease only.
+    if (joining && !(await this.#limit('presence', this.id, requestId))) return;
     if (joining) {
       const unsubscribe = await this.#deps.coordination.subscribe(
         presenceTopic(namespace),
@@ -598,7 +638,7 @@ export class Connection {
     const devices = present
       .filter((device) => !this.#isSelf(device))
       .map(({ userId, deviceId }) => ({ userId, deviceId }));
-    this.#send({ type: 'discovery.result', requestId, payload: { namespace, devices } });
+    this.#send({ type: 'discovery.result', requestId, payload: fitting(namespace, devices) });
   }
 
   async #createSession(message: ClientMessage & { type: 'session.create' }): Promise<void> {
@@ -611,24 +651,23 @@ export class Connection {
     const target = { appId: self.appId, userId, deviceId };
     // Joining requires authorization, so a present target is authorized in the namespace.
     // Every unreachable target looks the same, so devices cannot be enumerated (§7).
-    const present = await this.#deps.coordination.listPresence(namespace);
-    const targetId = await this.#deps.coordination.connectionOf(target);
-    if (
-      this.#isSelf(target) ||
-      targetId === undefined ||
-      !present.some((d) => sameDevice(d, target))
-    ) {
+    if (this.#isSelf(target) || !(await this.#deps.coordination.isPresent(namespace, target))) {
       return this.#error('peer_unavailable', requestId);
     }
+    const targetId = await this.#deps.coordination.connectionOf(target);
+    if (targetId === undefined) return this.#error('peer_unavailable', requestId);
     const requester: Participant = { connectionId: this.id, device: identityOf(self) };
     const sessionId = crypto.randomUUID();
     const [app, own, peer] = sessionSlots(requester.device, target, this.#limits.quotas);
-    if (!(await this.#acquireSessionSlots(sessionId, [app, own]))) {
+    const pending = pendingSlot(requester.device, target);
+    if (!(await this.#acquireSessionSlots(sessionId, [app, own, pending]))) {
       return this.#error('quota_exceeded', requestId);
     }
-    // A busy target looks unreachable, so its load is not revealed.
+    // A busy target looks unreachable, so its load is not revealed; the operator still learns of
+    // it, as of a quota refused (ADR 0016).
     if (!(await this.#acquireSessionSlots(sessionId, [peer]))) {
-      await this.#deps.coordination.releaseSlots(sessionId, [app.key, own.key]);
+      await this.#deps.coordination.releaseSlots(sessionId, [app.key, own.key, pending.key]);
+      this.#suspectAbuse();
       return this.#error('peer_unavailable', requestId);
     }
     const session = {
@@ -697,6 +736,7 @@ export class Connection {
     if (event.type === 'session.accepted') {
       const durationMs = this.#limits.quotas.sessionDurationSeconds * 1000;
       const pendingMs = this.#sessions.activate(sessionId, durationMs) as number;
+      await this.#releasePending(session);
       // Only the requester receives the event, so each session is observed once (ADR 0038).
       this.#deps.metrics.observe('blindsignal_session_acceptance_seconds', pendingMs / 1000);
       this.#send({ type: 'session.accepted', payload: { sessionId } });
@@ -730,6 +770,7 @@ export class Connection {
     if (type === 'session.accept') {
       // The accepting connection's limits: both devices belong to the same application.
       this.#sessions.activate(sessionId, this.#limits.quotas.sessionDurationSeconds * 1000);
+      await this.#releasePending(session);
       return this.#notify(session.requester.connectionId, { type: 'session.accepted', sessionId });
     }
     await this.#end(session);
@@ -748,10 +789,12 @@ export class Connection {
     if (!self.pairing?.includes(namespace) || self.keyThumbprint === undefined) {
       return this.#error('not_authorized', requestId);
     }
-    // The user's own devices only: a backend invites other users.
+    // The user's own devices only, up to the quota: a backend invites other users.
     const approvers: string[] = [];
-    for (const device of await this.#deps.coordination.listPresence(namespace)) {
-      if (device.userId !== self.userId || this.#isSelf(device)) continue;
+    const present = await this.#deps.coordination.listPresence(namespace, { userId: self.userId });
+    for (const device of present) {
+      if (approvers.length >= this.#limits.quotas.pairingApprovers) break;
+      if (this.#isSelf(device)) continue;
       const connectionId = await this.#deps.coordination.connectionOf(device);
       if (connectionId !== undefined) approvers.push(connectionId);
     }
@@ -915,16 +958,22 @@ export class Connection {
    */
   async #end(session: Session): Promise<boolean> {
     if (!this.#sessions.end(session.id)) return false;
-    const slots = sessionSlots(
-      session.requester.device,
-      session.target.device,
-      this.#limits.quotas,
-    );
+    const { requester, target } = session;
+    const slots = [
+      ...sessionSlots(requester.device, target.device, this.#limits.quotas),
+      pendingSlot(requester.device, target.device),
+    ];
     await this.#deps.coordination.releaseSlots(
       session.id,
       slots.map(({ key }) => key),
     );
     return true;
+  }
+
+  /** An accepted session no longer counts as its requester's pending one for the target. */
+  #releasePending({ id, requester, target }: Session): Promise<void> {
+    const { key } = pendingSlot(requester.device, target.device);
+    return this.#deps.coordination.releaseSlots(id, [key]);
   }
 
   #participates(session: Session): boolean {
@@ -1048,11 +1097,18 @@ export class Connection {
     this.#error('superseded', undefined, true);
   }
 
-  /** Relayed only within an active session, from its other participant (§7). */
+  /**
+   * Relayed only within an active session, from its other participant (§7). Dropped while this
+   * connection's send buffer is half full, so a peer that floods its session loses its own
+   * negotiation instead of closing this connection (ADR 0013).
+   */
   #onDeliver({ from, message }: Deliver): void {
     const session = this.#sessions.get(message.payload.sessionId);
     if (session?.state !== 'active' || from !== this.#peerOf(session)) {
       return this.#dropped('stale');
+    }
+    if ((this.#port.bufferedBytes ?? 0) > this.#deps.maxBufferedBytes / 2) {
+      return this.#dropped('overloaded');
     }
     this.#send(message);
   }
@@ -1061,7 +1117,7 @@ export class Connection {
    * An event that matches no schema, or no longer matches this connection's copy, or that came
    * from a connection other than the one the copy names (ADR 0023).
    */
-  #dropped(reason: 'invalid' | 'stale'): void {
+  #dropped(reason: 'invalid' | 'stale' | 'overloaded'): void {
     this.#deps.metrics.count('blindsignal_coordination_events_dropped_total', { reason });
     // Never the event: it may hold what a peer sent (ADR 0037).
     if (reason === 'invalid') {
@@ -1089,10 +1145,15 @@ export class Connection {
     const appId = this.#appId;
     if (appId === undefined) return;
     this.#deps.metrics.count('blindsignal_application_errors_total', { app_id: appId, code });
-    if ((code === 'rate_limited' || code === 'quota_exceeded') && this.#deps.abuse.record(appId)) {
-      this.#deps.logger.log('warn', 'application.abuse_suspected', { appId });
-      this.#deps.metrics.count('blindsignal_abuse_alerts_total', { app_id: appId });
-    }
+    if (code === 'rate_limited' || code === 'quota_exceeded') this.#suspectAbuse();
+  }
+
+  /** Records one rejection of the application, which may raise an abuse alert (ADR 0016). */
+  #suspectAbuse(): void {
+    const appId = this.#appId;
+    if (appId === undefined || !this.#deps.abuse.record(appId)) return;
+    this.#deps.logger.log('warn', 'application.abuse_suspected', { appId });
+    this.#deps.metrics.count('blindsignal_abuse_alerts_total', { app_id: appId });
   }
 
   /**
