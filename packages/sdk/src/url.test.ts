@@ -19,6 +19,10 @@ describe('signalingUrl', () => {
     'ws://192.168.1.10:8080/',
     'https://signal.example/',
     'http://localhost:8080/',
+    'wss://user@signal.example/',
+    'wss://:secret@signal.example/',
+    'wss://signal.example/?token=x',
+    'wss://signal.example/#token',
   ])('refuses %s', (serverUrl) => {
     expect(() => signalingUrl(serverUrl)).toThrow(TypeError);
   });

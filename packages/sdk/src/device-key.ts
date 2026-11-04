@@ -27,6 +27,11 @@ export interface ApprovedDevice {
   jkt: string;
 }
 
+const isP256Ecdsa = (key: CryptoKey, type: KeyType) =>
+  key.type === type &&
+  key.algorithm.name === 'ECDSA' &&
+  (key.algorithm as EcKeyAlgorithm).namedCurve === 'P-256';
+
 interface EcPublicJwk {
   crv: string;
   kty: string;
@@ -57,12 +62,17 @@ export class DeviceKey {
 
   /** Wraps a P-256 ECDSA key pair held elsewhere; in a browser, load() is the way in. */
   static async from({ privateKey, publicKey }: CryptoKeyPair): Promise<DeviceKey> {
-    const { crv, x, y } = await crypto.subtle.exportKey('jwk', publicKey);
-    if (crv !== 'P-256' || !x || !y) {
-      throw new TypeError('a device key is a P-256 ECDSA key pair');
+    // Non-extractable, so no script can copy the private half off the device (ADR 0041).
+    if (
+      !isP256Ecdsa(privateKey, 'private') ||
+      privateKey.extractable ||
+      !isP256Ecdsa(publicKey, 'public')
+    ) {
+      throw new TypeError('a device key is a non-extractable P-256 ECDSA key pair');
     }
+    const { x, y } = await crypto.subtle.exportKey('jwk', publicKey);
     // RFC 7638: the required members only, in lexicographic order.
-    const jwk = { crv, kty: 'EC', x, y };
+    const jwk = { crv: 'P-256', kty: 'EC', x: x as string, y: y as string };
     return new DeviceKey(privateKey, jwk, await sha256(JSON.stringify(jwk)));
   }
 

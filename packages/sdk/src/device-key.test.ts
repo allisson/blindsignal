@@ -67,6 +67,39 @@ describe('DeviceKey', () => {
   it.each([
     ['another curve', () => keyPair('P-384')],
     ['an Ed25519 key', () => crypto.subtle.generateKey('Ed25519', false, ['sign'])],
+    [
+      'an extractable key',
+      () => crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']),
+    ],
+    [
+      'an ECDH key',
+      () => crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveBits']),
+    ],
+    [
+      'a pair in the wrong order',
+      async () => {
+        const { privateKey, publicKey } = await keyPair();
+        return { privateKey: publicKey, publicKey: privateKey };
+      },
+    ],
+    [
+      'a private key as the public one',
+      async () => {
+        const { privateKey } = await keyPair();
+        return { privateKey, publicKey: privateKey };
+      },
+    ],
+    [
+      'an ECDH public key',
+      async () => ({
+        privateKey: (await keyPair()).privateKey,
+        publicKey: (
+          await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, [
+            'deriveBits',
+          ])
+        ).publicKey,
+      }),
+    ],
   ])('refuses %s', async (_, generate) => {
     await expect(DeviceKey.from(await generate())).rejects.toThrow(TypeError);
   });
