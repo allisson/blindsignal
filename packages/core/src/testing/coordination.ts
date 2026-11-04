@@ -54,18 +54,18 @@ export function describeCoordinationContract(
   describe(`${name}: device connections`, () => {
     it('returns the connection a claim replaces', async () => {
       const { coordination } = await create();
-      expect(await coordination.claimDeviceConnection(alice, 'c1')).toBeUndefined();
-      expect(await coordination.claimDeviceConnection(alice, 'c2')).toBe('c1');
-      expect(await coordination.claimDeviceConnection(alice, 'c2')).toBeUndefined();
-      expect(await coordination.claimDeviceConnection(bob, 'c3')).toBeUndefined();
+      expect(await coordination.claimDeviceConnection(alice, 'c1', TTL)).toBeUndefined();
+      expect(await coordination.claimDeviceConnection(alice, 'c2', TTL)).toBe('c1');
+      expect(await coordination.claimDeviceConnection(alice, 'c2', TTL)).toBeUndefined();
+      expect(await coordination.claimDeviceConnection(bob, 'c3', TTL)).toBeUndefined();
     });
 
     it('reads the connection that holds the claim, per device', async () => {
       const { coordination } = await create();
       expect(await coordination.connectionOf(alice)).toBeUndefined();
-      await coordination.claimDeviceConnection(alice, 'c1');
-      await coordination.claimDeviceConnection(alice, 'c2');
-      await coordination.claimDeviceConnection(bob, 'c3');
+      await coordination.claimDeviceConnection(alice, 'c1', TTL);
+      await coordination.claimDeviceConnection(alice, 'c2', TTL);
+      await coordination.claimDeviceConnection(bob, 'c3', TTL);
       expect(await coordination.connectionOf(alice)).toBe('c2');
       expect(await coordination.connectionOf({ ...alice, appId: 'other' })).toBeUndefined();
       await coordination.releaseDeviceConnection(alice, 'c2');
@@ -73,15 +73,39 @@ export function describeCoordinationContract(
       expect(await coordination.connectionOf(bob)).toBe('c3');
     });
 
+    it('expires a claim unless renewed, and reads only a live one', async () => {
+      const { coordination, elapse } = await create();
+      await coordination.claimDeviceConnection(alice, 'c1', TTL);
+      await coordination.claimDeviceConnection(bob, 'c2', TTL);
+      await elapse(TTL / 2);
+      expect(await coordination.renewDeviceConnection(bob, 'c2', TTL)).toBe(true);
+      await elapse(TTL / 2 + 100);
+      expect(await coordination.connectionOf(alice)).toBeUndefined();
+      expect(await coordination.connectionOf(bob)).toBe('c2');
+      expect(await coordination.claimDeviceConnection(alice, 'c3', TTL)).toBeUndefined();
+    });
+
+    it('renews only its own claim, and takes an expired one again', async () => {
+      const { coordination, elapse } = await create();
+      expect(await coordination.renewDeviceConnection(alice, 'c1', TTL)).toBe(true);
+      expect(await coordination.connectionOf(alice)).toBe('c1');
+      await coordination.claimDeviceConnection(alice, 'c2', TTL);
+      expect(await coordination.renewDeviceConnection(alice, 'c1', TTL)).toBe(false);
+      expect(await coordination.connectionOf(alice)).toBe('c2');
+      await elapse(TTL + 200);
+      expect(await coordination.renewDeviceConnection(alice, 'c1', TTL)).toBe(true);
+      expect(await coordination.claimDeviceConnection(alice, 'c3', TTL)).toBe('c1');
+    });
+
     it('ignores a release by a stale holder', async () => {
       const { coordination } = await create();
-      await coordination.claimDeviceConnection(alice, 'c1');
-      await coordination.claimDeviceConnection(alice, 'c2');
+      await coordination.claimDeviceConnection(alice, 'c1', TTL);
+      await coordination.claimDeviceConnection(alice, 'c2', TTL);
       await coordination.releaseDeviceConnection(alice, 'c1');
-      expect(await coordination.claimDeviceConnection(alice, 'c3')).toBe('c2');
+      expect(await coordination.claimDeviceConnection(alice, 'c3', TTL)).toBe('c2');
       await coordination.releaseDeviceConnection(alice, 'c3');
       await coordination.releaseDeviceConnection(alice, 'c3');
-      expect(await coordination.claimDeviceConnection(alice, 'c4')).toBeUndefined();
+      expect(await coordination.claimDeviceConnection(alice, 'c4', TTL)).toBeUndefined();
     });
   });
 

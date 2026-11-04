@@ -16,7 +16,6 @@ import {
   PROTOCOL_VERSION,
   type ClientMessage,
   type ErrorCode,
-  type PairingEndReason,
   type Payload,
   type ServerMessage,
   type TerminationReason,
@@ -28,6 +27,7 @@ import { approves, PendingPairings, type Pairing } from '../domain/pairings.ts';
 import { SessionRegistry, type Participant, type Session } from '../domain/sessions.ts';
 import { turnServer, type TurnPolicy } from '../domain/turn.ts';
 import type { Logger, Metrics } from '../telemetry.ts';
+import { connectionEvent, presenceEvent, type ConnectionEvent } from './events.ts';
 
 /** What a handler needs from the transport. */
 export interface ConnectionPort {
@@ -56,6 +56,7 @@ export interface ConnectionDependencies {
   readonly coordination: Pick<
     CoordinationAdapter,
     | 'claimDeviceConnection'
+    | 'renewDeviceConnection'
     | 'releaseDeviceConnection'
     | 'connectionOf'
     | 'acquirePresence'
@@ -124,12 +125,7 @@ const sessionSlots = (
     },
   ] as const;
 
-const SUPERSEDED = { type: 'superseded' } as const;
-
 type Outbound = Omit<ServerMessage, 'version'>;
-
-/** A message for another connection, sent through its topic. */
-const deliver = (message: Outbound) => ({ type: 'deliver', message }) as const;
 
 type PresenceChanged = Payload<'presence.changed'>;
 
@@ -137,25 +133,13 @@ type PresenceChanged = Payload<'presence.changed'>;
  * What one participant's connection tells the other's, on any instance, so both copies of a
  * session stay in step (ADR 0023).
  */
-type SessionEvent =
-  | { readonly type: 'session.request'; readonly session: Omit<Session, 'state'> }
-  | { readonly type: 'session.accepted'; readonly sessionId: string }
-  | { readonly type: 'session.rejected'; readonly sessionId: string }
-  | {
-      readonly type: 'session.terminated';
-      readonly sessionId: string;
-      readonly reason: TerminationReason;
-    };
+type SessionEvent = Extract<ConnectionEvent, { type: `session.${string}` }>;
 /** What the connections taking part in a pairing tell each other, on any instance (ADR 0042). */
-type PairingEvent =
-  | { readonly type: 'pairing.request'; readonly pairing: Pairing }
-  | { readonly type: 'pairing.approved'; readonly pairingId: string; readonly approval: string }
-  | { readonly type: 'pairing.rejected'; readonly pairingId: string }
-  | {
-      readonly type: 'pairing.ended';
-      readonly pairingId: string;
-      readonly reason: PairingEndReason;
-    };
+type PairingEvent = Extract<ConnectionEvent, { type: `pairing.${string}` }>;
+/** An `rtc.*` message for the other participant of a session, sent through its topic. */
+type Deliver = Extract<ConnectionEvent, { type: 'deliver' }>;
+/** An event as its publisher writes it; `#notify` adds `from`. */
+type Unsent<E> = E extends unknown ? Omit<E, 'from'> : never;
 type SessionMessage = ClientMessage & {
   type: 'session.accept' | 'session.reject' | 'session.close';
 };
@@ -280,6 +264,12 @@ export class Connection {
   heartbeat(): Promise<void> {
     return this.#enqueue(async () => {
       if (this.#context === undefined) return;
+      // Another connection took the claim: this one was superseded, and its event lost.
+      const device = identityOf(this.#context);
+      const ttlMs = this.#deps.presenceLeaseMs;
+      if (!(await this.#deps.coordination.renewDeviceConnection(device, this.id, ttlMs))) {
+        return this.#error('superseded', undefined, true);
+      }
       for (const namespace of this.#joined.keys()) await this.#acquirePresence(namespace);
       await this.#acquireConnectionSlot();
       for (const session of this.#sessions.all()) {
@@ -443,10 +433,9 @@ export class Connection {
     const previous = await this.#deps.coordination.claimDeviceConnection(
       identityOf(context),
       this.id,
+      this.#deps.presenceLeaseMs,
     );
-    if (previous !== undefined) {
-      await this.#deps.coordination.publish(connectionTopic(previous), SUPERSEDED);
-    }
+    if (previous !== undefined) await this.#notify(previous, { type: 'superseded' });
     clearTimeout(this.#deadline);
     this.#port.authenticated?.();
     this.#accept({ ...context, protocolVersion: message.version }, requestId);
@@ -577,7 +566,7 @@ export class Connection {
     if (joining) {
       const unsubscribe = await this.#deps.coordination.subscribe(
         presenceTopic(namespace),
-        (event) => this.#onPresence(event as PresenceChanged),
+        (event) => this.#onPresence(event),
       );
       this.#joined.set(namespace, unsubscribe);
     }
@@ -671,8 +660,19 @@ export class Connection {
 
   /** The other participant's connection changed the session; updates this copy to match. */
   async #onSessionEvent(event: SessionEvent): Promise<void> {
+    const self = this.#context as ConnectionContext;
     if (event.type === 'session.request') {
       const { session } = event;
+      // Only a requester of the same application asks, and only of this connection.
+      if (
+        event.from !== session.requester.connectionId ||
+        session.requester.device.appId !== self.appId ||
+        session.target.connectionId !== this.id ||
+        !sameDevice(session.target.device, self) ||
+        this.#sessions.get(session.id) !== undefined
+      ) {
+        return this.#dropped('stale');
+      }
       // Answered as a rejection, so the requester cannot tell a refusal from a policy (ADR 0040).
       if (!this.#permits(session.namespace, 'session.accept')) {
         const rejected = { type: 'session.rejected', sessionId: session.id } as const;
@@ -684,18 +684,24 @@ export class Connection {
       return this.#send({ type: 'session.request', payload });
     }
     const { sessionId } = event;
+    const session = this.#sessions.get(sessionId);
+    // Gone already: this side ended it too, and the two ends crossed. Or not from the peer.
+    if (session === undefined || event.from !== this.#peerOf(session)) {
+      return this.#dropped('stale');
+    }
+    // Only the target answers a request, while it is pending.
+    const answer = event.type === 'session.accepted' || event.type === 'session.rejected';
+    if (answer && (!this.#requested(session) || session.state !== 'pending')) {
+      return this.#dropped('stale');
+    }
     if (event.type === 'session.accepted') {
       const durationMs = this.#limits.quotas.sessionDurationSeconds * 1000;
-      const pendingMs = this.#sessions.activate(sessionId, durationMs);
-      if (pendingMs === undefined) return;
+      const pendingMs = this.#sessions.activate(sessionId, durationMs) as number;
       // Only the requester receives the event, so each session is observed once (ADR 0038).
       this.#deps.metrics.observe('blindsignal_session_acceptance_seconds', pendingMs / 1000);
       this.#send({ type: 'session.accepted', payload: { sessionId } });
       return;
     }
-    const session = this.#sessions.get(sessionId);
-    // Gone already: this side ended it too, and the two ends crossed.
-    if (session === undefined) return;
     await this.#end(session);
     if (event.type === 'session.rejected') {
       return this.#send({ type: 'session.rejected', payload: { sessionId } });
@@ -782,7 +788,7 @@ export class Connection {
     const { requestId, type, payload } = message;
     const pairing = this.#pairingRequests.get(payload.pairingId);
     if (pairing === undefined) return this.#error('pairing_unavailable', requestId);
-    let answer: PairingEvent = { type: 'pairing.rejected', pairingId: pairing.id };
+    let answer: Unsent<PairingEvent> = { type: 'pairing.rejected', pairingId: pairing.id };
     if (type === 'pairing.approve') {
       // A refresh may have withdrawn the permission since the request arrived.
       if (!this.#permits(pairing.namespace, 'pairing.approve')) {
@@ -805,6 +811,18 @@ export class Connection {
   async #onPairingEvent(event: PairingEvent): Promise<void> {
     if (event.type === 'pairing.request') {
       const { pairing } = event;
+      const self = this.#context as ConnectionContext;
+      const requester = pairing.requester.device;
+      // Only the requester asks, and only its user's other devices.
+      if (
+        event.from !== pairing.requester.connectionId ||
+        requester.appId !== self.appId ||
+        requester.userId !== self.userId ||
+        this.#isSelf(requester) ||
+        this.#pairingRequests.get(pairing.id) !== undefined
+      ) {
+        return this.#dropped('stale');
+      }
       // A device that may not approve never hears of the request.
       if (
         this.#context?.keyThumbprint === undefined ||
@@ -825,12 +843,18 @@ export class Connection {
     }
     const { pairingId } = event;
     if (event.type === 'pairing.ended') {
-      if (this.#pairingRequests.take(pairingId) === undefined) return;
+      // Only the requester ends a request.
+      if (this.#pairingRequests.get(pairingId)?.requester.connectionId !== event.from) {
+        return this.#dropped('stale');
+      }
+      this.#pairingRequests.take(pairingId);
       return this.#send({ type: 'pairing.ended', payload: { pairingId, reason: event.reason } });
     }
-    const entry = this.#pairings.take(pairingId);
-    // Gone already: it timed out, or another device answered first.
-    if (entry === undefined) return;
+    // Gone already: it timed out, or another device answered first. Or from no device asked.
+    if (!this.#pairings.get(pairingId)?.approvers.includes(event.from)) {
+      return this.#dropped('stale');
+    }
+    const entry = this.#pairings.take(pairingId) as { approvers: readonly string[] };
     // The device that answered has no copy left, and ignores it.
     const ended = { type: 'pairing.ended', pairingId, reason: 'answered' } as const;
     for (const approver of entry.approvers) await this.#notify(approver, ended);
@@ -861,7 +885,8 @@ export class Connection {
     const category = type === 'rtc.ice_candidate' ? 'rtc_ice_candidate' : 'rtc';
     if (!(await this.#limit(category, session.id, requestId))) return;
     // The parsed payload holds only the schema's fields: no requestId, no sender, no extra keys.
-    await this.#publish(this.#peerOf(session), { type, payload });
+    const relayed = { type, payload } as Deliver['message'];
+    await this.#notify(this.#peerOf(session), { type: 'deliver', message: relayed });
   }
 
   /** Ends the session; tells the other participant, and this one too when `both` is set. */
@@ -912,12 +937,10 @@ export class Connection {
       : session.requester.connectionId;
   }
 
-  #publish(connectionId: string, message: Outbound): Promise<void> {
-    return this.#deps.coordination.publish(connectionTopic(connectionId), deliver(message));
-  }
-
-  #notify(connectionId: string, event: SessionEvent | PairingEvent): Promise<void> {
-    return this.#deps.coordination.publish(connectionTopic(connectionId), event);
+  /** Publishes on the connection's topic, signed with this connection's ID for the receiver. */
+  #notify(connectionId: string, event: Unsent<ConnectionEvent>): Promise<void> {
+    const signed = { ...event, from: this.id };
+    return this.#deps.coordination.publish(connectionTopic(connectionId), signed);
   }
 
   #acquireConnectionSlot(): Promise<boolean> {
@@ -945,7 +968,10 @@ export class Connection {
     return this.#deps.coordination.publish(presenceTopic(namespace), event);
   }
 
-  #onPresence(event: PresenceChanged): void {
+  #onPresence(received: unknown): void {
+    const parsed = presenceEvent.safeParse(received);
+    if (!parsed.success) return this.#dropped('invalid');
+    const event: PresenceChanged = parsed.data;
     void this.#enqueue(() => {
       // An event queued before a leave is dropped; a device never hears about itself.
       if (this.#joined.has(event.namespace) && !this.#isSelf(event)) {
@@ -997,17 +1023,52 @@ export class Connection {
     );
   }
 
-  #onEvent(event: unknown): void {
-    const type = (event as { type?: unknown } | null)?.type;
-    if (type === SUPERSEDED.type) {
-      void this.#enqueue(() => Promise.resolve(this.#error('superseded', undefined, true)));
-    } else if (typeof type === 'string' && type.startsWith('session.')) {
+  /** Parsed before it is queued; checked against this connection's copy once its turn comes. */
+  #onEvent(received: unknown): void {
+    const parsed = connectionEvent.safeParse(received);
+    if (!parsed.success) return this.#dropped('invalid');
+    const event = parsed.data;
+    if (event.type === 'superseded') {
+      void this.#enqueue(() => this.#onSuperseded());
+    } else if (event.type === 'deliver') {
+      void this.#enqueue(() => Promise.resolve(this.#onDeliver(event)));
+    } else if (event.type.startsWith('session.')) {
       void this.#enqueue(() => this.#onSessionEvent(event as SessionEvent));
-    } else if (typeof type === 'string' && type.startsWith('pairing.')) {
+    } else {
       void this.#enqueue(() => this.#onPairingEvent(event as PairingEvent));
-    } else if (type === 'deliver') {
-      const { message } = event as ReturnType<typeof deliver>;
-      void this.#enqueue(() => Promise.resolve(this.#send(message)));
+    }
+  }
+
+  /** A newer connection took the claim; an event older than this connection's own claim is not. */
+  async #onSuperseded(): Promise<void> {
+    const device = identityOf(this.#context as ConnectionContext);
+    if ((await this.#deps.coordination.connectionOf(device)) === this.id) {
+      return this.#dropped('stale');
+    }
+    this.#error('superseded', undefined, true);
+  }
+
+  /** Relayed only within an active session, from its other participant (§7). */
+  #onDeliver({ from, message }: Deliver): void {
+    const session = this.#sessions.get(message.payload.sessionId);
+    if (session?.state !== 'active' || from !== this.#peerOf(session)) {
+      return this.#dropped('stale');
+    }
+    this.#send(message);
+  }
+
+  /**
+   * An event that matches no schema, or no longer matches this connection's copy, or that came
+   * from a connection other than the one the copy names (ADR 0023).
+   */
+  #dropped(reason: 'invalid' | 'stale'): void {
+    this.#deps.metrics.count('blindsignal_coordination_events_dropped_total', { reason });
+    // Never the event: it may hold what a peer sent (ADR 0037).
+    if (reason === 'invalid') {
+      this.#deps.logger.log('warn', 'coordination.invalid_event', {
+        connectionId: this.id,
+        appId: this.#context?.appId,
+      });
     }
   }
 

@@ -17,8 +17,8 @@ instance after its instance fails, without draining, showed two gaps:
 ## Rules
 
 - **A failed release is logged as `connection.failed`,** with the error's code or name only, as
-  any other connection failure. What it left expires with its lease (presence, slots), or the
-  device's next authentication replaces it (the device claim, ADR 0008).
+  any other connection failure. What it left expires with its lease (presence, slots, and, since
+  the coordination fixes of the Phase 12 security review, the device claim, ADR 0022).
 - **On every heartbeat, each connection checks the peer of each of its sessions.** It reads the
   peer's device claim (`CoordinationAdapter.connectionOf`); when the claim no longer names the
   peer's connection, because it was released or another connection took it, the connection ends
@@ -32,6 +32,8 @@ instance after its instance fails, without draining, showed two gaps:
 - **A lease per connection,** renewed on every heartbeat and checked by the peer. Rejected for now:
   it also ends the session of a peer whose device never reconnects, but needs a new
   `CoordinationAdapter` operation and contract for a case the maximum session duration bounds.
+  Adopted later as the device claim's lease, with the coordination fixes of the Phase 12
+  security review (ADR 0022).
 - **Only documenting `BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS`.** Rejected: with its default of no
   limit, every failed instance leaks a session slot on each peer.
 - **Releasing each part on its own,** so one failure does not stop the rest. Rejected: with Redis
@@ -41,9 +43,9 @@ instance after its instance fails, without draining, showed two gaps:
 
 - A session whose peer reconnects on another instance ends within one heartbeat interval
   (`BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS`) of the reconnect.
-- A session whose peer's instance fails and whose device never reconnects keeps the failed
-  connection's claim, so it still lasts until the maximum session duration or until this side's
-  connection closes. Multi-instance deployments should set
-  `BLINDSIGNAL_MAX_SESSION_DURATION_SECONDS` or `quotas.sessionDurationSeconds` (ADR 0014).
+- A session whose peer's instance fails and whose device never reconnects ends once the failed
+  connection's claim expires, within one presence lease (`BLINDSIGNAL_PRESENCE_LEASE_SECONDS`)
+  and one heartbeat interval (amended with the coordination fixes of the Phase 12 security review;
+  before, the claim never expired, and the session lasted until the maximum session duration).
 - A peer that closes normally still ends the session at once, through `session.terminated`; the
   check only catches what that event cannot reach.

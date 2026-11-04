@@ -16,13 +16,18 @@ Phase 9 task.
   score in that clock, so instances whose clocks drift still agree on what is live. The in-memory
   adapter keeps the clock it is given.
 - **Each operation is one command, one script, or one transaction** (ADR 0019): `SET NX PX` for a
-  `jti`, `SET GET` for a device's connection, Lua scripts for presence, rate limits, slots, and
+  `jti`, `SET GET PX` for a device's connection, Lua scripts for presence, rate limits, slots, and
   releases by holder, and a `MULTI` for releasing slots. Scripts run by their SHA1 and are sent
   again when the server answers `NOSCRIPT`, after a restart or a `SCRIPT FLUSH`.
 - **Every key expires on its own.** Presence and slots are sorted sets scored by expiry, pruned
   whenever they are written, with a key TTL no shorter than their longest member; a rate-limit
-  bucket lives until it is full again; a `jti` until its TTL. Only a device's connection claim has
-  no TTL: the device's next connection replaces it.
+  bucket lives until it is full again; a `jti` until its TTL. A device's connection claim is a
+  lease too (amended with the coordination fixes of the Phase 12 security review):
+  `claimDeviceConnection` takes it for `ttlMs`, and `renewDeviceConnection` extends it on every
+  heartbeat while the connection holds it, or takes it again once it expired. Renewing fails while
+  another connection holds it: the connection closes with `superseded`, as when that connection's
+  event reaches it. Before, the claim had no TTL, and a device that never reconnected kept a lost
+  instance's claim, and its key, for ever.
 - **Slots are leases (contract change).** `acquireSlots(holder, slots, ttlMs)` takes the slots for
   `ttlMs`, and acquiring again renews them. The server renews the connection's slot and its
   sessions' slots on every heartbeat, with the presence lease's duration

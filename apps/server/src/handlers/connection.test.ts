@@ -499,10 +499,11 @@ describe('Connection', () => {
       const client = connect();
       await client.authenticate();
       const topic = connectionTopic(client.connection.id);
-      const pong = { type: 'deliver', message: { type: 'connection.pong', payload: {} } };
-      await coordination.publish(topic, pong);
-      await coordination.publish(topic, pong);
-      await coordination.publish(topic, pong);
+      const payload = { sessionId: crypto.randomUUID(), sdp: '' };
+      const offer = { type: 'deliver', from: 'c2', message: { type: 'rtc.offer', payload } };
+      await coordination.publish(topic, offer);
+      await coordination.publish(topic, offer);
+      await coordination.publish(topic, offer);
       expect(client.closes).toEqual([TRY_AGAIN_LATER]);
     });
 
@@ -1007,7 +1008,9 @@ describe('Connection', () => {
       await newer.authenticate();
       await older.connection.closed();
       const device = { appId: 'notes', userId: 'u1', deviceId: 'd1' };
-      expect(await coordination.claimDeviceConnection(device, 'probe')).toBe(newer.connection.id);
+      expect(await coordination.claimDeviceConnection(device, 'probe', LEASE_MS)).toBe(
+        newer.connection.id,
+      );
     });
 
     it('releases its claim and topic on close', async () => {
@@ -1018,16 +1021,83 @@ describe('Connection', () => {
       await client.connection.closed();
       expect(coordination.subscribedTopics).toBe(0);
       const device = { appId: 'notes', userId: 'u1', deviceId: 'd1' };
-      expect(await coordination.claimDeviceConnection(device, 'probe')).toBeUndefined();
+      expect(await coordination.claimDeviceConnection(device, 'probe', LEASE_MS)).toBeUndefined();
     });
 
-    it('ignores unknown events on its topic', async () => {
+    it('drops events that match no schema, and logs them without their content', async () => {
+      const { connect, coordination, logs, metrics } = await setup();
+      const client = connect();
+      await client.authenticate();
+      const topic = connectionTopic(client.connection.id);
+      const pong = { type: 'connection.pong', payload: {} };
+      for (const event of [
+        { type: 'other', from: 'c2' },
+        null,
+        { type: 'superseded' },
+        { type: 'deliver', from: 'c2', message: pong },
+      ]) {
+        await coordination.publish(topic, event);
+      }
+      await client.request('connection.ping');
+      expect(client.closes).toEqual([]);
+      expect(client.last()?.type).toBe('connection.pong');
+      expect(await metrics.render()).toContain(
+        'blindsignal_coordination_events_dropped_total{reason="invalid"} 4',
+      );
+      expect(
+        logs.filter((log) => (log as { event: string }).event.startsWith('coordination.')),
+      ).toEqual(
+        Array.from({ length: 4 }, () => ({
+          level: 'warn',
+          event: 'coordination.invalid_event',
+          connectionId: client.connection.id,
+          appId: 'notes',
+        })),
+      );
+    });
+
+    it('keeps a connection that still holds its claim when a superseded arrives', async () => {
+      const { connect, coordination, metrics } = await setup();
+      const client = connect();
+      await client.authenticate();
+      await coordination.publish(connectionTopic(client.connection.id), {
+        type: 'superseded',
+        from: 'gone',
+      });
+      await client.request('connection.ping');
+      expect(client.closes).toEqual([]);
+      expect(await metrics.render()).toContain(
+        'blindsignal_coordination_events_dropped_total{reason="stale"} 1',
+      );
+    });
+
+    it('closes with superseded on a heartbeat once another connection holds the claim', async () => {
       const { connect, coordination } = await setup();
       const client = connect();
       await client.authenticate();
-      await coordination.publish(connectionTopic(client.connection.id), { type: 'other' });
-      await coordination.publish(connectionTopic(client.connection.id), null);
-      await client.request('connection.ping');
+      const device = { appId: 'notes', userId: 'u1', deviceId: 'd1' };
+      // Its superseded event lost on the way.
+      await coordination.claimDeviceConnection(device, 'elsewhere', LEASE_MS);
+      await client.connection.heartbeat();
+      expect(client.errors()).toEqual(['superseded']);
+      expect(client.closes).toEqual([4003]);
+      expect(await coordination.connectionOf(device)).toBe('elsewhere');
+    });
+
+    it('renews its claim on every heartbeat, and lets it expire once heartbeats stop', async () => {
+      const { connect, coordination } = await setup();
+      const client = connect();
+      await client.authenticate();
+      const device = { appId: 'notes', userId: 'u1', deviceId: 'd1' };
+      await vi.advanceTimersByTimeAsync(LEASE_MS - 1_000);
+      await client.connection.heartbeat();
+      await vi.advanceTimersByTimeAsync(LEASE_MS - 1_000);
+      expect(await coordination.connectionOf(device)).toBe(client.connection.id);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await coordination.connectionOf(device)).toBeUndefined();
+      // A late heartbeat takes it again while no one else has.
+      await client.connection.heartbeat();
+      expect(await coordination.connectionOf(device)).toBe(client.connection.id);
       expect(client.closes).toEqual([]);
     });
   });
@@ -1215,6 +1285,17 @@ describe('Connection', () => {
       await coordination.publish(presenceTopic('notes:a'), event('u2', 'd2', true));
       await leave;
       expect(alice.presence()).toEqual([]);
+    });
+
+    it('drops a presence event that matches no schema', async () => {
+      const { connect, coordination, metrics } = await setup();
+      const alice = await joined(connect, d1);
+      await coordination.publish(presenceTopic('notes:a'), { namespace: 'notes:a', userId: 'u2' });
+      await alice.request('connection.ping');
+      expect(alice.presence()).toEqual([]);
+      expect(await metrics.render()).toContain(
+        'blindsignal_coordination_events_dropped_total{reason="invalid"} 1',
+      );
     });
 
     it('never forwards an event about the device itself', async () => {
@@ -1573,6 +1654,7 @@ describe('Connection', () => {
         await coordination.claimDeviceConnection(
           { appId: 'notes', userId: 'u2', deviceId: 'd2' },
           'elsewhere',
+          LEASE_MS,
         );
         await alice.connection.heartbeat();
         await carol.request('session.create', to('u1', 'd1'));
@@ -1788,6 +1870,7 @@ describe('Connection', () => {
       /** A request from a requester whose instance never speaks again. */
       const request = (target: string, id = s1) => ({
         type: 'session.request',
+        from: 'gone',
         session: {
           id,
           namespace: 'notes:a',
@@ -1840,20 +1923,177 @@ describe('Connection', () => {
       it('answers a late or repeated event of the peer only once', async () => {
         const { alice, bob, sessionId, coordination } = await active();
         const topic = connectionTopic(alice.connection.id);
-        await coordination.publish(topic, { type: 'session.accepted', sessionId });
+        const from = bob.connection.id;
+        await coordination.publish(topic, { type: 'session.accepted', from, sessionId });
         await settle();
         expect(alice.sent.filter((m) => m.type === 'session.accepted')).toHaveLength(1);
         await bob.request('session.close', { sessionId });
         await settle();
         await coordination.publish(topic, {
           type: 'session.terminated',
+          from,
           sessionId,
           reason: 'timeout',
         });
-        await coordination.publish(topic, { type: 'session.rejected', sessionId });
+        await coordination.publish(topic, { type: 'session.rejected', from, sessionId });
         await settle();
         expect(sessionEvents(alice)).toEqual([terminated(sessionId, 'closed_by_peer')]);
         expect(alice.sent.filter((m) => m.type === 'session.rejected')).toEqual([]);
+      });
+    });
+
+    describe('events from other connections (ADR 0023)', () => {
+      const offer = (from: string, sessionId: string) => ({
+        type: 'deliver',
+        from,
+        message: { type: 'rtc.offer', payload: { sessionId, sdp: 'v=0' } },
+      });
+      const offers = (client: Client) => client.sent.filter((m) => m.type === 'rtc.offer');
+      const stale = async (metrics: Metrics, count: number) =>
+        expect(await metrics.render()).toContain(
+          `blindsignal_coordination_events_dropped_total{reason="stale"} ${count}`,
+        );
+
+      it('relays rtc.* only from the peer of an active session', async () => {
+        const { alice, bob, sessionId, coordination, metrics } = await active();
+        const topic = connectionTopic(alice.connection.id);
+        await coordination.publish(topic, offer('stranger', sessionId));
+        await coordination.publish(topic, offer(bob.connection.id, crypto.randomUUID()));
+        await settle();
+        expect(offers(alice)).toEqual([]);
+        await stale(metrics, 2);
+        await coordination.publish(topic, offer(bob.connection.id, sessionId));
+        await settle();
+        expect(offers(alice)).toEqual([
+          { version: 1, type: 'rtc.offer', payload: { sessionId, sdp: 'v=0' } },
+        ]);
+      });
+
+      it('relays no rtc.* while the session is pending', async () => {
+        const { alice, bob, coordination, metrics } = await pair();
+        const sessionId = await create(alice);
+        await coordination.publish(
+          connectionTopic(alice.connection.id),
+          offer(bob.connection.id, sessionId),
+        );
+        await settle();
+        expect(offers(alice)).toEqual([]);
+        await stale(metrics, 1);
+      });
+
+      it('drops answers and ends that come from a connection other than the peer', async () => {
+        const { alice, bob, coordination, metrics } = await pair();
+        const sessionId = await create(alice);
+        const topic = connectionTopic(alice.connection.id);
+        const from = 'stranger';
+        await coordination.publish(topic, { type: 'session.accepted', from, sessionId });
+        await coordination.publish(topic, { type: 'session.rejected', from, sessionId });
+        const reason = 'closed_by_peer';
+        await coordination.publish(topic, { type: 'session.terminated', from, sessionId, reason });
+        await settle();
+        expect(alice.last()?.type).toBe('session.created');
+        await stale(metrics, 3);
+        await bob.request('session.accept', { sessionId });
+        await settle();
+        expect(alice.last()).toEqual({
+          version: 1,
+          type: 'session.accepted',
+          payload: { sessionId },
+        });
+      });
+
+      it("drops an answer sent to the target, or once the requester's copy is active", async () => {
+        const { alice, bob, coordination, metrics } = await pair();
+        const sessionId = await create(alice);
+        const from = alice.connection.id;
+        await coordination.publish(connectionTopic(bob.connection.id), {
+          type: 'session.accepted',
+          from,
+          sessionId,
+        });
+        await settle();
+        expect(bob.last()?.type).toBe('session.request');
+        await bob.request('session.accept', { sessionId });
+        await settle();
+        await coordination.publish(connectionTopic(alice.connection.id), {
+          type: 'session.rejected',
+          from: bob.connection.id,
+          sessionId,
+        });
+        await settle();
+        expect(alice.sent.filter((m) => m.type === 'session.rejected')).toEqual([]);
+        await stale(metrics, 2);
+      });
+
+      it.each([
+        ['from a connection other than the requester', { from: 'stranger' }, {}, {}],
+        ['for another connection', {}, { connectionId: 'another' }, {}],
+        [
+          'for another device',
+          {},
+          { device: { appId: 'notes', userId: 'u3', deviceId: 'd3' } },
+          {},
+        ],
+        [
+          'from another application',
+          {},
+          {},
+          { device: { appId: 'chat', userId: 'u1', deviceId: 'd1' } },
+        ],
+      ])('drops a session.request %s', async (_, event, target, requester) => {
+        const { connect, coordination, metrics } = await setup();
+        const bob = await member(connect, bobClaims);
+        const session = {
+          id: crypto.randomUUID(),
+          namespace: 'notes:a',
+          requester: {
+            connectionId: 'r1',
+            device: { appId: 'notes', userId: 'u1', deviceId: 'd1' },
+            ...requester,
+          },
+          target: {
+            connectionId: bob.connection.id,
+            device: { appId: 'notes', userId: 'u2', deviceId: 'd2' },
+            ...target,
+          },
+        };
+        const topic = connectionTopic(bob.connection.id);
+        await coordination.publish(topic, {
+          type: 'session.request',
+          from: 'r1',
+          session,
+          ...event,
+        });
+        await settle();
+        expect(bob.sent.filter((m) => m.type === 'session.request')).toEqual([]);
+        await stale(metrics, 1);
+      });
+
+      it('asks the target once for a session.request that arrives twice', async () => {
+        const { alice, bob, coordination, metrics } = await pair();
+        const sessionId = await create(alice);
+        const requests = bob.sent.filter((m) => m.type === 'session.request');
+        expect(requests).toHaveLength(1);
+        const event = {
+          type: 'session.request',
+          from: alice.connection.id,
+          session: {
+            id: sessionId,
+            namespace: 'notes:a',
+            requester: {
+              connectionId: alice.connection.id,
+              device: { appId: 'notes', userId: 'u1', deviceId: 'd1' },
+            },
+            target: {
+              connectionId: bob.connection.id,
+              device: { appId: 'notes', userId: 'u2', deviceId: 'd2' },
+            },
+          },
+        };
+        await coordination.publish(connectionTopic(bob.connection.id), event);
+        await settle();
+        expect(bob.sent.filter((m) => m.type === 'session.request')).toEqual(requests);
+        await stale(metrics, 1);
       });
     });
 
@@ -1915,7 +2155,7 @@ describe('Connection', () => {
 
         // Stands for the peer's instance failing, and the device reconnecting on another one.
         const device = { appId: 'notes', userId: claims.sub, deviceId: claims.device_id };
-        await context.coordination.claimDeviceConnection(device, 'elsewhere');
+        await context.coordination.claimDeviceConnection(device, 'elsewhere', LEASE_MS);
         await context[self].connection.heartbeat();
         expect(sessionEvents(context[self])).toEqual([
           terminated(context.sessionId, 'peer_disconnected'),
@@ -2373,7 +2613,7 @@ describe('Connection', () => {
     expect(sent).toEqual([]);
     expect(coordination.subscribedTopics).toBe(0);
     const device = { appId: 'notes', userId: 'u1', deviceId: 'd1' };
-    expect(await coordination.claimDeviceConnection(device, 'probe')).toBeUndefined();
+    expect(await coordination.claimDeviceConnection(device, 'probe', LEASE_MS)).toBeUndefined();
   });
 });
 
@@ -2474,6 +2714,90 @@ describe('pairing (ADR 0042)', () => {
     // The rejection, checked with no signature, arrives first.
     expect(of(requester, 'pairing.rejected')).toHaveLength(1);
     expect(of(requester, 'pairing.approved')).toEqual([]);
+  });
+
+  it('drops answers and ends from connections the request does not name (ADR 0023)', async () => {
+    const { approver, other, requester, coordination, metrics } = await devices();
+    const pairingId = await request(requester);
+    const from = 'stranger';
+    const toRequester = connectionTopic(requester.connection.id);
+    await coordination.publish(toRequester, {
+      type: 'pairing.approved',
+      from,
+      pairingId,
+      approval: 'x',
+    });
+    await coordination.publish(toRequester, { type: 'pairing.rejected', from, pairingId });
+    const ended = {
+      type: 'pairing.ended',
+      from: other.connection.id,
+      pairingId,
+      reason: 'timeout',
+    };
+    await coordination.publish(connectionTopic(approver.connection.id), ended);
+    await settle();
+    expect(of(requester, 'pairing.approved')).toEqual([]);
+    expect(of(requester, 'pairing.rejected')).toEqual([]);
+    expect(of(approver, 'pairing.ended')).toEqual([]);
+    expect(await metrics.render()).toContain(
+      'blindsignal_coordination_events_dropped_total{reason="stale"} 3',
+    );
+    await other.request('pairing.reject', { pairingId });
+    await settle();
+    expect(of(requester, 'pairing.rejected')).toHaveLength(1);
+    expect(of(approver, 'pairing.ended').map((m) => m.payload.reason)).toEqual(['answered']);
+  });
+
+  it.each([
+    ['from a connection other than the requester', { from: 'stranger' }, {}],
+    ['for another user', {}, { userId: 'u2' }],
+    ['from another application', {}, { appId: 'chat' }],
+    ['from the device itself', {}, { deviceId: 'd1' }],
+  ])('drops a pairing.request %s', async (_, event, device) => {
+    const { connect, coordination, metrics } = await setup();
+    const approver = await bound(connect, await deviceKey(), { namespaces: [NS] });
+    const pairing = {
+      id: crypto.randomUUID(),
+      namespace: NS,
+      requester: {
+        connectionId: 'r1',
+        device: { appId: 'notes', userId: 'u1', deviceId: 'd2', ...device },
+      },
+      keyThumbprint: 'jkt',
+    };
+    const topic = connectionTopic(approver.connection.id);
+    const valid = { type: 'pairing.request', from: 'r1', pairing };
+    await coordination.publish(topic, { ...valid, ...event });
+    await settle();
+    expect(of(approver, 'pairing.request')).toEqual([]);
+    expect(await metrics.render()).toContain(
+      'blindsignal_coordination_events_dropped_total{reason="stale"} 1',
+    );
+  });
+
+  it('asks an approver once for a pairing.request that arrives twice', async () => {
+    const { approver, requester, coordination, metrics } = await devices();
+    const pairingId = await request(requester);
+    const [asked] = of(approver, 'pairing.request');
+    const event = {
+      type: 'pairing.request',
+      from: requester.connection.id,
+      pairing: {
+        id: pairingId,
+        namespace: NS,
+        requester: {
+          connectionId: requester.connection.id,
+          device: { appId: 'notes', userId: 'u1', deviceId: 'd2' },
+        },
+        keyThumbprint: asked?.payload.jkt,
+      },
+    };
+    await coordination.publish(connectionTopic(approver.connection.id), event);
+    await settle();
+    expect(of(approver, 'pairing.request')).toHaveLength(1);
+    expect(await metrics.render()).toContain(
+      'blindsignal_coordination_events_dropped_total{reason="stale"} 1',
+    );
   });
 
   it('relays a rejection, and ends the request for the other devices', async () => {

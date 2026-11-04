@@ -96,10 +96,12 @@ describe.skipIf(url === undefined)('RedisCoordinationAdapter', () => {
     const { client, prefix, coordination } = await instance();
     const device = { appId: 'notes', userId: 'u1', deviceId: 'd1' };
     await coordination.claimJti('iss', 'j1', 100);
+    await coordination.claimDeviceConnection(device, 'c1', 100);
+    await coordination.renewDeviceConnection({ ...device, deviceId: 'd2' }, 'c2', 100);
     await coordination.acquirePresence('notes:a', device, 'c1', 100);
     await coordination.acquireSlots('h1', [{ key: 'app', limit: 1 }], 100);
     await coordination.consumeRateLimit('k', { ratePerSecond: 10, burst: 1 });
-    expect((await client.keys(`${prefix}*`)).length).toBe(5);
+    expect((await client.keys(`${prefix}*`)).length).toBe(7);
     await sleep(250);
     expect(await client.keys(`${prefix}*`)).toEqual([]);
   });
@@ -129,6 +131,15 @@ describe.skipIf(url === undefined)('RedisCoordinationAdapter', () => {
     const seen: unknown[] = [];
     await a.coordination.subscribe('connection:c1', (event) => seen.push(event));
     await b.coordination.publish('connection:c1', { type: 'superseded' });
+    await vi.waitFor(() => expect(seen).toEqual([{ type: 'superseded' }]));
+  });
+
+  it('drops a message that is not JSON, and delivers the next event', async () => {
+    const { client, prefix, coordination } = await instance();
+    const seen: unknown[] = [];
+    await coordination.subscribe('connection:c1', (event) => seen.push(event));
+    await client.publish(`${prefix}topic:connection:c1`, '{');
+    await coordination.publish('connection:c1', { type: 'superseded' });
     await vi.waitFor(() => expect(seen).toEqual([{ type: 'superseded' }]));
   });
 

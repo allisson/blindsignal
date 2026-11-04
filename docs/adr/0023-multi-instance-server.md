@@ -40,6 +40,22 @@ reloads between instances.
   session duration (ADR 0014), so a copy whose peer's instance is gone still ends, and stops
   renewing its quota slots (ADR 0022). Both copies release the session's slots; releasing twice is
   harmless.
+- **Every event is parsed, and checked against the receiver's copy** (amended with the
+  coordination fixes of the Phase 12 security review). An event on a connection's topic carries
+  `from`, the publishing connection's ID, and matches a schema (`apps/server/src/handlers/events.ts`)
+  before it is queued; a `deliver` holds only an `rtc.*` message, rebuilt from the protocol's
+  schema, and a presence event the `presence.changed` payload. Once its turn comes, the receiver
+  checks it against its own copy: `rtc.*` only within an active session and from its peer; a
+  `session.request` only from its requester, of the same application, to this connection and
+  device, once; `session.accepted` and `session.rejected` only from the target, to a pending
+  copy; `session.terminated` only from the peer; a `pairing.request` only from its requester, a
+  device of the same user, once; a pairing's answer only from a device asked, and
+  `pairing.ended` only from the requester; `superseded` only once the device's claim names
+  another connection. An event that fails either check is dropped and counted in
+  `blindsignal_coordination_events_dropped_total{reason="invalid"|"stale"}`; an invalid one also
+  logs `coordination.invalid_event` (`warn`), without the event. The Redis adapter drops a message
+  that is not JSON. Before, the receiver trusted the event's shape and sender, so an event
+  published by mistake, or by anything else able to publish on the topic, reached the client.
 - **An event for a copy that no longer exists is dropped.** When the two sides end a session at
   once, such as a timeout racing a `session.reject`, each ends its own copy once and drops the
   other's late event: the requester may get `session.terminated` with reason `timeout` while the

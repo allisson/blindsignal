@@ -85,6 +85,8 @@ const COUNTERS = {
   blindsignal_turn_credentials_issued_total:
     'TURN credentials sent in rtc.ice_config, by application.',
   blindsignal_devices_expired_total: 'Device records deleted by the retention sweep.',
+  blindsignal_coordination_events_dropped_total:
+    'Events between connections dropped, by reason: invalid, matching no schema, or stale, not matching the receiving copy.',
 } as const;
 
 export type CounterName = keyof typeof COUNTERS;

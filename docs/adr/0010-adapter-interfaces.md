@@ -39,9 +39,10 @@ Each operation is atomic and maps to one Redis script or transaction in a future
 adapter:
 
 - **`claimJti(iss, jti, ttl)`**: records the pair and reports whether it was new (ADR 0006).
-- **`claimDeviceConnection(device, connectionId)`**: makes the connection the device's only one
-  and returns the one it replaced, if any (ADR 0008). `releaseDeviceConnection` removes the claim
-  when that connection closes.
+- **`claimDeviceConnection(device, connectionId, ttl)`**: makes the connection the device's only
+  one and returns the one it replaced, if any (ADR 0008). `releaseDeviceConnection` removes the
+  claim when that connection closes, and `renewDeviceConnection` extends it on every heartbeat
+  (amended by ADR 0022: the claim is a lease).
 - **Presence leases**: acquire, renew, and release a device's presence in a namespace, and list
   the live leases of a namespace. Leases expire on their own, so a lost instance leaves no
   permanent presence (spec §10.2).
