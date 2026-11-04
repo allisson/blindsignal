@@ -68,7 +68,8 @@ device key with `cnf.jkt` needs a proof that the SDK's non-extractable `DeviceKe
 (ADR 0041); pairing is done: a new device asks its user's present devices with the SDK's
 `requestPairing()`, and one approves with a JWT its `DeviceKey` signs, for the backend to grant the
 namespace (ADR 0042). Phase 11 has started: `examples/backend-issuer` is an application backend
-that issues tokens with its own key and grants pairings. The workspace uses
+that issues tokens with its own key and grants pairings, and `examples/minimal-app` is a page on
+it whose devices sign in, pair, and open a DataChannel. The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
@@ -87,7 +88,7 @@ pnpm lint             # ESLint, type-aware, with the ADR 0002 import rules
 pnpm typecheck        # tsc --noEmit in every package
 pnpm test             # Vitest across all packages
 pnpm test:coverage    # Vitest with V8 coverage and the floors below
-pnpm test:browser     # Playwright, Chromium and Firefox, against examples/browser-demo
+pnpm test:browser     # Playwright, Chromium and Firefox, against examples/browser-demo and examples/minimal-app
 BLINDSIGNAL_TEST_TURN=1 pnpm test:browser  # also the relay tests, with the compose.yaml Coturn (Docker)
 BLINDSIGNAL_TEST_POSTGRES_URL=<url> pnpm test  # also the PostgreSQL adapter, with the compose.yaml PostgreSQL (port 6432: through its PgBouncer)
 BLINDSIGNAL_TEST_REDIS_URL=<url> pnpm test     # also the Redis adapter and two server instances, with the compose.yaml Valkey

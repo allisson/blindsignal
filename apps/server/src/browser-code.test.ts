@@ -2,12 +2,13 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-// What a browser receives from this repository: examples/browser-demo serves these from source.
+// What a browser receives from this repository: the examples serve these from source.
 const root = resolve(import.meta.dirname, '../../..');
 const browserDirectories = [
   'packages/sdk/src',
   'packages/protocol/src',
   'examples/browser-demo/public',
+  'examples/minimal-app/public',
 ];
 
 const secrets: [string, RegExp][] = [

@@ -6,7 +6,8 @@ payloads travel only over the DataChannel, never through the signaling server.
 
 The package ships ESM and leaves bundling to the application (ADR 0001). It imports only
 `@blindsignal/protocol` and web-standard globals (ADR 0002). `examples/browser-demo` runs it in a
-page, and its Playwright tests cover Chromium and Firefox.
+page, and its Playwright tests cover Chromium and Firefox. `examples/minimal-app` is the shortest
+complete use: a page whose backend issues bound tokens and grants pairings.
 
 ## Usage
 
