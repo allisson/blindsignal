@@ -5,7 +5,8 @@ const floor = { lines: 90, branches: 85 };
 
 export default defineConfig({
   test: {
-    projects: ['apps/*', 'packages/*', 'adapters/*/*'],
+    // Not examples/*: the browser demo's specs are Playwright's.
+    projects: ['apps/*', 'packages/*', 'adapters/*/*', 'examples/backend-issuer'],
     passWithNoTests: true,
     coverage: {
       provider: 'v8',

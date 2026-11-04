@@ -197,6 +197,13 @@ The client sees these codes on `auth.authenticate` (`docs/protocol.md` §9):
 The server never says which check failed, so an attacker learns nothing from the code. To debug,
 compare the token against the tables above.
 
+## Example
+
+`examples/backend-issuer` follows this document: its own ES256 key, a registry entry built from
+it, the JWKS, device enrollment with the first `jkt` kept, tokens bound to it, and the pairing
+checks above. It keeps everything in memory and has no real sign-in; its README shows what a
+production backend replaces.
+
 ## Development
 
 `packages/dev-issuer` mints tokens with a fixed test key for local development and tests. Its
