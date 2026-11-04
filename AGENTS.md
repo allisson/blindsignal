@@ -20,6 +20,7 @@ server. Initial target: browser / PWA.
 - `docs/token-issuance.md`: what an application backend must do to issue accepted tokens.
 - `docs/external-testing.md`: the Compose workflow and the cross-network test setup (Phase 7).
 - `docs/turn-operations.md`: running Coturn for BlindSignal (Phase 8).
+- `docs/deployment.md`: choosing a topology, what every production deployment needs, and upgrading.
 - `docs/supabase.md`: Supabase as the PostgreSQL provider (Phase 9).
 - `docs/self-hosted.md`: one-host deployment with Compose and Caddy (Phase 10).
 - `docs/application-lifecycle.md`: registering, suspending, and revoking applications and devices.
@@ -88,7 +89,8 @@ and major release, with Dependabot, pinned actions, and `pnpm audit --prod` in C
 the abuse review left none open either; load tests validate the quota and rate-limit defaults
 before every minor and major release (ADR 0049); the SDK README documents every export, and a
 test keeps it so (ADR 0046); `docs/onboarding.md` takes an application team from registration
-to production. The workspace uses
+to production, and `docs/deployment.md` an operator from choosing a topology to upgrading it. The
+workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10

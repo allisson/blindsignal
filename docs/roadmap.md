@@ -563,7 +563,7 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Complete browser compatibility tests: ADR 0047.
 - [x] Publish SDK documentation: `packages/sdk/README.md` (ADR 0046).
 - [x] Publish application onboarding documentation: `docs/onboarding.md`.
-- [ ] Publish deployment documentation.
+- [x] Publish deployment documentation: `docs/deployment.md`.
 - [x] Define semantic versioning: ADR 0043.
 - [x] Define support and upgrade policy: ADR 0044.
 - [ ] Fix or accept the open findings of the security and abuse reviews (`docs/security-review.md`)
@@ -668,4 +668,4 @@ every minor and major release (ADR 0048, `docs/security-review.md`), and the abu
 none open either; load tests validate the quota and rate-limit defaults before every minor and
 major release too (ADR 0049, `docs/load-report.md`); the SDK README documents every export, and
 a test keeps it so (ADR 0046); `docs/onboarding.md` takes an application team from registration
-to production.
+to production, and `docs/deployment.md` an operator from choosing a topology to upgrading it.
