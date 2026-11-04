@@ -27,9 +27,8 @@ function browserFiles(): string[] {
   return browserDirectories.flatMap((directory) =>
     readdirSync(join(root, directory), { recursive: true, withFileTypes: true })
       .filter((entry) => entry.isFile())
-      .map((entry) => join(entry.parentPath, entry.name))
-      // No page loads a test, and no build ships one.
-      .filter((path) => !path.endsWith('.test.ts')),
+      // Tests too: the examples serve every file of these directories.
+      .map((entry) => join(entry.parentPath, entry.name)),
   );
 }
 
@@ -39,6 +38,7 @@ describe('code served to the browser', () => {
     for (const directory of browserDirectories) {
       expect(files.some((path) => path.startsWith(join(root, directory)))).toBe(true);
     }
+    expect(files.some((path) => path.endsWith('.test.ts'))).toBe(true);
     const found = files.flatMap((path) =>
       findSecrets(readFileSync(path, 'utf8')).map((name) => `${relative(root, path)}: ${name}`),
     );

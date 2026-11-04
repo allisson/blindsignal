@@ -535,6 +535,18 @@ describe('SignalingServer', () => {
     await isolatesApplications(one, two);
   });
 
+  it('refuses a client-sent rtc.ice_config or session.terminated (spec §21)', async () => {
+    const { client } = await start();
+    const alice = await client();
+    await alice.authenticate({ sub: 'u1', device_id: 'd1', namespaces: ['notes:a'] });
+    alice.send('rtc.ice_config', { iceServers: [{ urls: ['turn:198.51.100.1'] }] });
+    expect(await alice.next('error')).toMatchObject({ payload: { code: 'invalid_message' } });
+    const sessionId = randomUUID();
+    alice.send('session.terminated', { sessionId, reason: 'closed_by_peer' });
+    expect(await alice.next('error')).toMatchObject({ payload: { code: 'invalid_message' } });
+    expect(alice.ws.readyState).toBe(WebSocket.OPEN);
+  });
+
   it('closes on a binary frame with malformed_frame', async () => {
     const { client } = await start();
     const alice = await client();
@@ -1124,6 +1136,47 @@ describe('SignalingServer with the SDK', () => {
       const options = { applications: twoApplications };
       const [one, two] = await Promise.all([instance(prefix, options), instance(prefix, options)]);
       await isolatesApplications(one, two);
+    });
+
+    it('limits connection attempts per client IP across instances', async () => {
+      const prefix = `test:${randomUUID()}:`;
+      const proxied = new BlockList();
+      proxied.addAddress('127.0.0.1');
+      const options = {
+        trustedProxies: proxied,
+        preAuthentication: { connectionAttempts: { ratePerSecond: 0.001, burst: 2 } },
+      };
+      const [one, two] = await Promise.all([instance(prefix, options), instance(prefix, options)]);
+      const from = { headers: { 'x-forwarded-for': '203.0.113.1' } };
+      (await one.client(from)).ws.close();
+      (await two.client(from)).ws.close();
+      expect(await one.refusedUpgrade(from.headers)).toBe(429);
+      expect(await two.refusedUpgrade(from.headers)).toBe(429);
+    });
+
+    it("counts a target's session slots across instances", async () => {
+      const prefix = `test:${randomUUID()}:`;
+      const options = {
+        applications: [{ ...devApplication('notes'), quotas: { sessionsPerDevice: 1 } }],
+      };
+      const [one, two] = await Promise.all([instance(prefix, options), instance(prefix, options)]);
+      const bob = await two.client();
+      await bob.authenticate({ sub: 'bob', device_id: 'phone', namespaces: ['notes:a'] });
+      const alice = await one.client();
+      await alice.authenticate({ sub: 'alice', device_id: 'laptop', namespaces: ['notes:a'] });
+      const carol = await two.client();
+      await carol.authenticate({ sub: 'carol', device_id: 'tablet', namespaces: ['notes:a'] });
+      for (const client of [bob, alice, carol]) {
+        client.send('namespace.join', { namespace: 'notes:a' });
+        await client.next('ack');
+      }
+      const target = { namespace: 'notes:a', userId: 'bob', deviceId: 'phone' };
+      // Pending, Alice's request holds Bob's only slot, which Carol's instance sees.
+      alice.send('session.create', target);
+      await alice.next('session.created');
+      await bob.next('session.request');
+      carol.send('session.create', target);
+      expect(await carol.next('error')).toMatchObject({ payload: { code: 'peer_unavailable' } });
     });
 
     it('supersedes a device that connects again on another instance', async () => {

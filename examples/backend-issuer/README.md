@@ -16,13 +16,15 @@ own database, and replaces `/login` with its own sign-in.
 ## Routes
 
 Every `POST` needs `content-type: application/json` and an `Origin` among the allowed ones, so a
-cross-site form cannot call it; every one but `/login` needs the session cookie. Errors are status
-codes alone.
+cross-site form cannot call it; every one but `/login` and `/logout` needs the session cookie.
+Errors are status codes alone. Each user may send `BLINDSIGNAL_EXAMPLE_RATE_LIMIT_PER_MINUTE`
+requests a minute, and each client address as many to `/login`; past it, `429` with `Retry-After`.
 
 | Route                        | Body                                  | Answer                                                                                                     |
 | ---------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `POST /login`                | `{ user }`                            | `204`, with an `HttpOnly; Secure; SameSite=Strict` session cookie (no `Secure` on a plain-HTTP loopback origin). No password: it stands in for sign-in. |
-| `POST /devices`              | `{ deviceId, jkt }`                   | `204`. The first `jkt` of a device stays; another one gets `409`.                                          |
+| `POST /login`                | `{ user }`                            | `204`, with a `__Host-session` cookie, `HttpOnly; Secure; SameSite=Strict`, for 8 hours (named `session`, without `Secure`, on a plain-HTTP loopback origin). No password: it stands in for sign-in. |
+| `POST /logout`               | `{}`                                  | `204`: ends the session, if any, and clears the cookie.                                                    |
+| `POST /devices`              | `{ deviceId, jkt }`                   | `204`. The first `jkt` of a device stays; another one, or an 11th device, gets `409`.                      |
 | `POST /token`                | `{ deviceId }`                        | `200`, the token as text, `no-store`. An unknown device gets `404`.                                        |
 | `POST /pairings`             | `{ deviceId, namespace, approval }`   | `204` once the approval passes the checks of `docs/token-issuance.md`, Pairing; else `403`.                |
 | `GET /.well-known/jwks.json` | —                                     | The public key, for a registry entry with `jwksUri`.                                                       |
@@ -52,6 +54,7 @@ pnpm start
 | `BLINDSIGNAL_EXAMPLE_ISSUER`         | `http://127.0.0.1:<port>`     | The `iss` of every token, and the registered issuer.     |
 | `BLINDSIGNAL_EXAMPLE_ALLOWED_ORIGINS` | `http://127.0.0.1:<port>`    | Comma-separated origins whose pages may call it.         |
 | `BLINDSIGNAL_EXAMPLE_PORT`           | `4000`                        | The port it listens on, on loopback.                     |
+| `BLINDSIGNAL_EXAMPLE_RATE_LIMIT_PER_MINUTE` | `30`                   | Requests a minute per user, and to `/login` per address. |
 
 The registry file lists the public key in `publicKeys`: the server fetches a JWKS only over
 HTTPS. Behind HTTPS, register `jwksUri` with this backend's `/.well-known/jwks.json` instead, and
@@ -59,7 +62,12 @@ rotate keys as `docs/token-issuance.md` describes.
 
 The cookie is `Secure`, so browsers need HTTPS, except for a page on plain-HTTP `localhost`,
 `127.0.0.1`, or `[::1]`: there the backend leaves `Secure` out, since WebKit drops a `Secure`
-cookie on plain HTTP even on loopback (ADR 0047).
+cookie on plain HTTP even on loopback (ADR 0047), and with it the `__Host-` prefix, which needs
+`Secure`.
+
+Memory stays bounded: at most 10,000 sessions, the oldest dropped first; 10,000 users, past which
+a new user's device gets `503`; 10 devices a user; and a used pairing ID only until its approval
+expires.
 
 ## Tests
 

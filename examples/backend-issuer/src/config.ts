@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { signingJwk, type BackendConfig } from './backend.ts';
 
 /** The backend's configuration, from the environment; see README.md. */
@@ -15,5 +16,10 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): BackendConf
     allowedOrigins: (env.BLINDSIGNAL_EXAMPLE_ALLOWED_ORIGINS ?? `http://127.0.0.1:${port}`)
       .split(',')
       .map((origin) => origin.trim()),
+    rateLimitPerMinute: z.coerce
+      .number()
+      .int()
+      .positive()
+      .parse(env.BLINDSIGNAL_EXAMPLE_RATE_LIMIT_PER_MINUTE ?? '30'),
   };
 }

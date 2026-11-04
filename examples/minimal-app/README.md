@@ -31,7 +31,7 @@ pnpm start
 
 Open `http://127.0.0.1:4000` in two browser profiles, or one normal window and one private window:
 a profile holds one device key and one device ID. Sign in as the same user in both, pair the
-second, and connect. To use phones and other machines, `docs/tailscale.md` serves both over HTTPS
+second, and connect. **Sign out** ends the session at the backend. To use phones and other machines, `docs/tailscale.md` serves both over HTTPS
 in a tailnet.
 
 The backend's variables are those of `examples/backend-issuer`; `BLINDSIGNAL_EXAMPLE_SIGNALING_URL`
@@ -44,4 +44,6 @@ after the pairing, since it connects only through a TURN relay, which this suite
 (ADR 0047). `playwright.config.ts`
 generates a key for the run, writes a registry trusting it, and starts the signaling server and
 this server on their own ports. Two browser contexts are a user's two devices: the second is paired
-by the first, and a message between them never crosses the signaling server.
+by the first, and a message between them never crosses the signaling server. The suite also signs out,
+after which the backend refuses the page a token, and pairs a device whose ID is the ID of an
+element of the page, which leaves the page whole: the device list is keyed by device ID.
