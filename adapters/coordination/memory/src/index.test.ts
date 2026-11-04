@@ -56,21 +56,40 @@ const bob = { appId: 'notes', userId: 'bob', deviceId: 'd1' };
 describe('InMemoryCoordinationAdapter device connections', () => {
   it('returns the connection a claim replaces', async () => {
     const { adapter } = setup();
-    expect(await adapter.claimDeviceConnection(alice, 'c1')).toBeUndefined();
-    expect(await adapter.claimDeviceConnection(alice, 'c2')).toBe('c1');
-    expect(await adapter.claimDeviceConnection(alice, 'c2')).toBeUndefined();
-    expect(await adapter.claimDeviceConnection(bob, 'c3')).toBeUndefined();
+    expect(await adapter.claimDeviceConnection(alice, 'c1', 1000)).toBeUndefined();
+    expect(await adapter.claimDeviceConnection(alice, 'c2', 1000)).toBe('c1');
+    expect(await adapter.claimDeviceConnection(alice, 'c2', 1000)).toBeUndefined();
+    expect(await adapter.claimDeviceConnection(bob, 'c3', 1000)).toBeUndefined();
+  });
+
+  it('expires a claim at its ttl exactly, and sweeps it', async () => {
+    const { adapter, advance } = setup();
+    await adapter.claimDeviceConnection(alice, 'c1', 1000);
+    await adapter.claimDeviceConnection(bob, 'c2', 120_000);
+    advance(999);
+    expect(await adapter.connectionOf(alice)).toBe('c1');
+    advance(1);
+    expect(await adapter.connectionOf(alice)).toBeUndefined();
+    expect(await adapter.renewDeviceConnection(bob, 'c3', 1000)).toBe(false);
+    advance(59_000);
+    await adapter.claimDeviceConnection(alice, 'c4', 1000);
+    expect(adapter.trackedClaims).toBe(2);
+    await adapter.releaseDeviceConnection(alice, 'c4');
+    await adapter.renewDeviceConnection(alice, 'c5', 1000);
+    advance(60_000);
+    await adapter.claimDeviceConnection(bob, 'c6', 1000);
+    expect(adapter.trackedClaims).toBe(1);
   });
 
   it('ignores a release by a stale holder', async () => {
     const { adapter } = setup();
-    await adapter.claimDeviceConnection(alice, 'c1');
-    await adapter.claimDeviceConnection(alice, 'c2');
+    await adapter.claimDeviceConnection(alice, 'c1', 1000);
+    await adapter.claimDeviceConnection(alice, 'c2', 1000);
     await adapter.releaseDeviceConnection(alice, 'c1');
-    expect(await adapter.claimDeviceConnection(alice, 'c3')).toBe('c2');
+    expect(await adapter.claimDeviceConnection(alice, 'c3', 1000)).toBe('c2');
     await adapter.releaseDeviceConnection(alice, 'c3');
     await adapter.releaseDeviceConnection(alice, 'c3');
-    expect(await adapter.claimDeviceConnection(alice, 'c4')).toBeUndefined();
+    expect(await adapter.claimDeviceConnection(alice, 'c4', 1000)).toBeUndefined();
   });
 });
 

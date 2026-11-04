@@ -45,6 +45,9 @@ reported no advisory.
 | Operator ↔ server | `server.start_failed` and the crash log can carry text from an error message | Only the server's own errors log their message, others their name and code; crash frames are read after the message (ADR 0037) |
 | Operator ↔ server | The TURN credential lifetime has no upper bound | At most a day (ADR 0017) |
 | Operator ↔ server | `docs/cloud-run.md` does not require TLS and authentication for Redis, and OTLP headers may go over plain HTTP | It requires both, and `https://` for OTLP credentials, as `docs/deployment.md` does |
+| Server ↔ adapters | An event delivered from another instance is not checked against the session again | Each event carries its sender's connection ID, and the receiver checks it, and the event, against its own copy (ADR 0023) |
+| Server ↔ adapters | Coordination events are parsed without a schema | A schema for each topic's events; one that fails it, or a message that is not JSON, is dropped and counted (ADR 0023) |
+| Server ↔ adapters | A device's claim in Redis has no TTL | The claim is a lease, renewed on every heartbeat (ADR 0022) |
 
 ### Non-blocking, accepted
 
@@ -56,9 +59,6 @@ reported no advisory.
 
 | Boundary | Finding |
 |---|---|
-| Server ↔ adapters | An event delivered from another instance is not checked against the session again |
-| Server ↔ adapters | Coordination events are parsed without a schema |
-| Server ↔ adapters | A device's claim in Redis has no TTL |
 | Examples | `examples/backend-issuer` has no rate limit on its token endpoint, keeps unbounded state in memory, and its session cookie has no `__Host-` prefix, expiry, or sign-out |
 | Examples | `examples/browser-demo` sends a token to any `wss://` server its `?server=` names, and `examples/minimal-app`'s device IDs can collide with the page's element IDs |
 | Tests | The scan for secrets in served files skips the `*.test.ts` files the examples serve |

@@ -161,7 +161,8 @@ secrets, payloads, `sub`, or `device_id`. The server keeps no logs itself; keep 
 client IP (`connection.opened`) for at most 14 days (`docs/adr/0012-metadata-retention.md`).
 Storage logs `storage.ready`, `storage.connection_lost`, `connection.failed` (with the error's
 SQLSTATE or name), `devices.expired`, and `devices.sweep_failed` (ADR 0021); coordination logs
-`coordination.ready` and `coordination.connection_lost` (ADR 0023), and the registry logs
+`coordination.ready`, `coordination.connection_lost`, and `coordination.invalid_event`, for an
+event between connections that matches no schema (ADR 0023), and the registry logs
 `registry.publish_failed` and `registry.sync_failed` (ADR 0024).
 
 `BLINDSIGNAL_LOG_LEVEL` drops the events below it; at `warn`, no per-connection event, and so no
@@ -178,8 +179,10 @@ With `OTEL_EXPORTER_OTLP_ENDPOINT` set they are also pushed over OTLP/HTTP, with
 `telemetry.export_failed`, and on `SIGTERM` the server pushes once more within the shutdown's
 deadline. The series: messages by type, authentications by result, errors by code, sessions created and
 terminated, pairings by result, registry reloads, connections closed by backpressure, open connections, and sessions
-(counted by the instance of the connection that requested each, ADR 0023), and device records
-deleted by the retention sweep (`blindsignal_devices_expired_total`).
+(counted by the instance of the connection that requested each, ADR 0023), device records
+deleted by the retention sweep (`blindsignal_devices_expired_total`), and events between
+connections dropped, `invalid` or `stale` (`blindsignal_coordination_events_dropped_total`,
+ADR 0023).
 
 It also reports the process (ADR 0037): `process_start_time_seconds`, which changes on every
 restart, `process_resident_memory_bytes`, `nodejs_heap_size_used_bytes`, and

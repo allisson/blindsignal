@@ -31,6 +31,13 @@ const RELEASE_DEVICE_CONNECTION = script(`
 if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) end
 return 0`);
 
+/** KEYS: the device's claim. ARGV: the connection, the ttl. */
+const RENEW_DEVICE_CONNECTION = script(`
+local holder = redis.call('GET', KEYS[1])
+if holder and holder ~= ARGV[1] then return 0 end
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+return 1`);
+
 /**
  * KEYS: the namespace's leases (a sorted set scored by expiry) and their holders (a hash).
  * ARGV: the device, the connection, the ttl.
@@ -190,10 +197,25 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
   async claimDeviceConnection(
     device: DeviceIdentity,
     connectionId: string,
+    ttlMs: number,
   ): Promise<string | undefined> {
     const key = this.#key('device', deviceKey(device));
-    const previous = await this.#bound(this.#client.set(key, connectionId, { GET: true }));
+    const previous = await this.#bound(
+      this.#client.set(key, connectionId, {
+        expiration: { type: 'PX', value: Number(ms(ttlMs)) },
+        GET: true,
+      }),
+    );
     return previous === null || previous === connectionId ? undefined : String(previous);
+  }
+
+  async renewDeviceConnection(
+    device: DeviceIdentity,
+    connectionId: string,
+    ttlMs: number,
+  ): Promise<boolean> {
+    const key = this.#key('device', deviceKey(device));
+    return (await this.#run(RENEW_DEVICE_CONNECTION, [key], [connectionId, ms(ttlMs)])) === 1;
   }
 
   async releaseDeviceConnection(device: DeviceIdentity, connectionId: string): Promise<void> {
@@ -276,7 +298,16 @@ export class RedisCoordinationAdapter implements CoordinationAdapter {
     const channel = this.#key('topic', topic);
     // One listener per call, so subscribing the same handler twice needs two unsubscribes. The
     // client ignores an unsubscribe of a listener it no longer has.
-    const listener = (message: string) => handler(JSON.parse(message));
+    const listener = (message: string) => {
+      let event: unknown;
+      // A message that is not JSON came from no instance: dropped, as an event nobody expects.
+      try {
+        event = JSON.parse(message);
+      } catch {
+        return;
+      }
+      handler(event);
+    };
     await this.#bound(this.#subscriber.subscribe(channel, listener));
     return () => this.#subscriber.unsubscribe(channel, listener);
   }

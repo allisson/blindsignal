@@ -17,11 +17,27 @@ export interface CoordinationAdapter {
   /** Records `(issuer, jti)` for `ttlMs`; true when the pair was new (ADR 0006). */
   claimJti(issuer: string, jti: string, ttlMs: number): Promise<boolean>;
 
-  /** Makes the connection the device's only one; returns the one it replaced (ADR 0008). */
-  claimDeviceConnection(device: DeviceIdentity, connectionId: string): Promise<string | undefined>;
+  /**
+   * Makes the connection the device's only one for `ttlMs`; returns the live claim it replaced
+   * (ADR 0008). A claim not renewed expires, so a lost instance leaves none held (ADR 0022).
+   */
+  claimDeviceConnection(
+    device: DeviceIdentity,
+    connectionId: string,
+    ttlMs: number,
+  ): Promise<string | undefined>;
+  /**
+   * Extends the claim for `ttlMs` while `connectionId` holds it, or takes it again once it expired;
+   * false, changing nothing, when another connection holds it.
+   */
+  renewDeviceConnection(
+    device: DeviceIdentity,
+    connectionId: string,
+    ttlMs: number,
+  ): Promise<boolean>;
   /** Removes the claim only while `connectionId` still holds it. */
   releaseDeviceConnection(device: DeviceIdentity, connectionId: string): Promise<void>;
-  /** The connection that holds the device's claim, on any instance (ADR 0023). */
+  /** The connection that holds the device's live claim, on any instance (ADR 0023). */
   connectionOf(device: DeviceIdentity): Promise<string | undefined>;
 
   /** Acquires or renews the device's lease in the namespace for `ttlMs`. */

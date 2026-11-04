@@ -14,6 +14,11 @@ interface Lease {
   readonly expiresAt: number;
 }
 
+interface Claim {
+  readonly connectionId: string;
+  readonly expiresAt: number;
+}
+
 interface Bucket {
   readonly tokens: number;
   readonly updatedAt: number;
@@ -34,7 +39,7 @@ const deviceKey = ({ appId, userId, deviceId }: DeviceIdentity) =>
 export class InMemoryCoordinationAdapter implements CoordinationAdapter {
   readonly #now: () => number;
   readonly #jtis = new Map<string, number>();
-  readonly #connections = new Map<string, string>();
+  readonly #connections = new Map<string, Claim>();
   readonly #presence = new Map<string, Map<string, Lease>>();
   readonly #topics = new Map<string, Set<Subscription>>();
   readonly #buckets = new Map<string, Bucket>();
@@ -57,21 +62,45 @@ export class InMemoryCoordinationAdapter implements CoordinationAdapter {
     return Promise.resolve(true);
   }
 
-  claimDeviceConnection(device: DeviceIdentity, connectionId: string): Promise<string | undefined> {
+  claimDeviceConnection(
+    device: DeviceIdentity,
+    connectionId: string,
+    ttlMs: number,
+  ): Promise<string | undefined> {
+    const now = this.#now();
+    this.#sweep(now);
     const key = deviceKey(device);
-    const previous = this.#connections.get(key);
-    this.#connections.set(key, connectionId);
+    const previous = this.#liveClaim(key, now);
+    this.#connections.set(key, { connectionId, expiresAt: now + ttlMs });
     return Promise.resolve(previous === connectionId ? undefined : previous);
+  }
+
+  renewDeviceConnection(
+    device: DeviceIdentity,
+    connectionId: string,
+    ttlMs: number,
+  ): Promise<boolean> {
+    const now = this.#now();
+    const key = deviceKey(device);
+    const holder = this.#liveClaim(key, now);
+    if (holder !== undefined && holder !== connectionId) return Promise.resolve(false);
+    this.#connections.set(key, { connectionId, expiresAt: now + ttlMs });
+    return Promise.resolve(true);
   }
 
   releaseDeviceConnection(device: DeviceIdentity, connectionId: string): Promise<void> {
     const key = deviceKey(device);
-    if (this.#connections.get(key) === connectionId) this.#connections.delete(key);
+    if (this.#connections.get(key)?.connectionId === connectionId) this.#connections.delete(key);
     return Promise.resolve();
   }
 
   connectionOf(device: DeviceIdentity): Promise<string | undefined> {
-    return Promise.resolve(this.#connections.get(deviceKey(device)));
+    return Promise.resolve(this.#liveClaim(deviceKey(device), this.#now()));
+  }
+
+  #liveClaim(key: string, now: number): string | undefined {
+    const claim = this.#connections.get(key);
+    return claim !== undefined && claim.expiresAt > now ? claim.connectionId : undefined;
   }
 
   acquirePresence(
@@ -190,6 +219,9 @@ export class InMemoryCoordinationAdapter implements CoordinationAdapter {
     if (now - this.#lastSweep < SWEEP_INTERVAL_MS) return;
     this.#lastSweep = now;
     for (const [key, expiresAt] of this.#jtis) if (expiresAt <= now) this.#jtis.delete(key);
+    for (const [key, claim] of this.#connections) {
+      if (claim.expiresAt <= now) this.#connections.delete(key);
+    }
     for (const [namespace, leases] of this.#presence) {
       for (const [key, lease] of leases) if (lease.expiresAt <= now) leases.delete(key);
       if (leases.size === 0) this.#presence.delete(namespace);
@@ -204,6 +236,11 @@ export class InMemoryCoordinationAdapter implements CoordinationAdapter {
   /** Tracked pairs, expired ones not yet swept included; for tests. */
   get trackedJtis(): number {
     return this.#jtis.size;
+  }
+
+  /** Tracked device claims, expired ones not yet swept included; for tests. */
+  get trackedClaims(): number {
+    return this.#connections.size;
   }
 
   /** Tracked leases, expired ones not yet swept included; for tests. */
