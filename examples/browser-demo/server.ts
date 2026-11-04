@@ -12,7 +12,6 @@ if (process.env.BLINDSIGNAL_ENV !== 'development') {
 
 const port = Number(process.env.BLINDSIGNAL_DEMO_PORT ?? 3000);
 const serverUrl = process.env.BLINDSIGNAL_DEMO_SIGNALING_URL ?? 'ws://localhost:8080';
-const NAMESPACE = 'notes:demo';
 
 const directory = (specifier: string) => dirname(fileURLToPath(import.meta.resolve(specifier)));
 
@@ -53,15 +52,18 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
     const jkt = url.searchParams.get('jkt');
     // A new device may only ask to be paired into the namespace (ADR 0042).
     const pairing = url.searchParams.has('pairing');
+    // Each application of the registry has a `demo` namespace; `notes` by default.
+    const app_id = url.searchParams.get('app') ?? 'notes';
+    const namespace = `${app_id}:demo`;
     if (!sub || !device_id) {
       response.writeHead(400).end();
       return;
     }
     const token = await mintDevToken({
-      app_id: 'notes',
+      app_id,
       sub,
       device_id,
-      ...(pairing ? { pairing: [NAMESPACE] } : { namespaces: [NAMESPACE] }),
+      ...(pairing ? { pairing: [namespace] } : { namespaces: [namespace] }),
       ...(jkt && { cnf: { jkt } }),
     });
     response

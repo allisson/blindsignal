@@ -15,6 +15,22 @@
         }
       ],
       "algorithms": ["EdDSA"]
+    },
+    {
+      "appId": "chat",
+      "name": "chat (development)",
+      "status": "active",
+      "issuer": "https://dev-issuer.blindsignal.invalid/chat",
+      "audience": "blindsignal",
+      "publicKeys": [
+        {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "wAzWXTlkeTKt5gt4V5mhStDncwJrxy3TTMKI-uoSCSg",
+          "kid": "blindsignal-dev"
+        }
+      ],
+      "algorithms": ["EdDSA"]
     }
   ]
 }

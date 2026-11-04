@@ -16,9 +16,9 @@ BLINDSIGNAL_ENV=development BLINDSIGNAL_REGISTRY_PATH="$PWD/examples/registry.de
 docker compose up --build
 ```
 
-`examples/registry.dev.json` registers the `notes` application with the development issuer, whose
-private key is public in this repository; it loads only with `BLINDSIGNAL_ENV=development`. Tokens
-for it come from `mintDevToken` in `packages/dev-issuer`.
+`examples/registry.dev.json` registers the `notes` and `chat` applications with the development
+issuer, whose private key is public in this repository; it loads only with
+`BLINDSIGNAL_ENV=development`. Tokens for them come from `mintDevToken` in `packages/dev-issuer`.
 
 The image (`Dockerfile`, ADR 0033) runs in production mode by default, as `node`, and works
 with a read-only root filesystem and no capabilities (`--read-only --cap-drop ALL`). It needs at least

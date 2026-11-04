@@ -50,6 +50,44 @@ test('two browsers open a DataChannel, exchange messages, and close', async ({ b
   for (const { page } of [alice, bob]) await expect(page.locator('#channel')).toHaveText('closed');
 });
 
+test('two applications on one server keep their devices and protocols apart', async ({
+  browser,
+}, info) => {
+  // The same user and device IDs in both: an identity belongs to its application (spec §6.1).
+  const laptop = `laptop-apps-${info.project.name}`;
+  const phone = `phone-apps-${info.project.name}`;
+  const chatQuery = { app: 'chat', binary: '' };
+  const notes = [await open(browser, 'alice', laptop), await open(browser, 'bob', phone)];
+  const chat = [
+    await open(browser, 'alice', laptop, chatQuery),
+    await open(browser, 'bob', phone, chatQuery),
+  ];
+
+  for (const [alice] of [notes, chat]) {
+    await alice!.page.getByRole('button', { name: `Connect to bob/${phone}` }).click();
+  }
+  for (const { page } of [...notes, ...chat]) {
+    await expect(page.locator('#channel')).toHaveText('open');
+  }
+  // `notes` exchanges strings and `chat` bytes, over one signaling server that reads neither.
+  await send(notes[0]!.page, 'hello notes');
+  await send(chat[0]!.page, 'hello chat');
+  await expect(notes[1]!.page.locator('#log')).toContainText(`alice/${laptop}: hello notes`);
+  await expect(chat[1]!.page.locator('#log')).toContainText(`alice/${laptop}: 10 bytes`);
+
+  for (const [pages, other] of [
+    [notes, 'chat:demo'],
+    [chat, 'notes:demo'],
+  ] as const) {
+    for (const { page, sent, received } of pages) {
+      // Neither saw the other's namespace, and neither superseded the other's device.
+      expect(received.filter((frame) => frame.includes(other))).toEqual([]);
+      await expect(page.locator('#state')).toHaveText('connected');
+      expect(sent.filter((frame) => frame.includes('hello'))).toEqual([]);
+    }
+  }
+});
+
 test('two browsers bound to device keys connect, and keep their keys across a reload', async ({
   browser,
 }, info) => {

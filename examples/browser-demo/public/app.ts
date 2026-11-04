@@ -1,7 +1,9 @@
 import { BlindSignalClient, DeviceKey, type Peer, type Session } from '@blindsignal/sdk';
 
-const NAMESPACE = 'notes:demo';
 const params = new URLSearchParams(location.search);
+// `?app=<app_id>` signs in to another application of the registry than `notes`.
+const app = params.get('app') ?? 'notes';
+const NAMESPACE = `${app}:demo`;
 const user = params.get('user') ?? 'alice';
 const device = params.get('device') ?? crypto.randomUUID().slice(0, 8);
 // `?relay` connects through TURN only, when the server configures it.
@@ -12,6 +14,8 @@ const connectTimeout = params.get('connectTimeout');
 const deviceKey = params.has('pop') ? await DeviceKey.load() : undefined;
 // `?pairing` makes this a new device, which asks the user's other devices to approve it (ADR 0042).
 const pairing = params.has('pairing');
+// `?binary` sends each message as UTF-8 bytes instead of a string: another application protocol.
+const binary = params.has('binary');
 
 const $ = (id: string) => document.getElementById(id)!;
 const log = (line: string) =>
@@ -19,6 +23,7 @@ const log = (line: string) =>
 const name = (peer: Pick<Peer, 'userId' | 'deviceId'>) => `${peer.userId}/${peer.deviceId}`;
 $('me').textContent = `${user}/${device}`;
 $('key').textContent = deviceKey?.thumbprint ?? 'none';
+$('namespace').textContent = NAMESPACE;
 
 // `?server=<url>` picks another signaling server than the demo's own.
 const serverUrl =
@@ -31,6 +36,7 @@ const client = new BlindSignalClient({
     const query = {
       user,
       device,
+      app,
       ...(deviceKey && { jkt: deviceKey.thumbprint }),
       ...(pairing && { pairing: '' }),
     };
@@ -118,7 +124,7 @@ $('send').addEventListener('submit', (event) => {
   const input = $('message') as HTMLInputElement;
   if (session === undefined) return;
   try {
-    session.send(input.value);
+    session.send(binary ? new TextEncoder().encode(input.value) : input.value);
     log(`me: ${input.value}`);
     input.value = '';
   } catch (error) {

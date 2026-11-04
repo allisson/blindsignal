@@ -70,7 +70,9 @@ device key with `cnf.jkt` needs a proof that the SDK's non-extractable `DeviceKe
 `requestPairing()`, and one approves with a JWT its `DeviceKey` signs, for the backend to grant the
 namespace (ADR 0042). Phase 11 has started: `examples/backend-issuer` is an application backend
 that issues tokens with its own key and grants pairings, and `examples/minimal-app` is a page on
-it whose devices sign in, pair, and open a DataChannel. The workspace uses
+it whose devices sign in, pair, and open a DataChannel; two applications on shared instances are
+isolated from each other, and the browser demo's `notes` and `chat` exchange their own payload
+formats. The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
