@@ -62,3 +62,50 @@ reported no advisory.
 | Examples | `examples/browser-demo` sends a token to any `wss://` server its `?server=` names, and `examples/minimal-app`'s device IDs can collide with the page's element IDs |
 | Tests | The scan for secrets in served files skips the `*.test.ts` files the examples serve |
 | Tests | No test covers a JWKS fetch that times out or redirects, a token without `iat` or `exp`, or concurrent use of one `jti` or rate limit |
+
+## 2026-11: abuse resistance
+
+**Scope:** the repository at `a02bdfc`, one reviewer per surface: before authentication, after
+it, quotas and rate limits, TURN, and several instances; against spec §8, §13, and §21, ADR 0011,
+ADR 0013, ADR 0016, and ADR 0017.
+
+### Blocking, fixed in #115
+
+| Boundary | Finding | Fix |
+|---|---|---|
+| SDK ↔ server | A client that reset its socket during the upgrade ended the process, since Node drops the socket's error handler there | The upgrade handles the socket's errors |
+| SDK ↔ server | A refused upgrade only ended its side, so a client that never closed its own held a slot of the unauthenticated caps | The server destroys the socket once its answer is sent |
+| SDK ↔ server | A connection the server closed waited 30 s for the client's close frame, holding its slot | `BLINDSIGNAL_CLOSE_TIMEOUT_SECONDS`, default 5 (ADR 0011) |
+| Device ↔ device | `examples/self-hosted/turnserver.conf` set no quota, and relayed TCP to any address (threat model §4.4) | `user-quota`, `total-quota`, `max-bps`, and `no-tcp-relay` (ADR 0017, `docs/turn-operations.md`) |
+| SDK ↔ server | No test showed that a refused authentication or refresh issues no TURN credential (ADR 0009) | A negative test |
+
+### Non-blocking, accepted
+
+| Boundary | Finding | Accepted risk |
+|---|---|---|
+| Operator ↔ server | The abuse alert counts per instance, and is off by default (`BLINDSIGNAL_ABUSE_ALERT_THRESHOLD=0`) | Threat model §5, risk 8 |
+
+### Non-blocking, open
+
+| Boundary | Finding |
+|---|---|
+| SDK ↔ server | `sdp` and `candidate` have no size limit of their own, so one peer can fill the other's send buffer and have it closed with `1013` |
+| SDK ↔ server | Joining and leaving a namespace in a loop fans presence out to its devices, with no rate limit of its own |
+| SDK ↔ server | A `discovery.result` can exceed 64 KiB, which the SDK drops |
+| SDK ↔ server | `session.create` and `pairing.create` read the namespace's whole presence to check one device |
+| SDK ↔ server | Pending sessions can hold the 16 session slots of a target, and raise no alert |
+| SDK ↔ server | One user can fill its application's device quota for the 30 days of the device TTL |
+| SDK ↔ server | One application can fill an instance's connection cap |
+| SDK ↔ server | A pairing request fans out to every present device of its user, with no cap |
+| SDK ↔ server | A session's duration timer uses the requester's limits only |
+| SDK ↔ server | A heartbeat whose renewal fails, or a lower `namespacesPerDevice`, does not trim what the connection holds |
+| SDK ↔ server | Per-connection rate limits start again at each reconnection |
+| SDK ↔ server | Per-IP limits do not aggregate IPv6 addresses by prefix |
+| SDK ↔ server | `auth.refresh` shares the per-IP authentication bucket |
+| SDK ↔ server | Both sides of a session share one `rtc` bucket |
+| SDK ↔ server | No HTTP header or request timeout bounds a client before the upgrade |
+| Operator ↔ server | The abuse alert does not name the connection |
+| Server ↔ adapters | Redis commands have no timeout, so an upgrade waits on `consumeRateLimit` while Redis does not answer |
+| Device ↔ device | A TURN username is its expiry and application ID only, so the credentials of one application minted in the same second are the same, and share its `user-quota` |
+| Device ↔ device | `denied-peer-ip` does not deny the TURN host's own public address |
+| Tests | No test sends `rtc.ice_config` from a client (spec §21), or runs the abuse rules against Redis and two instances |

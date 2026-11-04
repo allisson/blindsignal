@@ -155,7 +155,9 @@ Application payloads are not an asset of the server: they never reach it (spec Â
    `maxmemory-policy noeviction`, and the instances restart after it loses data (ADR 0035).
 8. **A flooding connection is answered, not closed** (ADR 0011), until its queue fills and it is
    closed with `1013` (ADR 0013). Repeated violations raise an abuse alert, and suspending the
-   application is the operator's decision (ADR 0016).
+   application is the operator's decision (ADR 0016). The alert is off until
+   `BLINDSIGNAL_ABUSE_ALERT_THRESHOLD` is set, and each instance counts its own share, so behind a
+   load balancer an application can stay under it on every instance.
 9. **The unauthenticated-connection caps are per instance** (`apps/server/README.md`): each
    instance behind a load balancer admits its own share.
 10. **A device record past its TTL may stay in memory** until its application's next new device
