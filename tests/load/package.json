@@ -1,0 +1,18 @@
+{
+  "name": "@blindsignal/load-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "load": "node load.ts"
+  },
+  "dependencies": {
+    "@blindsignal/dev-issuer": "workspace:*",
+    "@blindsignal/protocol": "workspace:*",
+    "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
+  }
+}

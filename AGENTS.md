@@ -30,6 +30,7 @@ server. Initial target: browser / PWA.
 - `docs/application-e2ee.md`: what BlindSignal protects in a payload, and what E2EE leaves to applications.
 - `docs/integration-feedback.md`: what the Phase 11 examples taught, fixed, documented, and open.
 - `docs/security-review.md`: each security review's findings and their state; `SECURITY.md`, how to report one.
+- `docs/load-report.md`: each load test run against the server defaults (ADR 0049).
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
 raise it; do not silently diverge. A change that alters a documented contract updates the spec,
@@ -83,7 +84,8 @@ reasons that a later release adds (ADR 0045), and the SDK's public API is review
 `refresh()` on demand (ADR 0046); the SDK names its supported browsers, and CI runs WebKit too
 (ADR 0047); the security review left no blocking finding open, and repeats before every minor
 and major release, with Dependabot, pinned actions, and `pnpm audit --prod` in CI (ADR 0048), and
-the abuse review left none open either. The workspace uses
+the abuse review left none open either; load tests validate the quota and rate-limit defaults
+before every minor and major release (ADR 0049). The workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
@@ -109,6 +111,7 @@ BLINDSIGNAL_TEST_REDIS_URL=<url> pnpm test     # also the Redis adapter and two 
 BLINDSIGNAL_DATABASE_URL=<url> pnpm --filter @blindsignal/storage-postgresql migrate  # apply migrations
 pnpm format:check     # Prettier (pnpm format to fix)
 pnpm build            # tsc in every package
+node tests/load/load.ts --smoke  # the load test, small; without --smoke, 10,000 devices (ADR 0049)
 ```
 
 CI (`.github/workflows/ci.yml`) runs format check, lint, typecheck, and tests with coverage on

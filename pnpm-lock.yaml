@@ -355,6 +355,22 @@ importers:
         specifier: ^6.2.14
         version: 6.2.14
 
+  tests/load:
+    dependencies:
+      '@blindsignal/dev-issuer':
+        specifier: workspace:*
+        version: link:../../packages/dev-issuer
+      '@blindsignal/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      ws:
+        specifier: ^8.22.1
+        version: 8.22.1
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
+
 packages:
 
   '@babel/helper-string-parser@7.29.11':

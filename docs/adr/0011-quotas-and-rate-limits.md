@@ -6,7 +6,8 @@ Spec §8 lists rate-limit categories and quotas without fixing their keys, their
 a rejection reaches the client. Rate limits use a token bucket per key; quotas are concurrency or
 count limits checked when a resource is acquired. Both are configured, never hardcoded: defaults
 come from the environment and an application's registry entry (ADR 0005) may override its own.
-Initial values are set through load testing (spec §8.2).
+Initial values are set through load testing (spec §8.2). Amended by the Phase 12 load tests: ADR
+0049 defines them, and their first run, in `docs/load-report.md`, kept every default.
 
 ## Quotas
 
