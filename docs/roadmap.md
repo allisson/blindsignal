@@ -526,8 +526,10 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Implement backend token issuance examples, building on the Phase 2 development issuer.
 - [x] Document trusted issuer and JWKS setup.
 - [ ] Document application-level E2EE responsibilities.
-- [ ] Validate namespace isolation between applications.
-- [ ] Validate independent application protocols.
+- [x] Validate namespace isolation between applications: `apps/server/src/server.test.ts`, on
+  instances sharing in-memory or Redis coordination, and the browser demo's `chat` application.
+- [x] Validate independent application protocols: in the browser demo, `notes` exchanges strings
+  and `chat` bytes over one signaling server.
 - [ ] Gather integration feedback.
 
 ### Deliverables
@@ -651,4 +653,5 @@ guide. A cross-network test through a TURN server reachable from other networks 
 no date (ADR 0017). Session authorization and proof-of-possession, post-MVP tasks of Phase 5, are done (ADR 0040,
 ADR 0041); pairing is done: the server serves it and the SDK asks for and answers it (ADR 0042).
 Phase 11 has started: `examples/backend-issuer` issues tokens with its own key, documents the
-registry and JWKS setup, and grants pairings (`docs/token-issuance.md`).
+registry and JWKS setup, and grants pairings (`docs/token-issuance.md`); two applications sharing
+the server's instances reach nothing of each other, and exchange their own payload formats.

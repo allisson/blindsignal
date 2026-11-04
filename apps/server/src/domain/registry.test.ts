@@ -243,7 +243,9 @@ describe('parseRegistry and the dev issuer', () => {
       new URL('../../../../examples/registry.dev.json', import.meta.url),
       'utf8',
     );
-    expect(JSON.parse(text)).toEqual({ applications: [devApplication('notes')] });
+    expect(JSON.parse(text)).toEqual({
+      applications: [devApplication('notes'), devApplication('chat')],
+    });
     expect(parseRegistry(text, { now: t0, development: true }).ok).toBe(true);
     expect(parseRegistry(text, { now: t0 }).ok).toBe(false);
   });

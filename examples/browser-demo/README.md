@@ -5,7 +5,7 @@ loads the SDK straight from its TypeScript sources: `server.ts` strips the types
 and an import map resolves the bare specifiers, so there is no bundler.
 
 `server.ts` also stands in for the application backend: `/token` mints a token for the `notes`
-application with the development issuer, whose private key is public in this repository. It
+application, or the one `&app` names, with the development issuer, whose private key is public in this repository. It
 starts only with `BLINDSIGNAL_ENV=development`.
 
 ## Running
@@ -30,6 +30,8 @@ device key and binds the page's tokens to it, as `cnf.jkt` (ADR 0041); the page 
 thumbprint. `&pairing` makes the page a new device: its token lists `notes:demo` in `pairing`
 instead of `namespaces`, and **Ask to pair** asks the user's other `&pop` pages in the namespace,
 which approve every request (ADR 0042). The page shows the approval a backend would check.
+`&app=chat` signs in to the `chat` application of `examples/registry.dev.json`, in `chat:demo`, and
+`&binary` sends each message as UTF-8 bytes instead of a string.
 
 ## Tests
 
@@ -48,4 +50,7 @@ directly, and a session forced to that relay closes once the connection timeout 
 The proof-of-possession tests run in both browsers: pages with `&pop` authenticate with a device
 key that a reload keeps, and a page whose proof is stripped on its way to the server is refused.
 The pairing test opens two `&pop` pages of one user, one with `&pairing`, and checks that the
-approval binds the new page's key and is signed by the other's.
+approval binds the new page's key and is signed by the other's. Another test runs `notes` and
+`&app=chat&binary` pages with the same user and device IDs on one signaling server: each pair
+exchanges its own kind of message, no frame names the other application's namespace, and no page
+supersedes the other application's device.

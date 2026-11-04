@@ -45,6 +45,8 @@ interface Options {
   readonly preAuthentication?: Partial<PreAuthentication>;
   /** Shared by several servers to stand for several instances; in memory by default. */
   readonly coordination?: CoordinationAdapter;
+  /** Registry entries; `notes` alone by default. */
+  readonly applications?: object[];
 }
 
 const servers: SignalingServer[] = [];
@@ -58,10 +60,10 @@ afterEach(async () => {
 
 async function start(options: Options = {}) {
   const now = new Date();
-  const registry = parseRegistry(JSON.stringify({ applications: [devApplication('notes')] }), {
-    now,
-    development: true,
-  });
+  const registry = parseRegistry(
+    JSON.stringify({ applications: options.applications ?? [devApplication('notes')] }),
+    { now, development: true },
+  );
   if (!registry.ok) throw new Error(registry.error);
   const applications = new InMemoryApplicationRepository();
   await applications.replaceAll(registry.registry.applications);
@@ -135,6 +137,7 @@ async function start(options: Options = {}) {
         return message;
       });
     const authenticate = async (claims: {
+      app_id?: string;
       sub: string;
       device_id: string;
       namespaces: string[];
@@ -171,6 +174,69 @@ async function start(options: Options = {}) {
     logs,
     url: `ws://${base}/`,
   };
+}
+
+const twoApplications = [devApplication('notes'), devApplication('chat')];
+
+/**
+ * Two `notes` devices in a session on `one`, and a `chat` device on `two` with the first one's sub
+ * and device_id: the `chat` device reaches nothing of `notes`, and `notes` sees nothing of it.
+ */
+async function isolatesApplications(
+  one: Awaited<ReturnType<typeof start>>,
+  two: Awaited<ReturnType<typeof start>>,
+) {
+  const alice = await one.client();
+  const bob = await one.client();
+  await alice.authenticate({ sub: 'u1', device_id: 'd1', namespaces: ['notes:a'] });
+  await bob.authenticate({ sub: 'u2', device_id: 'd2', namespaces: ['notes:a'] });
+  for (const client of [alice, bob]) {
+    client.send('namespace.join', { namespace: 'notes:a' });
+    await client.next('ack');
+  }
+  await alice.next('presence.changed');
+  const target = { namespace: 'notes:a', userId: 'u2', deviceId: 'd2' };
+  alice.send('session.create', target);
+  const { sessionId } = (await alice.next('session.created')).payload as { sessionId: string };
+  await bob.next('session.request');
+  bob.send('session.accept', { sessionId });
+  await bob.next('ack');
+  await alice.next('session.accepted');
+
+  // The same sub and device_id in another application is another device (spec §6.1).
+  const twin = await two.client();
+  await twin.authenticate({ app_id: 'chat', sub: 'u1', device_id: 'd1', namespaces: ['chat:a'] });
+  twin.send('namespace.join', { namespace: 'chat:a' });
+  await twin.next('ack');
+  const refused: [string, object][] = [
+    ['namespace.join', { namespace: 'notes:a' }],
+    ['discovery.request', { namespace: 'notes:a' }],
+    ['session.create', target],
+    ['pairing.create', { namespace: 'notes:a' }],
+  ];
+  for (const [type, payload] of refused) {
+    twin.send(type, payload);
+    expect(await twin.next('error')).toMatchObject({ payload: { code: 'not_authorized' } });
+  }
+  // The other application's session relays nothing for it.
+  twin.send('rtc.offer', { sessionId, sdp: 'v=0' });
+  expect(await twin.next('error')).toMatchObject({ payload: { code: 'session_unavailable' } });
+  // Its own namespace holds none of the other application's devices.
+  twin.send('session.create', { ...target, namespace: 'chat:a' });
+  expect(await twin.next('error')).toMatchObject({ payload: { code: 'peer_unavailable' } });
+  twin.send('discovery.request', { namespace: 'chat:a' });
+  expect(await twin.next('discovery.result')).toMatchObject({ payload: { devices: [] } });
+  alice.send('discovery.request', { namespace: 'notes:a' });
+  expect(await alice.next('discovery.result')).toMatchObject({
+    payload: { devices: [{ userId: 'u2', deviceId: 'd2' }] },
+  });
+
+  // Beyond the handshake, nothing reached `notes`, and the twin superseded no one.
+  const handshake = new Set(['auth.challenge', 'auth.result']);
+  for (const client of [alice, bob, twin]) {
+    expect(client.received.filter((m) => !handshake.has(m.type))).toEqual([]);
+    expect(client.ws.readyState).toBe(WebSocket.OPEN);
+  }
 }
 
 describe('SignalingServer', () => {
@@ -378,6 +444,15 @@ describe('SignalingServer', () => {
     expect(await bob.next('session.terminated')).toMatchObject({
       payload: { sessionId, reason: 'peer_disconnected' },
     });
+  });
+
+  it('isolates applications that share instances (spec §7.3)', async () => {
+    const coordination = new InMemoryCoordinationAdapter();
+    const [one, two] = await Promise.all([
+      start({ coordination, applications: twoApplications }),
+      start({ coordination, applications: twoApplications }),
+    ]);
+    await isolatesApplications(one, two);
   });
 
   it('closes on a binary frame with malformed_frame', async () => {
@@ -940,6 +1015,13 @@ describe('SignalingServer with the SDK', () => {
       session.close();
       await expect(targetEnded).resolves.toEqual({ reason: 'closed_by_peer' });
       await vi.waitFor(() => expect(one.server.sessionsByApplication()).toEqual(new Map()));
+    });
+
+    it('isolates applications that share instances (spec §7.3)', async () => {
+      const prefix = `test:${randomUUID()}:`;
+      const options = { applications: twoApplications };
+      const [one, two] = await Promise.all([instance(prefix, options), instance(prefix, options)]);
+      await isolatesApplications(one, two);
     });
 
     it('supersedes a device that connects again on another instance', async () => {
