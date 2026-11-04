@@ -138,7 +138,7 @@ Every decision the spec requires before implementation (listed in `AGENTS.md`, "
 - [x] Implement application-scoped authentication context.
 - [x] Document backend token issuance requirements (`docs/token-issuance.md`).
 - [x] Implement a development token issuer for tests and examples, with test keys isolated from production trust configuration.
-- [ ] Ensure no application secret is required or embedded in browser code.
+- [x] Ensure no application secret is required or embedded in browser code: `apps/server/src/browser-code.test.ts` scans what the browser receives.
 - [x] Add tests for invalid, expired, unknown, suspended, and revoked credentials, wrong issuer or audience, `app_id` claim and issuer mismatch, replayed `jti`, excessive token lifetime, future `iat`, and unknown-`kid` refetch limits.
 
 ### Deliverables

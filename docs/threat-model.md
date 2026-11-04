@@ -76,6 +76,7 @@ Application payloads are not an asset of the server: they never reach it (spec �
 | Unknown `kid` values force repeated JWKS fetches | Per-issuer refetch cooldown | spec §5.3 |
 | JWKS fetched over an insecure or slow channel | HTTPS-only `jwks_uri`, fetch timeout | spec §5.3 |
 | Tokens issued for another service accepted | Audience check | ADR 0006 |
+| An issuer's signing key or another application secret shipped in browser code | The key stays on the backend, and the SDK takes only a token; a test scans every file this repository serves to the browser for private keys and `process.env`. An application's own bundle is its own to check | ADR 0002, `docs/token-issuance.md` |
 
 ### 4.3 Operator ↔ server
 
