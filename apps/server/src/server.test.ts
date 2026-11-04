@@ -41,6 +41,7 @@ interface Options {
   readonly maxConnections?: number;
   readonly presenceLeaseMs?: number;
   readonly maxMessageBytes?: number;
+  readonly maxBufferedBytes?: number;
   readonly trustedProxies?: BlockList;
   readonly preAuthentication?: Partial<PreAuthentication>;
   /** Shared by several servers to stand for several instances; in memory by default. */
@@ -103,7 +104,7 @@ async function start(options: Options = {}) {
       negotiationTimeoutMs: 30_000,
       maxMessageBytes: options.maxMessageBytes,
       maxQueuedMessages: defaults.maxQueuedMessages,
-      maxBufferedBytes: defaults.maxBufferedBytes,
+      maxBufferedBytes: options.maxBufferedBytes ?? defaults.maxBufferedBytes,
       abuse: new AbuseMonitor(defaults.abuseAlerts),
       metrics: new Metrics(),
       logger: { log: (level, event, fields) => logs.push({ level, event, ...fields }) },
@@ -497,6 +498,29 @@ describe('SignalingServer', () => {
     expect(await coordination.listPresence('notes:a')).toEqual([
       { appId: 'notes', userId: 'u1', deviceId: 'd1' },
     ]);
+  });
+
+  it('renews leases only on the pong that answers its own ping', async () => {
+    const coordination = new InMemoryCoordinationAdapter();
+    const { client } = await start({ coordination });
+    const alice = await client();
+    await alice.authenticate({ sub: 'u1', device_id: 'd1', namespaces: ['notes:a'] });
+    alice.send('namespace.join', { namespace: 'notes:a' });
+    await alice.next('ack');
+    const acquire = vi.spyOn(coordination, 'acquirePresence');
+    for (let i = 0; i < 50; i++) alice.ws.pong();
+    // Frames are handled in order: the reply comes after every pong was.
+    alice.send('connection.ping');
+    await alice.next('connection.pong');
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it('terminates a client whose pings fill the send buffer it never reads', async () => {
+    const { server, client } = await start({ maxBufferedBytes: 1_000 });
+    const alice = await client();
+    alice.ws.pause();
+    for (let i = 0; i < 40_000; i++) alice.ws.ping(Buffer.alloc(125));
+    await vi.waitFor(() => expect(server.connections).toBe(0), { timeout: 5_000 });
   });
 
   it('logs the client IP, read through a trusted proxy, and the close code', async () => {
@@ -1041,7 +1065,7 @@ describe('SignalingServer with the SDK', () => {
       const [notes] = await two.applications.getAll();
       let registry: Registry = { applications: [notes!], revoked: new Set() };
       const stop = await followRegistry(two.coordination, 60_000, () => {
-        void syncRegistry(stored, two.applications, registry).then((next) => {
+        void syncRegistry(stored, two.applications, registry, true).then((next) => {
           registry = next;
           return two.server.enforce(next.applications);
         });

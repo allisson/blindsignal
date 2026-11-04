@@ -127,6 +127,8 @@ const environment = z
       .refine((value) => value === '' || /^rediss?:\/\//.test(value), {
         message: 'must be a redis:// or rediss:// URL',
       }),
+    // Starts every key and channel, so deployments sharing a Redis stay apart (ADR 0022).
+    BLINDSIGNAL_REDIS_PREFIX: z.string().regex(/^\S+$/).default('blindsignal:'),
     // How often each instance rereads the stored registry, with Redis (ADR 0024).
     BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS: seconds.positive().default(60),
     // How long a scrape of /metrics waits for each dependency's probe (ADR 0028).
@@ -247,7 +249,7 @@ export interface ServerConfig {
   /** Absent when storage stays in memory. */
   readonly database?: { readonly url: string; readonly poolSize: number };
   /** Absent when coordination stays in memory. */
-  readonly redis?: { readonly url: string };
+  readonly redis?: { readonly url: string; readonly prefix: string };
   readonly registrySyncIntervalMs: number;
   readonly dependencyProbeTimeoutMs: number;
   /** On SIGTERM, how long readiness fails before the connections close (ADR 0031). */
@@ -337,7 +339,9 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
               poolSize: vars.BLINDSIGNAL_DATABASE_POOL_SIZE,
             },
           }),
-      ...(vars.BLINDSIGNAL_REDIS_URL === '' ? {} : { redis: { url: vars.BLINDSIGNAL_REDIS_URL } }),
+      ...(vars.BLINDSIGNAL_REDIS_URL === ''
+        ? {}
+        : { redis: { url: vars.BLINDSIGNAL_REDIS_URL, prefix: vars.BLINDSIGNAL_REDIS_PREFIX } }),
       ...(vars.OTEL_EXPORTER_OTLP_ENDPOINT === '' && vars.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT === ''
         ? {}
         : { otlp: { intervalMs: vars.OTEL_METRIC_EXPORT_INTERVAL } }),

@@ -36,7 +36,9 @@ stored, logged, or counted. Application payloads never reach the server (spec §
   on `connection.opened` only, so an operator can tie abuse to a connection. No user, device,
   namespace, session participant, token, or payload is logged (tested).
 - **Operators keep logs with a client IP for at most 14 days.** The server README states it;
-  BlindSignal cannot enforce a log pipeline it does not run.
+  BlindSignal cannot enforce a log pipeline it does not run. Amended by the Phase 12 security
+  review: neither Docker's log driver nor Cloud Logging's default bucket deletes logs after 14
+  days, so `docs/self-hosted.md` and `docs/cloud-run.md` say how.
 - **Metrics are aggregates** labeled only by message type, error code, authentication result,
   termination reason, the backpressure limit reached (ADR 0013), and the application ID of a
   verified token (ADR 0015); they identify no application user, device, or address and need no

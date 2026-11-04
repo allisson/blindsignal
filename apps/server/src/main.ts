@@ -206,7 +206,7 @@ async function main(): Promise<void> {
   // Installs what another instance's reload stored; a failure keeps the current registry.
   const sync = async () => {
     try {
-      registry = await syncRegistry(storage.applications, applications, registry);
+      registry = await syncRegistry(storage.applications, applications, registry, development);
     } catch {
       logger.log('warn', 'registry.sync_failed');
       return;

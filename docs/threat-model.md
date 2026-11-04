@@ -125,7 +125,9 @@ Application payloads are not an asset of the server: they never reach it (spec Â
 6. **Peers see each other's network addresses** through ICE candidates, inherent to WebRTC.
 7. **In-memory adapters are single-instance** and lose device records, presence, and `jti`
    history on restart. Tokens issued before the restart are rejected, so the lost `jti` history
-   allows no replay (ADR 0006); revocations survive in the registry file.
+   allows no replay (ADR 0006); revocations survive in the registry file. Redis losing data while
+   the instances run does allow it, until the used tokens expire: Redis runs with
+   `maxmemory-policy noeviction`, and the instances restart after it loses data (ADR 0035).
 8. **A flooding connection is answered, not closed** (ADR 0011), until its queue fills and it is
    closed with `1013` (ADR 0013). Repeated violations raise an abuse alert, and suspending the
    application is the operator's decision (ADR 0016).
