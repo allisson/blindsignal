@@ -16,7 +16,13 @@ const config = {
   issuer: 'https://api.example.test',
   audience: 'blindsignal',
   signingKey,
-  allowedOrigins: [ORIGIN],
+  allowedOrigins: [
+    ORIGIN,
+    'http://127.0.0.1:3797',
+    'http://localhost:3797',
+    'http://[::1]:3797',
+    'https://localhost:3797',
+  ],
 };
 
 let server: Server;
@@ -238,6 +244,21 @@ describe('backend issuer', () => {
       expect(response.headers.get('set-cookie')).toMatch(
         /^session=[\w-]{43}; HttpOnly; Secure; SameSite=Strict; Path=\/$/,
       );
+    });
+
+    it('leaves Secure out only for a plain-HTTP loopback origin', async () => {
+      const cookie = async (origin: string) =>
+        (await post('/login', { user: 'alice' }, { origin })).headers.get('set-cookie');
+      for (const origin of [
+        'http://127.0.0.1:3797',
+        'http://localhost:3797',
+        'http://[::1]:3797',
+      ]) {
+        expect(await cookie(origin)).toMatch(
+          /^session=[\w-]{43}; HttpOnly; SameSite=Strict; Path=\/$/,
+        );
+      }
+      expect(await cookie('https://localhost:3797')).toContain('; Secure;');
     });
   });
 });

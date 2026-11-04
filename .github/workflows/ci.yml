@@ -34,7 +34,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @blindsignal/browser-demo exec playwright install --with-deps chromium firefox
+      - run: pnpm --filter @blindsignal/browser-demo exec playwright install --with-deps chromium firefox webkit
       # Docker on the runner starts the compose.yaml Coturn for the relay tests.
       - run: pnpm test:browser
         env:

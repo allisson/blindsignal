@@ -21,7 +21,7 @@ from an outside application.
 | A `jwksUri` must be HTTPS, so a backend on a development machine lists its keys in `publicKeys` instead. | `docs/token-issuance.md#registration`, `examples/backend-issuer/README.md` |
 | `BLINDSIGNAL_ALLOWED_ORIGINS` is server-wide: adding an application with its own origin changes the server's environment, and the registry carries no origins. | `docs/application-lifecycle.md`, spec §16 |
 | `DeviceKey` needs a secure context and the SDK refuses `ws://` except on loopback, so a device on the local network cannot use a plain `http://` address. | `docs/tailscale.md` |
-| Every device on one development machine connects from `127.0.0.1` and shares its per-IP limits; a test with many devices gets `rate_limited`. | `apps/server/README.md`, `examples/minimal-app/playwright.config.ts` |
+| Every device on one development machine connects from `127.0.0.1` and shares its per-IP limits; a test with many devices gets `rate_limited`. | `apps/server/README.md`, `examples/minimal-app/playwright.config.ts`, `examples/browser-demo/playwright.config.ts` |
 | DTLS trusts the signaling server, which relays each peer's certificate fingerprint. | `docs/application-e2ee.md`, `docs/threat-model.md` §5 |
 
 ## Open

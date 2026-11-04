@@ -56,6 +56,7 @@ export default defineConfig({
         },
       },
     },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
   webServer: [
     ...(turn
@@ -79,6 +80,9 @@ export default defineConfig({
         BLINDSIGNAL_PORT: String(port),
         BLINDSIGNAL_ADMIN_PORT: '0',
         BLINDSIGNAL_REGISTRY_PATH: '../registry.dev.json',
+        // Every test device connects from 127.0.0.1, so the per-address limits would throttle them.
+        BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS: '100,100',
+        BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION: '100,100',
       },
       reuseExistingServer: !process.env.CI,
     })),

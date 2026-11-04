@@ -75,4 +75,4 @@ accepted risk 1). This ADR binds a token to a key the device holds and the token
   bind the new one; the server notices nothing.
 - The server accepts proofs from any client; the SDK is one of them. Safari keeping a
   non-extractable `CryptoKey` in IndexedDB is untested: the Playwright tests run Chromium and
-  Firefox.
+  Firefox. Amended by ADR 0047: Playwright's WebKit keeps it across a reload.

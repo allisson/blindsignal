@@ -84,6 +84,14 @@ export function registryEntry(
  * shortcut: users, devices, sessions, and used pairing IDs live in memory and vanish on restart;
  * a real backend keeps them in its own database.
  */
+const loopback = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/** WebKit drops a `Secure` cookie on plain-HTTP loopback, which Chromium and Firefox keep. */
+function secure(origin: string): string {
+  const { protocol, hostname } = new URL(origin);
+  return protocol === 'http:' && loopback.has(hostname) ? '' : ' Secure;';
+}
+
 export function createBackend(config: BackendConfig) {
   const key = importJWK(config.signingKey, 'ES256');
   const sessions = new Map<string, string>();
@@ -205,7 +213,7 @@ export function createBackend(config: BackendConfig) {
       sessions.set(session, body.user!);
       response
         .writeHead(204, {
-          'set-cookie': `session=${session}; HttpOnly; Secure; SameSite=Strict; Path=/`,
+          'set-cookie': `session=${session}; HttpOnly;${secure(request.headers.origin!)} SameSite=Strict; Path=/`,
         })
         .end();
       return;

@@ -21,7 +21,7 @@ codes alone.
 
 | Route                        | Body                                  | Answer                                                                                                     |
 | ---------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `POST /login`                | `{ user }`                            | `204`, with an `HttpOnly; Secure; SameSite=Strict` session cookie. No password: it stands in for sign-in. |
+| `POST /login`                | `{ user }`                            | `204`, with an `HttpOnly; Secure; SameSite=Strict` session cookie (no `Secure` on a plain-HTTP loopback origin). No password: it stands in for sign-in. |
 | `POST /devices`              | `{ deviceId, jkt }`                   | `204`. The first `jkt` of a device stays; another one gets `409`.                                          |
 | `POST /token`                | `{ deviceId }`                        | `200`, the token as text, `no-store`. An unknown device gets `404`.                                        |
 | `POST /pairings`             | `{ deviceId, namespace, approval }`   | `204` once the approval passes the checks of `docs/token-issuance.md`, Pairing; else `403`.                |
@@ -57,8 +57,9 @@ The registry file lists the public key in `publicKeys`: the server fetches a JWK
 HTTPS. Behind HTTPS, register `jwksUri` with this backend's `/.well-known/jwks.json` instead, and
 rotate keys as `docs/token-issuance.md` describes.
 
-The cookie is `Secure`: browsers keep it on `http://127.0.0.1` and `http://localhost`, and need
-HTTPS anywhere else.
+The cookie is `Secure`, so browsers need HTTPS, except for a page on plain-HTTP `localhost`,
+`127.0.0.1`, or `[::1]`: there the backend leaves `Secure` out, since WebKit drops a `Secure`
+cookie on plain HTTP even on loopback (ADR 0047).
 
 ## Tests
 
