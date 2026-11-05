@@ -90,6 +90,11 @@ ADR 0013, ADR 0016, and ADR 0017.
 | SDK ↔ server | `session.create` and `pairing.create` read the namespace's whole presence to check one device | `isPresent` and `listPresence` by user, a sorted set per namespace and user in Redis (ADR 0022) |
 | SDK ↔ server | Pending sessions can hold the 16 session slots of a target, and raise no alert | One pending session per requester and target, and a full target counts toward the abuse alert (ADR 0011) |
 | SDK ↔ server | A pairing request fans out to every present device of its user, with no cap | `pairingApprovers`, `BLINDSIGNAL_MAX_PAIRING_APPROVERS`, default 10 (ADR 0042) |
+| SDK ↔ server | Per-connection rate limits start again at each reconnection | Buckets after authentication are per device (ADR 0011) |
+| SDK ↔ server | Per-IP limits do not aggregate IPv6 addresses by prefix | `BLINDSIGNAL_IPV6_PREFIX_LENGTH`, default 64 (ADR 0011) |
+| SDK ↔ server | `auth.refresh` shares the per-IP authentication bucket | A `refresh` bucket per device, `BLINDSIGNAL_RATE_LIMIT_REFRESH` (ADR 0011) |
+| SDK ↔ server | Both sides of a session share one `rtc` bucket | Each participant has its own `rtc` and `rtc_ice_candidate` buckets (ADR 0011) |
+| SDK ↔ server | No HTTP header or request timeout bounds a client before the upgrade | `BLINDSIGNAL_HTTP_HEADERS_TIMEOUT_SECONDS`, default 10 (ADR 0011) |
 
 ### Non-blocking, accepted
 
@@ -105,11 +110,6 @@ ADR 0013, ADR 0016, and ADR 0017.
 | SDK ↔ server | One application can fill an instance's connection cap |
 | SDK ↔ server | A session's duration timer uses the requester's limits only |
 | SDK ↔ server | A heartbeat whose renewal fails, or a lower `namespacesPerDevice`, does not trim what the connection holds |
-| SDK ↔ server | Per-connection rate limits start again at each reconnection |
-| SDK ↔ server | Per-IP limits do not aggregate IPv6 addresses by prefix |
-| SDK ↔ server | `auth.refresh` shares the per-IP authentication bucket |
-| SDK ↔ server | Both sides of a session share one `rtc` bucket |
-| SDK ↔ server | No HTTP header or request timeout bounds a client before the upgrade |
 | Operator ↔ server | The abuse alert does not name the connection |
 | Device ↔ device | A TURN username is its expiry and application ID only, so the credentials of one application minted in the same second are the same, and share its `user-quota` |
 | Device ↔ device | `denied-peer-ip` does not deny the TURN host's own public address |

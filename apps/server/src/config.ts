@@ -156,6 +156,10 @@ const environment = z
     BLINDSIGNAL_MAX_UNAUTHENTICATED: count.default(1_000),
     BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS: rateLimit(5, 20),
     BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION: rateLimit(1, 10),
+    // Per-IP limits take an IPv6 address by this prefix; 128 keys each address (ADR 0011).
+    BLINDSIGNAL_IPV6_PREFIX_LENGTH: z.coerce.number().int().min(1).max(128).default(64),
+    // Bounds a request before the upgrade, headers included: Node's defaults allow minutes.
+    BLINDSIGNAL_HTTP_HEADERS_TIMEOUT_SECONDS: seconds.positive().default(10),
     // The protocol caps it at its default (docs/protocol.md §1).
     BLINDSIGNAL_MAX_MESSAGE_BYTES: count.max(MAX_MESSAGE_BYTES).default(MAX_MESSAGE_BYTES),
     // Per connection (ADR 0013): reading pauses at half the queue, so it holds at least two; the
@@ -180,6 +184,7 @@ const environment = z
     BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE: rateLimit(2, 10),
     BLINDSIGNAL_RATE_LIMIT_PAIRING: rateLimit(0.1, 3),
     BLINDSIGNAL_RATE_LIMIT_PRESENCE: rateLimit(1, 10),
+    BLINDSIGNAL_RATE_LIMIT_REFRESH: rateLimit(0.1, 5),
     BLINDSIGNAL_RATE_LIMIT_SIGNALING: rateLimit(50, 100),
     BLINDSIGNAL_RATE_LIMIT_RTC: rateLimit(10, 30),
     BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE: rateLimit(20, 50),
@@ -301,8 +306,12 @@ export interface PreAuthentication {
   readonly maxUnauthenticatedPerIp: number;
   readonly maxUnauthenticated: number;
   readonly connectionAttempts: RateLimitPolicy;
-  /** `auth.authenticate` and `auth.refresh`, per client IP. */
+  /** `auth.authenticate`, per client IP; `auth.refresh` takes the application's `refresh` bucket. */
   readonly authenticationAttempts: RateLimitPolicy;
+  /** The prefix by which per-IP limits take an IPv6 address; 128 takes each address. */
+  readonly ipv6PrefixLength: number;
+  /** Receiving a request's headers, the upgrade's included, takes no longer than this. */
+  readonly headersTimeoutMs: number;
 }
 
 export type ConfigResult =
@@ -393,6 +402,8 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
         maxUnauthenticated: vars.BLINDSIGNAL_MAX_UNAUTHENTICATED,
         connectionAttempts: vars.BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS,
         authenticationAttempts: vars.BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION,
+        ipv6PrefixLength: vars.BLINDSIGNAL_IPV6_PREFIX_LENGTH,
+        headersTimeoutMs: vars.BLINDSIGNAL_HTTP_HEADERS_TIMEOUT_SECONDS * 1000,
       },
       maxMessageBytes: vars.BLINDSIGNAL_MAX_MESSAGE_BYTES,
       maxQueuedMessages: vars.BLINDSIGNAL_MAX_QUEUED_MESSAGES,
@@ -412,6 +423,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
           session_create: vars.BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE,
           pairing: vars.BLINDSIGNAL_RATE_LIMIT_PAIRING,
           presence: vars.BLINDSIGNAL_RATE_LIMIT_PRESENCE,
+          refresh: vars.BLINDSIGNAL_RATE_LIMIT_REFRESH,
           signaling: vars.BLINDSIGNAL_RATE_LIMIT_SIGNALING,
           rtc: vars.BLINDSIGNAL_RATE_LIMIT_RTC,
           rtc_ice_candidate: vars.BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE,
