@@ -13,6 +13,7 @@ from an outside application.
 | `pairing.request` lacked the new device's key thumbprint, which the approving device signs in the approval's `jkt` claim. The server's tests passed because they already knew the key. | Writing the SDK side of pairing | `jkt` in `pairing.request` (#97, ADR 0042) |
 | The minimal app's sign-in form submitted natively, reloading the page, when clicked before its script finished loading. | Firefox's cold start in CI | The button stays disabled until the script is ready (#104) |
 | The SDK had no public way to refresh the token on demand: after the backend granted a pairing, the minimal app closed the client and connected again to get a token with the namespace. | `examples/minimal-app/public/app.ts` | `client.refresh()` (ADR 0046) |
+| The SDK was not published (`private`, version `0.0.0`): an application outside this repository had no package to install. | `examples/minimal-app/server.ts`, `examples/browser-demo/server.ts` | `@blindsignal/sdk` on npm since `0.1.0` (ADR 0050) |
 
 ## Documented
 
@@ -28,5 +29,4 @@ from an outside application.
 
 | Finding | Where it showed up | Roadmap task |
 |---|---|---|
-| The SDK is not published (`private`, version `0.0.0`): the examples serve its source with the types stripped, and an application outside this repository has no package to install. | `examples/minimal-app/server.ts`, `examples/browser-demo/server.ts` | Phase 12: the `0.1.0` release (ADR 0043); until then, `docs/onboarding.md` and `packages/sdk/README.md#installation` say how to depend on it |
 | No application outside this repository has integrated yet. | Phase 11 | Phase 11: integrate with BlindVault |

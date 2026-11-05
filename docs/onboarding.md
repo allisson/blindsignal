@@ -64,8 +64,7 @@ In the page (`packages/sdk/README.md`; in code, `examples/minimal-app/public/app
    DataChannel; a superseded one stops it until you call `connect()` again
    (`packages/sdk/README.md#errors`).
 
-The SDK is not on npm until its first release, `0.1.0` (ADR 0043): until then a package in this
-workspace depends on it (`packages/sdk/README.md#installation`).
+Install the SDK with `npm install @blindsignal/sdk` (`packages/sdk/README.md#installation`).
 
 ## 4. Add a user's second device
 

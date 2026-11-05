@@ -1,6 +1,6 @@
 {
   "name": "@blindsignal/protocol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Message schemas of the BlindSignal signaling protocol.",
   "license": "MIT",
   "repository": {
