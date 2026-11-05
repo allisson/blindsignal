@@ -68,7 +68,7 @@ the decisions behind them are in `docs/adr/0032-self-hosted-compose.md`.
   that deletes them after 14 days.
 - **TURN:** the `turn` profile runs Coturn on this host (`docs/vps.md`), or run it elsewhere as
   `docs/turn-operations.md` describes; either way, set `BLINDSIGNAL_TURN_URLS` and
-  `BLINDSIGNAL_TURN_SECRET` in `.env`.
+  `BLINDSIGNAL_TURN_SECRET` in `.env`, and with the profile `BLINDSIGNAL_TURN_PUBLIC_IP` too.
 - **Backups:** keep `.env` and `registry.json` off the host, and dump the `postgres-data` volume's
   database daily; `docs/backup-and-recovery.md` has the commands and the restore.
 

@@ -22,6 +22,8 @@ on port 443 for networks that allow only HTTPS, but on one address Caddy already
 - **The TURN secret reaches Coturn through the environment** and a file written in a `tmpfs` at
   startup, never its command line. Coturn's configuration, without the secret, is
   `examples/self-hosted/turnserver.conf`, with the peer restrictions of `docs/turn-operations.md`.
+  Amended by the Phase 12 abuse review: `BLINDSIGNAL_TURN_PUBLIC_IP` lists the host's public
+  addresses, which the startup adds as `denied-peer-ip`; without it, Coturn does not start.
 - **The firewall is the provider's, or `ufw`, with the same ports open:** SSH, 80, 443, and with
   TURN 3478, 5349, and the relay range. Ports Docker publishes bypass `ufw`, so `compose.yaml`
   publishes only 80 and 443 to the internet and `/metrics` on loopback; Coturn, on the host's

@@ -1174,11 +1174,14 @@ export class Connection {
     if (code === 'rate_limited' || code === 'quota_exceeded') this.#suspectAbuse();
   }
 
-  /** Records one rejection of the application, which may raise an abuse alert (ADR 0016). */
+  /**
+   * Records one rejection of the application, which may raise an abuse alert naming the
+   * connection whose rejection reached the threshold (ADR 0016).
+   */
   #suspectAbuse(): void {
     const appId = this.#appId;
     if (appId === undefined || !this.#deps.abuse.record(appId)) return;
-    this.#deps.logger.log('warn', 'application.abuse_suspected', { appId });
+    this.#deps.logger.log('warn', 'application.abuse_suspected', { connectionId: this.id, appId });
     this.#deps.metrics.count('blindsignal_abuse_alerts_total', { app_id: appId });
   }
 

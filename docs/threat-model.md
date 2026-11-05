@@ -105,7 +105,7 @@ Application payloads are not an asset of the server: they never reach it (spec �
 |---|---|---|
 | Payload read by the server or a TURN relay | Payload only over DTLS-encrypted DataChannels; against the server, whose relayed SDP carries the DTLS fingerprints, only application E2EE protects it | spec §4.1, §12.3, `docs/application-e2ee.md` |
 | TURN credentials stolen or reused | Temporary credentials scoped to one application, delivered only through `rtc.ice_config`; a long random shared secret; per-credential and server quotas on the TURN server | ADR 0009, ADR 0017 |
-| A relay used to reach the network that hosts the TURN server | `denied-peer-ip` for private, loopback, link-local, and metadata ranges; no loopback peers outside tests | ADR 0017 |
+| A relay used to reach the network that hosts the TURN server | `denied-peer-ip` for private, loopback, link-local, and metadata ranges, and the TURN host's own public addresses; no loopback peers outside tests | ADR 0017 |
 | A revoked device keeps talking to its peers | Peers notified with `session.terminated`; the SDK closes the session | spec §6.4 |
 
 ### 4.5 Server ↔ adapters

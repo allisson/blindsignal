@@ -55,6 +55,7 @@ denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
 denied-peer-ip=::ffff:0:0-::ffff:ffff:ffff
 denied-peer-ip=64:ff9b::-64:ff9b::ffff:ffff
+denied-peer-ip=<the TURN host's public address, one line each>
 # Sized for the expected relayed sessions; see Limits.
 user-quota=<allocations per credential>
 total-quota=<allocations per server>
@@ -67,7 +68,10 @@ prometheus-address=10.0.0.10
   reaches the network that hosts it: private ranges, loopback, link-local, and the cloud metadata
   address `169.254.169.254` (threat model §4.4). The IPv4-mapped (`::ffff:0:0/96`) and NAT64
   (`64:ff9b::/96`) ranges are denied whole, since each holds an IPv4 address the IPv4 lines deny;
-  Coturn takes ranges as `first-last`, not CIDR, and refuses to start on an invalid one. Never set
+  Coturn takes ranges as `first-last`, not CIDR, and refuses to start on an invalid one. The TURN
+  host's own public addresses are denied too, one line each, IPv4 and IPv6: otherwise a relay
+  reaches every service the host listens on, the signaling server included when they share it
+  (`docs/vps.md`). Never set
   `allow-loopback-peers`. `no-tcp-relay` turns off TCP relays (RFC 6062), which browsers never
   ask for, and which would reach any TCP service, mail servers included, from the TURN server's
   address. The test Coturn of `compose.yaml` denies none of these, because its relay addresses are private container
@@ -75,7 +79,8 @@ prometheus-address=10.0.0.10
 - **Ports.** `3478` over UDP and TCP, `443` over TCP for `turns:`, and the relay range over UDP,
   open to clients. `turns:` on `443` passes networks that allow only HTTPS. A `turns:` URL needs a
   certificate browsers trust, for the host name in the URL; Firefox rejects any other.
-- **Limits.** Each credential is its own Coturn user, since its username carries its expiry:
+- **Limits.** Each credential is its own Coturn user, since its username carries its expiry and a
+  random value:
   `user-quota` bounds the allocations of one credential, `total-quota` those of the server,
   `max-bps` the bandwidth of each, in bytes per second. Size them for the expected concurrent
   relayed sessions; `examples/self-hosted/turnserver.conf` starts from `user-quota=48` (16

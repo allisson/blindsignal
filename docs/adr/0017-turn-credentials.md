@@ -10,11 +10,14 @@ call to another service on the authentication path.
 
 ## Rules
 
-- **Credential:** the username is `<expiry>:<app_id>`, where `<expiry>` is the Unix time in seconds
-  at which the credential stops being accepted; the password is
+- **Credential:** the username is `<expiry>:<app_id>:<nonce>`, where `<expiry>` is the Unix time in
+  seconds at which the credential stops being accepted, and `<nonce>` 12 random bytes in base64url,
+  so that no two credentials are one Coturn user sharing its `user-quota` (amended by the Phase 12
+  abuse review: with `<expiry>:<app_id>` alone, an application's credentials of one second were
+  the same); the password is
   `base64(HMAC-SHA1(secret, username))`, computed with `node:crypto`. Each `rtc.ice_config` carries
   one `RTCIceServer` with every configured TURN URL and a credential minted for that message.
-- **What the username carries:** the application ID only, never `sub`, `device_id`, a namespace, or
+- **What the username carries:** the application ID and a random value only, never `sub`, `device_id`, a namespace, or
   a session (ADR 0012). It is already a metric label (ADR 0015) and lets the operator tie relay
   usage in the TURN server's logs to an application.
 - **Scope:** a credential is valid for one application's users until its expiry. It cannot be
@@ -66,7 +69,10 @@ call to another service on the authentication path.
   never `allow-loopback-peers`; `turns:` on port 443 for networks that block everything else;
   `user-quota`, `max-bps`, and `total-quota` to bound what one credential and the server relay.
   Amended by the Phase 12 abuse-resistance review: `examples/self-hosted/turnserver.conf` sets
-  all three rather than leaving Coturn's unlimited default, and `no-tcp-relay`.
+  all three rather than leaving Coturn's unlimited default, and `no-tcp-relay`; and
+  `denied-peer-ip` for the TURN host's own public addresses, which otherwise reach every service
+  the host listens on; `examples/self-hosted/` takes them from `BLINDSIGNAL_TURN_PUBLIC_IP`, without
+  which its Coturn does not start.
 
 ## Considered options
 
