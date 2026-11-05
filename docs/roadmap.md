@@ -594,11 +594,11 @@ for, and keep every document accurate against the code.
 
 ### Tasks
 
-- [ ] Rewrite `README.md` for someone evaluating the project: what it is, what it does and never
+- [x] Rewrite `README.md` for someone evaluating the project: what it is, what it does and never
   does, who it is for and not for, its release state, and a path for each audience.
-- [ ] Add `docs/README.md`, an index of the documentation by audience: evaluate, integrate,
+- [x] Add `docs/README.md`, an index of the documentation by audience: evaluate, integrate,
   operate, reference, and records.
-- [ ] Add `CONTRIBUTING.md`: setup, commands, the checks of a pull request, and the commit and
+- [x] Add `CONTRIBUTING.md`: setup, commands, the checks of a pull request, and the commit and
   pull request conventions; `AGENTS.md` points to it instead of repeating them.
 - [ ] Add a test that fails on a relative link in a Markdown file whose target does not exist.
 - [ ] Review `docs/spec.md` and `docs/protocol.md` against the code.
@@ -716,4 +716,5 @@ none open either; load tests validate the quota and rate-limit defaults before e
 major release too (ADR 0049, `docs/load-report.md`), and their findings are fixed or accepted;
 the SDK README documents every export, and a test keeps it so (ADR 0046);
 `docs/onboarding.md` takes an application team from registration to production, and
-`docs/deployment.md` an operator from choosing a topology to upgrading it.
+`docs/deployment.md` an operator from choosing a topology to upgrading it. Phase 13 has started: `README.md` introduces the project, `docs/README.md` indexes the
+documentation by audience, and `CONTRIBUTING.md` holds the setup, commands, checks, and conventions.

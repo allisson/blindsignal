@@ -15,6 +15,8 @@ server. Initial target: browser / PWA.
 - `docs/roadmap.md`: phased plan; maps every MVP item to the phase that delivers it.
 - `docs/adr/`: architecture decision records.
 - `GLOSSARY.md`: canonical domain terms; use them in code, docs, and messages.
+- `docs/README.md`: an index of every document, by audience.
+- `CONTRIBUTING.md`: setup, commands, checks, and the commit and pull request conventions.
 - `docs/protocol.md`, `docs/threat-model.md`: Phase 0 deliverables.
 - `docs/onboarding.md`: an application team's path from registration to production.
 - `docs/token-issuance.md`: what an application backend must do to issue accepted tokens.
@@ -93,7 +95,8 @@ SDK README documents every export, and a test keeps it so (ADR 0046); the SDK an
 are published to npm, from CI with provenance, and the image to Docker Hub, as `allisson/blindsignal`, and `0.1.0` is
 released (ADR 0050);
 `docs/onboarding.md` takes an application team from registration to production, and
-`docs/deployment.md` an operator from choosing a topology to upgrading it. The
+`docs/deployment.md` an operator from choosing a topology to upgrading it. Phase 13 has started: `README.md` introduces the project, `docs/README.md` indexes the
+documentation by audience, and `CONTRIBUTING.md` holds the setup, commands, checks, and conventions. The
 workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
@@ -102,30 +105,6 @@ by `docs/adr/0038-opentelemetry-metrics.md` (the OpenTelemetry metrics SDK and i
 not add a tool outside those ADRs without a new ADR.
 
 TypeScript stays on 6.0.x until `typescript-eslint` supports 7: type-aware linting is required.
-
-## Commands
-
-Node.js 26 (`.nvmrc`) and pnpm through corepack (`packageManager` in `package.json`).
-
-```sh
-pnpm install          # install the workspace
-pnpm lint             # ESLint, type-aware, with the ADR 0002 import rules
-pnpm typecheck        # tsc --noEmit in every package
-pnpm test             # Vitest across all packages
-pnpm test:coverage    # Vitest with V8 coverage and the floors below
-pnpm test:browser     # Playwright, Chromium, Firefox, and WebKit, against examples/browser-demo and examples/minimal-app
-BLINDSIGNAL_TEST_TURN=1 pnpm test:browser  # also the relay tests, with the compose.yaml Coturn (Docker)
-BLINDSIGNAL_TEST_POSTGRES_URL=<url> pnpm test  # also the PostgreSQL adapter, with the compose.yaml PostgreSQL (port 6432: through its PgBouncer)
-BLINDSIGNAL_TEST_REDIS_URL=<url> pnpm test     # also the Redis adapter and two server instances, with the compose.yaml Valkey
-BLINDSIGNAL_DATABASE_URL=<url> pnpm --filter @blindsignal/storage-postgresql migrate  # apply migrations
-pnpm format:check     # Prettier (pnpm format to fix)
-pnpm build            # tsc in every package
-node tests/load/load.ts --smoke  # the load test, small; without --smoke, 10,000 devices (ADR 0049)
-```
-
-CI (`.github/workflows/ci.yml`) runs format check, lint, typecheck, and tests with coverage on
-every pull request, and the browser tests and the adapters against their services in jobs of
-their own.
 
 ## Decisions that block implementation
 
@@ -199,53 +178,8 @@ Treat a violation of any of these as a bug, regardless of the task:
 - Every message carries `version`, `type`, `payload`, and `requestId` where applicable. Server and
   SDK consume the same schemas from the shared protocol package.
 
-## Testing
+## Setup, commands, tests, and conventions
 
-- Spec §21 lists the required unit, integration, connectivity, and abuse tests; add the tests for
-  the behavior you implement.
-- Security paths need negative tests: every rejection case (bad signature, issuer, audience,
-  expiry, replayed `jti`, unknown/suspended app, unauthorized namespace, `rtc.*` outside a session).
-- Tests run against in-memory adapters and need no network services.
-- Coverage floors, enforced in CI by `vitest.config.ts`: 90% of lines and 85% of branches in
-  `packages/protocol`, `packages/core`, the server's `domain` and `handlers` layers, where
-  authorization lives, and the SDK's signaling layer (`packages/sdk/src/*.ts`). Transport code and
-  the SDK's WebRTC layer (`packages/sdk/src/webrtc/`) have no floor: integration and Playwright
-  tests cover them. Never lower a floor to make a change pass; add the missing tests.
-
-## Language
-
-- All code, identifiers, comments, docs, and commit messages are in **English**.
-
-## Commits
-
-Follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
-
-```text
-<type>(<optional scope>): <imperative summary>
-
-<optional body: what and why>
-
-<optional footer: BREAKING CHANGE: ..., Refs: ...>
-```
-
-- Types: `feat`, `fix`, `docs`, `refactor`, `test`, `perf`, `build`, `ci`, `chore`, `style`,
-  `revert`.
-- Scopes, once the packages exist: `server`, `sdk`, `protocol`, `core`, `storage`,
-  `coordination`, `adr`, `spec`, `roadmap`.
-- Summary in the imperative mood, lowercase, no trailing period, at most 72 characters.
-- Breaking protocol or SDK changes use `!` after the type/scope and a `BREAKING CHANGE:` footer.
-- One logical change per commit.
-
-Examples:
-
-```text
-docs(adr): record namespace authorization source
-feat(protocol): add versioned auth message schemas
-fix(server): reject auth.refresh with a different device_id
-feat(protocol)!: rename rtc.ice to rtc.ice_candidate
-```
-
-## Pull requests
-
-- Every change, code or docs, reaches `main` through a pull request. Never push directly to `main`.
-- Work on a branch cut from the latest `main`; one logical change per pull request.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the setup, every command, the checks CI runs on a pull
+request, the testing rules and coverage floors, and the language, commit, and pull request
+conventions. Follow it; it applies to agents as it does to people.
