@@ -95,21 +95,21 @@ ADR 0013, ADR 0016, and ADR 0017.
 | SDK ↔ server | `auth.refresh` shares the per-IP authentication bucket | A `refresh` bucket per device, `BLINDSIGNAL_RATE_LIMIT_REFRESH` (ADR 0011) |
 | SDK ↔ server | Both sides of a session share one `rtc` bucket | Each participant has its own `rtc` and `rtc_ice_candidate` buckets (ADR 0011) |
 | SDK ↔ server | No HTTP header or request timeout bounds a client before the upgrade | `BLINDSIGNAL_HTTP_HEADERS_TIMEOUT_SECONDS`, default 10 (ADR 0011) |
+| SDK ↔ server | One user can fill its application's device quota for the 30 days of the device TTL | `devicesPerUser`, `BLINDSIGNAL_MAX_DEVICES_PER_USER`, default 100 (ADR 0011) |
+| SDK ↔ server | A session's duration timer uses the requester's limits only | The requester sets one duration, which the target arms too (ADR 0014) |
+| SDK ↔ server | A heartbeat whose renewal fails, or a lower `namespacesPerDevice`, does not trim what the connection holds | The connection closes, or the session ends; `auth.refresh` leaves the namespaces beyond the quota (ADR 0011, ADR 0022) |
 
 ### Non-blocking, accepted
 
 | Boundary | Finding | Accepted risk |
 |---|---|---|
 | Operator ↔ server | The abuse alert counts per instance, and is off by default (`BLINDSIGNAL_ABUSE_ALERT_THRESHOLD=0`) | Threat model §5, risk 8 |
+| SDK ↔ server | One application can fill an instance's connection cap | Threat model §5, risk 14 |
 
 ### Non-blocking, open
 
 | Boundary | Finding |
 |---|---|
-| SDK ↔ server | One user can fill its application's device quota for the 30 days of the device TTL |
-| SDK ↔ server | One application can fill an instance's connection cap |
-| SDK ↔ server | A session's duration timer uses the requester's limits only |
-| SDK ↔ server | A heartbeat whose renewal fails, or a lower `namespacesPerDevice`, does not trim what the connection holds |
 | Operator ↔ server | The abuse alert does not name the connection |
 | Device ↔ device | A TURN username is its expiry and application ID only, so the credentials of one application minted in the same second are the same, and share its `user-quota` |
 | Device ↔ device | `denied-peer-ip` does not deny the TURN host's own public address |

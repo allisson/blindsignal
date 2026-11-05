@@ -69,6 +69,7 @@ describe('loadConfig', () => {
         quotas: {
           connections: 10_000,
           devices: 10_000,
+          devicesPerUser: 100,
           sessions: 10_000,
           sessionsPerDevice: 16,
           namespacesPerDevice: 100,
@@ -144,6 +145,7 @@ describe('loadConfig', () => {
       BLINDSIGNAL_MAX_BUFFERED_BYTES: '131072',
       BLINDSIGNAL_MAX_CONNECTIONS_PER_APP: '40',
       BLINDSIGNAL_MAX_DEVICES_PER_APP: '50',
+      BLINDSIGNAL_MAX_DEVICES_PER_USER: '5',
       BLINDSIGNAL_MAX_SESSIONS_PER_APP: '60',
       BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE: '3',
       BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE: '7',
@@ -217,6 +219,7 @@ describe('loadConfig', () => {
         quotas: {
           connections: 40,
           devices: 50,
+          devicesPerUser: 5,
           sessions: 60,
           sessionsPerDevice: 3,
           namespacesPerDevice: 7,
@@ -308,6 +311,7 @@ describe('loadConfig', () => {
     ['BLINDSIGNAL_IPV6_PREFIX_LENGTH', '48.5'],
     ['BLINDSIGNAL_HTTP_HEADERS_TIMEOUT_SECONDS', '0'],
     ['BLINDSIGNAL_MAX_DEVICES_PER_APP', '0'],
+    ['BLINDSIGNAL_MAX_DEVICES_PER_USER', '0'],
     ['BLINDSIGNAL_MAX_MESSAGE_BYTES', '0'],
     ['BLINDSIGNAL_MAX_MESSAGE_BYTES', '65537'],
     ['BLINDSIGNAL_MAX_QUEUED_MESSAGES', '1'],

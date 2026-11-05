@@ -42,6 +42,8 @@ export const connectionEvent = z.discriminatedUnion('type', [
       namespace: namespaceId,
       requester: participant,
       target: participant,
+      // Absent from an instance of the previous minor version, during a rolling upgrade.
+      durationMs: z.number().int().nonnegative().optional(),
     }),
   }),
   z.object({ type: z.literal('session.accepted'), ...from, sessionId }),

@@ -408,7 +408,7 @@ Application-level configurable quotas should include:
 - Maximum message size.
 - Maximum session duration, where required.
 
-Device-level limits should prevent a single device from exhausting an application's allocation.
+Device-level and user-level limits should prevent a single device or user from exhausting an application's allocation.
 
 Initial values must be configurable and validated through load testing rather than treated as universal constants. `docs/adr/0049-load-tests.md` defines the load tests, and `docs/load-report.md` records their results.
 

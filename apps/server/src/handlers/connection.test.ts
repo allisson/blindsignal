@@ -602,6 +602,21 @@ describe('Connection', () => {
       await client.request('namespace.join', { namespace: 'notes:b' });
       expect(client.errors()).toEqual(['quota_exceeded']);
     });
+
+    it('leaves the namespaces joined last when auth.refresh lowers the quota', async () => {
+      const { connect, load } = await setup();
+      const client = connect();
+      await client.authenticate({ namespaces });
+      await client.request('namespace.join', { namespace: 'notes:a' });
+      await client.request('namespace.join', { namespace: 'notes:b' });
+      await load([{ ...devApplication('notes'), quotas: { namespacesPerDevice: 1 } }]);
+      await client.refresh({ namespaces });
+      await client.request('discovery.request', { namespace: 'notes:a' });
+      expect(client.errors()).toEqual([]);
+      await client.request('discovery.request', { namespace: 'notes:b' });
+      expect(client.errors()).toEqual(['not_joined']);
+      expect(client.closes).toEqual([]);
+    });
   });
 
   describe('application connection quota', () => {
@@ -656,6 +671,21 @@ describe('Connection', () => {
       const third = connect();
       await third.authenticate({ device_id: 'd2' });
       expect(third.errors()).toEqual([]);
+    });
+
+    it('closes a connection whose slot another holder took meanwhile', async () => {
+      const { connect, coordination } = await setup(oneConnection);
+      const client = connect();
+      await client.authenticate();
+      await client.connection.heartbeat();
+      expect(client.closes).toEqual([]);
+      // What a slot that expired between two heartbeats, and was taken, leaves.
+      await coordination.releaseSlots(client.connection.id, ['connections:notes']);
+      const slot = { key: 'connections:notes', limit: 1 };
+      expect(await coordination.acquireSlots('other', [slot], LEASE_MS)).toBe(true);
+      await client.connection.heartbeat();
+      expect(client.errors()).toEqual(['quota_exceeded']);
+      expect(client.closes).toEqual([4001]);
     });
 
     it('takes no slot for a token that fails verification', async () => {
@@ -821,7 +851,7 @@ describe('Connection', () => {
       const touched = await devices.touch(
         { appId: 'notes', userId: 'u1', deviceId: 'd1' },
         new Date(),
-        { ttlMs: 86_400_000, maxDevices: 1 },
+        { ttlMs: 86_400_000, maxDevices: 1, maxDevicesPerUser: 1 },
       );
       // The record holds the identity only, never the token's namespaces or expiry.
       expect(touched.ok && touched.record).toEqual({
@@ -871,6 +901,20 @@ describe('Connection', () => {
         }),
       );
       expect(client.closes).toEqual([]);
+    });
+
+    it('refuses a device beyond the per-user quota, apart from other users', async () => {
+      const { connect } = await setup([
+        { ...devApplication('notes'), quotas: { devicesPerUser: 1 } },
+      ]);
+      await connect().authenticate();
+      const second = connect();
+      await second.authenticate({ device_id: 'd2' });
+      expect(second.errors()).toEqual(['quota_exceeded']);
+      expect(second.closes).toEqual([4001]);
+      const other = connect();
+      await other.authenticate({ sub: 'u2', device_id: 'd2' });
+      expect(other.errors()).toEqual([]);
     });
 
     it("takes the application's device quota over the server's", async () => {
@@ -1225,6 +1269,7 @@ describe('Connection', () => {
       await devices.touch({ appId: 'notes', userId: 'u9', deviceId: 'd9' }, new Date(), {
         ttlMs: 1_000,
         maxDevices: 1,
+        maxDevicesPerUser: 1,
       });
       await client.refresh();
       expect(client.errors()).toEqual(['quota_exceeded']);
@@ -1782,6 +1827,20 @@ describe('Connection', () => {
         expect(carol.last()?.type).toBe('session.created');
       });
 
+      it('ends a session whose slot another holder took meanwhile, for both sides', async () => {
+        const { alice, bob, sessionId, coordination } = await active(quotas({ sessions: 1 }));
+        await alice.connection.heartbeat();
+        expect(sessionEvents(alice)).toEqual([]);
+        await coordination.releaseSlots(sessionId, ['sessions:notes']);
+        const slot = { key: 'sessions:notes', limit: 1 };
+        expect(await coordination.acquireSlots('other', [slot], LEASE_MS)).toBe(true);
+        await alice.connection.heartbeat();
+        await settle();
+        expect(sessionEvents(alice)).toEqual([terminated(sessionId, 'timeout')]);
+        expect(sessionEvents(bob)).toEqual([terminated(sessionId, 'timeout')]);
+        expect(alice.closes).toEqual([]);
+      });
+
       it('frees the slots of a session a heartbeat ends for a lost peer (ADR 0026)', async () => {
         const { connect, alice, coordination } = await active(quotas({ sessions: 1 }));
         const carol = await member(connect, carolClaims);
@@ -1988,6 +2047,23 @@ describe('Connection', () => {
       expect(alice.errors()).toEqual(['session_unavailable']);
     });
 
+    it("ends both copies at the requester's duration, whatever the target's limits", async () => {
+      const notes = (sessionDurationSeconds: number) => [
+        { ...devApplication('notes'), quotas: { sessionDurationSeconds } },
+      ];
+      const { alice, bob, load } = await pair(notes(60));
+      await load(notes(120));
+      await alice.refresh({ ...d1, namespaces: ['notes:a'] });
+      const sessionId = await create(alice);
+      await bob.request('session.accept', { sessionId });
+      await settle();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(sessionEvents(bob)).toEqual([]);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(sessionEvents(alice)).toEqual([terminated(sessionId, 'timeout')]);
+      expect(sessionEvents(bob)).toEqual([terminated(sessionId, 'timeout')]);
+    });
+
     it('keeps an active session with no maximum duration', async () => {
       const { alice, sessionId } = await active();
       await vi.advanceTimersByTimeAsync(NEGOTIATION_MS * 10);
@@ -2036,6 +2112,24 @@ describe('Connection', () => {
         await settle();
         await vi.advanceTimersByTimeAsync(NEGOTIATION_MS);
         expect(sessionEvents(bob)).toEqual([terminated(s2, 'timeout')]);
+      });
+
+      it("arms the event's duration, or its own from an instance that sends none", async () => {
+        const quotas = { sessionDurationSeconds: 60 };
+        const { connect, coordination } = await setup([{ ...devApplication('notes'), quotas }]);
+        const bob = await member(connect, bobClaims);
+        const topic = connectionTopic(bob.connection.id);
+        const event = request(bob.connection.id, s2);
+        await coordination.publish(topic, request(bob.connection.id));
+        await coordination.publish(topic, {
+          ...event,
+          session: { ...event.session, durationMs: 0 },
+        });
+        await settle();
+        await bob.request('session.accept', { sessionId: s1 });
+        await bob.request('session.accept', { sessionId: s2 });
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(sessionEvents(bob)).toEqual([terminated(s1, 'timeout')]);
       });
 
       it("ends the requester's copy at the maximum duration when the target's instance is gone", async () => {

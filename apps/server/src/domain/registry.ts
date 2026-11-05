@@ -50,6 +50,7 @@ const applicationEntry = z
       .strictObject({
         connections: positiveInt,
         devices: positiveInt,
+        devicesPerUser: positiveInt,
         sessions: positiveInt,
         sessionsPerDevice: positiveInt,
         namespacesPerDevice: positiveInt,

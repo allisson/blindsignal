@@ -42,6 +42,9 @@ repository; never expose it.
       `BLINDSIGNAL_MAX_CONNECTION_SECONDS` and `BLINDSIGNAL_MAX_CONNECTIONS` sit below them
       (ADR 0029, ADR 0030), and `BLINDSIGNAL_SHUTDOWN_TIMEOUT_SECONDS` below its grace period
       (ADR 0031).
+- [ ] With several applications and `BLINDSIGNAL_MAX_CONNECTIONS` set, each application's
+      `quotas.connections` sits below what the instances hold together, so one application cannot
+      take every instance's connections (ADR 0011).
 - [ ] With PostgreSQL, the migrations run before each release, as the role that owns the tables
       (`apps/server/README.md#postgresql`), and a daily backup is restored once to check it
       (`docs/backup-and-recovery.md`).

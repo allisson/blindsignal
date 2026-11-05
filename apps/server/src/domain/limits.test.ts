@@ -7,6 +7,7 @@ const defaults: Limits = {
   quotas: {
     connections: 10,
     devices: 20,
+    devicesPerUser: 6,
     sessions: 30,
     sessionsPerDevice: 4,
     namespacesPerDevice: 5,

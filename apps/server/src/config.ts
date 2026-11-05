@@ -170,6 +170,7 @@ const environment = z
     // are starting values until load testing sets them (spec §8.2).
     BLINDSIGNAL_MAX_CONNECTIONS_PER_APP: count.default(10_000),
     BLINDSIGNAL_MAX_DEVICES_PER_APP: count.default(10_000),
+    BLINDSIGNAL_MAX_DEVICES_PER_USER: count.default(100),
     BLINDSIGNAL_MAX_SESSIONS_PER_APP: count.default(10_000),
     BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE: count.default(16),
     BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE: count.default(100),
@@ -412,6 +413,7 @@ export function loadConfig(env: Readonly<Record<string, string | undefined>>): C
         quotas: {
           connections: vars.BLINDSIGNAL_MAX_CONNECTIONS_PER_APP,
           devices: vars.BLINDSIGNAL_MAX_DEVICES_PER_APP,
+          devicesPerUser: vars.BLINDSIGNAL_MAX_DEVICES_PER_USER,
           sessions: vars.BLINDSIGNAL_MAX_SESSIONS_PER_APP,
           sessionsPerDevice: vars.BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE,
           namespacesPerDevice: vars.BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE,

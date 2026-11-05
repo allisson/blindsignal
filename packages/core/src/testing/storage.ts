@@ -19,7 +19,7 @@ const application = (appId: string, issuer: string): ApplicationRecord => ({
 
 const at = (ms: number) => new Date(ms);
 const device = (userId: string, deviceId = 'd1', appId = 'notes') => ({ appId, userId, deviceId });
-const limits = { maxDevices: 2, ttlMs: 1000 };
+const limits = { maxDevices: 2, maxDevicesPerUser: 2, ttlMs: 1000 };
 
 /**
  * The behavior every `StorageAdapter` shares (ADR 0010, ADR 0019). `create` returns an empty
@@ -117,6 +117,21 @@ export function describeStorageContract(name: string, create: () => Promise<Stor
       });
       expect((await devices.touch(device('u1'), at(0), limits)).ok).toBe(true);
       expect((await devices.touch(device('u2', 'd1', 'vault'), at(0), limits)).ok).toBe(true);
+    });
+
+    it('refuses a new device over the quota, per user', async () => {
+      const { devices } = await create();
+      const perUser = { ...limits, maxDevices: 3, maxDevicesPerUser: 1 };
+      await devices.touch(device('u1'), at(0), perUser);
+      expect(await devices.touch(device('u1', 'd2'), at(0), perUser)).toEqual({
+        ok: false,
+        reason: 'quota_exceeded',
+      });
+      expect((await devices.touch(device('u1'), at(500), perUser)).ok).toBe(true);
+      expect((await devices.touch(device('u2'), at(500), perUser)).ok).toBe(true);
+      expect((await devices.touch(device('u1', 'd2', 'vault'), at(500), perUser)).ok).toBe(true);
+      // An expired record of the user stops counting.
+      expect((await devices.touch(device('u1', 'd2'), at(1500), perUser)).ok).toBe(true);
     });
 
     it('expires records, which stop counting and re-enroll as new', async () => {

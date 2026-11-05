@@ -10,6 +10,8 @@ export interface Session {
   readonly namespace: string;
   readonly requester: Participant;
   readonly target: Participant;
+  /** How long it may stay active, set by the requester for both copies; 0 sets no limit (ADR 0014). */
+  readonly durationMs: number;
   readonly state: 'pending' | 'active';
 }
 
@@ -30,21 +32,15 @@ export class SessionRegistry {
 
   /**
    * Creates a `pending` session; `onTimeout` runs if it is still pending after `timeoutMs`, or
-   * active past the duration `activate` sets.
+   * active past its `durationMs`.
    */
   create(
-    namespace: string,
-    requester: Participant,
-    target: Participant,
+    session: Omit<Session, 'state'>,
     timeoutMs: number,
     onTimeout: (session: Session) => void,
-    id: string = crypto.randomUUID(),
   ): Session {
     const entry: Entry = {
-      id,
-      namespace,
-      requester,
-      target,
+      ...session,
       state: 'pending',
       timer: undefined,
       createdAt: performance.now(),
@@ -64,11 +60,12 @@ export class SessionRegistry {
    * above 0 arms the maximum session duration (ADR 0014). Returns how long it was pending, in
    * milliseconds, or undefined when it was not pending.
    */
-  activate(sessionId: string, durationMs = 0): number | undefined {
+  activate(sessionId: string): number | undefined {
     const entry = this.#sessions.get(sessionId);
     if (entry?.state !== 'pending') return undefined;
     entry.state = 'active';
     clearTimeout(entry.timer);
+    const { durationMs } = entry;
     entry.timer = durationMs > 0 ? setTimeout(() => entry.onTimeout(entry), durationMs) : undefined;
     return performance.now() - entry.createdAt;
   }

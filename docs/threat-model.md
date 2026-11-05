@@ -68,7 +68,7 @@ Application payloads are not an asset of the server: they never reach it (spec ย
 | Plaintext signaling | SDK refuses `ws://` except on loopback; TLS everywhere else | spec ยง16 |
 | Cross-site WebSocket use from a hostile page | Token required on every connection; `Origin` allowlist as defense in depth | spec ยง16 |
 | Pre-authentication flooding | Per-IP connection and authentication limits, unauthenticated connection cap, authentication deadline, HTTP `429` at the upgrade | spec ยง8.4, ADR 0011 |
-| Post-authentication flooding or resource exhaustion | Token buckets per device and per session participant, application and device quotas, maximum message size, bounded per-connection queues and send buffers | ADR 0011, ADR 0013 |
+| Post-authentication flooding or resource exhaustion | Token buckets per device and per session participant, application, user, and device quotas, maximum message size, bounded per-connection queues and send buffers | ADR 0011, ADR 0013 |
 | WebSocket pings or pongs used to renew leases outside the rate limits, or to fill the send buffer | Only the pong to the server's own ping renews leases; the server answers pings itself, and terminates a connection past its send buffer limit | ADR 0011, ADR 0013 |
 | Too many connections for one instance or its platform | Connections capped per instance, and closed before a maximum lifetime | ADR 0029, ADR 0030 |
 | Forged forwarding headers to evade IP limits | Headers honored only from configured trusted proxies | ADR 0011 |
@@ -173,6 +173,10 @@ Application payloads are not an asset of the server: they never reach it (spec ย
 13. **Across instances, a status change can take a sync interval.** When the `registry.changed`
     event is lost, a suspension, revocation, or device revocation reaches an instance at its next
     sync, up to `BLINDSIGNAL_REGISTRY_SYNC_INTERVAL_SECONDS` (default 60) later (ADR 0024).
+14. **Applications share each instance's connection cap.** `BLINDSIGNAL_MAX_CONNECTIONS` is
+    checked before a token names the application, so one application's clients can take an
+    instance's connections from the others. Each application's `connections` quota bounds it
+    across instances, set below what they hold together (ADR 0011, `docs/deployment.md`).
 
 ## 6. Out of scope
 
