@@ -504,11 +504,9 @@ interface StorageAdapter {
 
 The MVP contract has only `applications` and `devices`, with device records that expire after a period of inactivity; the other repositories arrive with the features that use them (`docs/adr/0010-adapter-interfaces.md`).
 
-Initial implementation:
-- `InMemoryStorageAdapter`
-
-Future implementation:
-- `PostgreSQLStorageAdapter`
+Implementations:
+- In memory (`adapters/storage/memory`), for development, tests, and a single instance.
+- PostgreSQL (`adapters/storage/postgresql`, `docs/adr/0020-postgresql-storage.md`).
 
 Supabase may be used as a managed PostgreSQL provider. Business logic must not depend on Supabase-specific APIs.
 
@@ -524,11 +522,9 @@ Responsible for distributed ephemeral state and event propagation:
 - `jti` replay tracking (§5.3).
 - TTL-based cleanup.
 
-Initial implementation:
-- `InMemoryCoordinationAdapter`
-
-Future implementation:
-- `RedisCoordinationAdapter` or another compatible distributed backend.
+Implementations:
+- In memory (`adapters/coordination/memory`), for development, tests, and a single instance.
+- Redis or Valkey (`adapters/coordination/redis`, `docs/adr/0022-redis-coordination.md`).
 
 Its operations are domain-level and atomic, such as claiming a `jti` or taking a rate-limit token, not generic key-value primitives (`docs/adr/0010-adapter-interfaces.md`).
 
@@ -573,7 +569,7 @@ Initial message categories:
 The full message catalog, payloads, versioning rule, and error codes are in `docs/protocol.md`. The
 SDK and the server follow semantic versioning (`docs/adr/0043-semantic-versioning.md`).
 
-`auth.refresh` renews the connection's credentials with a new application-issued token without reconnecting; the new token must keep the connection's identity (§5.3). `session.create` is sent by the requesting device to the server, which replies `session.created` with the server-generated session ID; `session.request` is sent by the server to the target device, which answers with `session.accept` or `session.reject`; the server sends the requesting device `session.accepted` or `session.rejected`. `session.close` is sent only from client to server; the other participant receives `session.terminated`. `session.terminated` is sent by the server whenever a session ends for a reason outside the recipient's control (the other participant closed it, disconnected, or was revoked, or the request timed out) and carries that reason (§6.4). Application suspension needs no such notice: all peers of a session belong to the same application, and their connections are closed (§5.5); each SDK closes its sessions when reauthentication is rejected (§6.4). `rtc.ice_config` is sent by the server and is the only channel for TURN credentials (§12.3). The server sends it after every successful `auth.authenticate` and `auth.refresh`, even when no TURN server is configured, and at no other time; TURN credentials are renewed with the token (`docs/adr/0009-ice-configuration.md`). ICE restart is a new `rtc.offer` within the same session; there is no separate message type. Pairing messages are finalized together with the pairing protocol (§7.4).
+`auth.refresh` renews the connection's credentials with a new application-issued token without reconnecting; the new token must keep the connection's identity (§5.3). `session.create` is sent by the requesting device to the server, which replies `session.created` with the server-generated session ID; `session.request` is sent by the server to the target device, which answers with `session.accept` or `session.reject`; the server sends the requesting device `session.accepted` or `session.rejected`. `session.close` is sent only from client to server; the other participant receives `session.terminated`. `session.terminated` is sent by the server whenever a session ends for a reason outside the recipient's control (the other participant closed it, disconnected, or was revoked; the request or the session timed out; or a refresh removed its namespace) and carries that reason (§6.4; `docs/protocol.md` §7). Application suspension needs no such notice: all peers of a session belong to the same application, and their connections are closed (§5.5); each SDK closes its sessions when reauthentication is rejected (§6.4). `rtc.ice_config` is sent by the server and is the only channel for TURN credentials (§12.3). The server sends it after every successful `auth.authenticate` and `auth.refresh`, even when no TURN server is configured, and at no other time; TURN credentials are renewed with the token (`docs/adr/0009-ice-configuration.md`). ICE restart is a new `rtc.offer` within the same session; there is no separate message type. The pairing messages are in `docs/protocol.md` §7a (`docs/adr/0042-pairing.md`).
 
 The protocol defines the direction of every message type: client to server, server to client, or relayed between session participants. The server rejects a message sent in a direction its type does not allow, for example a client-sent `rtc.ice_config`, `session.request`, or `session.terminated`. Server-originated `rtc.ice_config` is not a relayed message and is not subject to the session-membership rule (§13).
 
@@ -799,10 +795,10 @@ blindsignal/
 │   └── dev-issuer/
 ├── adapters/
 │   ├── storage/
-│   │   ├── in-memory/
+│   │   ├── memory/
 │   │   └── postgresql/
 │   └── coordination/
-│       ├── in-memory/
+│       ├── memory/
 │       └── redis/
 ├── docs/
 │   ├── spec.md
@@ -814,7 +810,7 @@ blindsignal/
 ├── examples/
 ├── tests/
 ├── Dockerfile
-└── docker-compose.yml
+└── compose.yaml
 ```
 
 `packages/protocol` is the wire contract shared by server and SDK. `packages/core` holds server-side domain types and the adapter interfaces (§10); the SDK never imports it. `packages/dev-issuer` is the development token issuer; server source never imports it, and the server trusts it only through configuration (§14.1). Dependency rules are in `docs/adr/0002-package-boundaries.md`.
