@@ -14,7 +14,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:browser": "pnpm --filter @blindsignal/browser-demo --filter @blindsignal/minimal-app test"
+    "test:browser": "pnpm --workspace-concurrency=1 --filter @blindsignal/browser-demo --filter @blindsignal/minimal-app test"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
