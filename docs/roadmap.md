@@ -587,6 +587,51 @@ Operating TURN is not required to complete the initial local MVP.
 
 ---
 
+## Phase 13 — Documentation
+
+**Goal:** Make the documentation tell a newcomer what BlindSignal is, what it does, and who it is
+for, and keep every document accurate against the code.
+
+### Tasks
+
+- [ ] Rewrite `README.md` for someone evaluating the project: what it is, what it does and never
+  does, who it is for and not for, its release state, and a path for each audience.
+- [ ] Add `docs/README.md`, an index of the documentation by audience: evaluate, integrate,
+  operate, reference, and records.
+- [ ] Add `CONTRIBUTING.md`: setup, commands, the checks of a pull request, and the commit and
+  pull request conventions; `AGENTS.md` points to it instead of repeating them.
+- [ ] Add a test that fails on a relative link in a Markdown file whose target does not exist.
+- [ ] Review `docs/spec.md` and `docs/protocol.md` against the code.
+- [ ] Review the integration guides against the code: `docs/onboarding.md`,
+  `docs/token-issuance.md`, `docs/application-lifecycle.md`, `docs/application-e2ee.md`,
+  `docs/tailscale.md`, `packages/sdk/README.md`, and the READMEs of `examples/`.
+- [ ] Review the operation guides against the code: `docs/deployment.md`, `docs/self-hosted.md`,
+  `docs/vps.md`, `docs/cloud-run.md`, `docs/supabase.md`, `docs/turn-operations.md`,
+  `docs/secrets-and-keys.md`, `docs/backup-and-recovery.md`, `docs/external-testing.md`, and
+  `apps/server/README.md`.
+- [ ] Review `AGENTS.md`, `GLOSSARY.md`, and `docs/threat-model.md`.
+
+A review checks each document against the code (environment variables, commands, message names,
+defaults), its links, and what is duplicated or out of date; it rewrites prose only where it
+misleads. ADRs and dated reports (`docs/connectivity-report.md`, `docs/load-report.md`,
+`docs/security-review.md`, `docs/integration-feedback.md`) are records: only their links are fixed.
+Changelogs are out of scope.
+
+### Deliverables
+
+- A README that introduces the project.
+- An index of the documentation.
+- A contributor guide.
+- Documentation checked against the code.
+
+### Acceptance criteria
+
+- `README.md` answers what BlindSignal is, what it does, who it is for, and who it is not for.
+- Every document in the review tasks was checked against the code, and its findings are fixed.
+- CI fails on a broken relative link in any Markdown file.
+
+---
+
 ## MVP definition
 
 The canonical MVP criteria are in `docs/spec.md` §22. The capabilities below deliver them:
@@ -643,6 +688,7 @@ These are later capabilities, not prerequisites for validating the core architec
 | P2 | Production observability and operations |
 | P3 | Reference application integrations |
 | P3 | Stable release |
+| P3 | Documentation |
 
 ## After the MVP
 
