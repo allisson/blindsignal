@@ -29,4 +29,4 @@ from an outside application.
 
 | Finding | Where it showed up | Roadmap task |
 |---|---|---|
-| No application outside this repository has integrated yet. | Phase 11 | Phase 11: integrate with BlindVault |
+| No application outside this repository has integrated yet. | Phase 11 | None: each application's integration is tracked in its own repository |
