@@ -601,7 +601,7 @@ for, and keep every document accurate against the code.
 - [x] Add `CONTRIBUTING.md`: setup, commands, the checks of a pull request, and the commit and
   pull request conventions; `AGENTS.md` points to it instead of repeating them.
 - [x] Add a test that fails on a relative link in a Markdown file whose target does not exist.
-- [ ] Review `docs/spec.md` and `docs/protocol.md` against the code.
+- [x] Review `docs/spec.md` and `docs/protocol.md` against the code.
 - [ ] Review the integration guides against the code: `docs/onboarding.md`,
   `docs/token-issuance.md`, `docs/application-lifecycle.md`, `docs/application-e2ee.md`,
   `docs/tailscale.md`, `packages/sdk/README.md`, and the READMEs of `examples/`.

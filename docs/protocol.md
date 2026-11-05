@@ -97,7 +97,7 @@ rebuilt by the server for the other session participant.
 | `session.created` | S→C | `{ sessionId }` | — |
 | `session.request` | S→C | `{ sessionId, namespace, userId, deviceId }` | — |
 | `session.accept` | C→S | `{ sessionId }` | `session.accept` |
-| `session.reject` | C→S | `{ sessionId }` | `session.accept` |
+| `session.reject` | C→S | `{ sessionId }` | — |
 | `session.accepted` | S→C | `{ sessionId }` | — |
 | `session.rejected` | S→C | `{ sessionId }` | — |
 | `session.close` | C→S | `{ sessionId }` | `session.close` |
@@ -381,8 +381,9 @@ configurable default.
   no reply arrives within 10 s: it closes the socket and reconnects with backoff. Any reply,
   `error` included, shows the server is alive. Requests pending on a connection that drops are
   rejected.
-- **Rate limits.** After `rate_limited`, the SDK waits at least `retryAfterMs` before sending that
-  kind of request again.
+- **Rate limits.** A reconnect or a refresh after `rate_limited` waits at least `retryAfterMs`. Any
+  other request rejects with the `BlindSignalError`, which carries `retryAfterMs`, and the
+  application waits before sending it again.
 - **Terminal and superseded.** A terminal close (`4002`) stops reconnecting and closes every
   session, established DataChannels included (spec §6.4). A superseded close (`4003`) stops
   reconnecting until the application asks for a new connection (ADR 0008).
