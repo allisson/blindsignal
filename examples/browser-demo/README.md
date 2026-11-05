@@ -45,12 +45,12 @@ connects only through the TURN relay, so its DataChannel tests run with `BLINDSI
 `compose.yaml` with Docker, on loopback, and three signaling servers with its test secret, each
 offering one TURN transport: UDP, TCP, and TLS, and each with a demo page of its own, since a page
 takes its server only from its configuration. Chromium accepts the self-signed TLS certificate
-through `--ignore-certificate-errors`; Firefox has no such switch, so its TLS test is skipped. The
-same run tests the fallback to the relay, in a Firefox that gathers no host candidates, and a
+through `--ignore-certificate-errors`; Firefox and WebKit have no such switch, so their TLS tests
+are skipped. The same run tests the fallback to the relay, in a Firefox that gathers no host candidates, and a
 fourth signaling server whose TURN URL nothing listens on, with which sessions still connect
 directly, and a session forced to that relay closes once the connection timeout runs out. CI runs the suite this way.
 
-The proof-of-possession tests run in both browsers: pages with `&pop` authenticate with a device
+The proof-of-possession tests run in every browser: pages with `&pop` authenticate with a device
 key that a reload keeps, and a page whose proof is stripped on its way to the server is refused.
 The pairing test opens two `&pop` pages of one user, one with `&pairing`, and checks that the
 approval binds the new page's key and is signed by the other's. Another test runs `notes` and

@@ -61,8 +61,9 @@ as defense in depth.
    device joins the namespace `example:alice`.
 2. On the phone, open the same address and sign in as `alice`. The page shows **Ask to pair**:
    press it.
-3. On the laptop, press **Approve** with the phone's device ID. The phone reconnects with a token
-   that holds the namespace, and each device lists the other.
+3. On the laptop, press **Approve** with the phone's device ID. The phone takes the approval to
+   the backend and refreshes its token, which now holds the namespace, and each device lists the
+   other.
 4. Press **Connect to** on either device, then send a message.
 
 A browser profile is a device: it keeps its key and device ID per origin. A new `HOST` makes every
