@@ -290,6 +290,76 @@ describe('SignalingServer', () => {
       expect(await refusedUpgrade(ip('203.0.113.1'))).toBe(429);
     });
 
+    it('counts IPv6 clients by their prefix, and logs the whole address', async () => {
+      const { client, refusedUpgrade, logs } = await start({
+        trustedProxies: proxied,
+        preAuthentication: { maxUnauthenticatedPerIp: 1 },
+      });
+      await client(from('2001:db8:0:1::1'));
+      expect(await refusedUpgrade(ip('2001:db8:0:1:ffff::2'))).toBe(429);
+      await client(from('2001:db8:0:2::1'));
+      expect(logs.filter((l) => l.event === 'connection.opened').map((l) => l.ip)).toEqual([
+        '2001:db8:0:1::1',
+        '2001:db8:0:2::1',
+      ]);
+    });
+
+    it('counts IPv6 connection and authentication attempts by prefix', async () => {
+      const once = { ratePerSecond: 0.001, burst: 1 };
+      const { client, refusal } = await start({
+        trustedProxies: proxied,
+        preAuthentication: { connectionAttempts: { ratePerSecond: 0.001, burst: 2 } },
+      });
+      await client(from('2001:db8:0:1::1'));
+      await client(from('2001:db8:0:1::2'));
+      expect((await refusal(ip('2001:db8:0:1::3'))).statusCode).toBe(429);
+      await client(from('2001:db8:0:2::1'));
+      const limited = await start({
+        trustedProxies: proxied,
+        preAuthentication: { authenticationAttempts: once },
+      });
+      const alice = await limited.client(from('2001:db8:0:1::1'));
+      const bob = await limited.client(from('2001:db8:0:1::2'));
+      await alice.authenticate(claims);
+      bob.send('auth.authenticate', {
+        token: await mintDevToken({ app_id: 'notes', ...claims, device_id: 'd2' }),
+      });
+      expect(await bob.next('error')).toMatchObject({ payload: { code: 'rate_limited' } });
+    });
+
+    it('closes a client that sends its headers too slowly, however steadily', async () => {
+      const { url } = await start({ preAuthentication: { headersTimeoutMs: 300 } });
+      const socket = connect(Number(new URL(url).port), '127.0.0.1')
+        .on('error', () => {})
+        .resume();
+      const closed = new Promise((resolve) => socket.once('close', resolve));
+      // Every line comes before the socket is idle for as long as the deadline.
+      const trickle = setInterval(() => socket.write('X-Slow: 1\r\n'), 50);
+      socket.write('GET / HTTP/1.1\r\nHost: x\r\n');
+      const started = Date.now();
+      await closed;
+      clearInterval(trickle);
+      expect(Date.now() - started).toBeLessThan(2_000);
+    });
+
+    it('closes a client that does not finish its headers in time', async () => {
+      const { url, http } = await start({ preAuthentication: { headersTimeoutMs: 200 } });
+      // Read, or the end that the server sends is never seen; a reset is expected.
+      const sockets = [0, 1].map(() =>
+        connect(Number(new URL(url).port), '127.0.0.1')
+          .on('error', () => {})
+          .resume(),
+      );
+      // One sends nothing, the other starts an upgrade and stops.
+      sockets[1]?.write('GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\n');
+      const started = Date.now();
+      await Promise.all(
+        sockets.map((socket) => new Promise((resolve) => socket.once('close', resolve))),
+      );
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(await http('/healthz')).toBe(200);
+    });
+
     it('stops counting a connection once it authenticates, and counts it once', async () => {
       const { server, client, refusedUpgrade } = await start({
         preAuthentication: { maxUnauthenticated: 1 },

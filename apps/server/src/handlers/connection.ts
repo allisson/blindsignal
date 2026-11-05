@@ -32,7 +32,7 @@ import { connectionEvent, presenceEvent, type ConnectionEvent } from './events.t
 
 /** What a handler needs from the transport. */
 export interface ConnectionPort {
-  /** Keys the authentication-attempt rate limit (ADR 0011). */
+  /** Keys the authentication-attempt rate limit: IPv6 is cut to its prefix (ADR 0011). */
   readonly clientIp: string;
   send(message: ServerMessage): void;
   close(code: number): void;
@@ -76,7 +76,7 @@ export interface ConnectionDependencies {
   readonly clockSkewSeconds: number;
   /** A connection not authenticated this long after it opened is closed (spec §8.4). */
   readonly authenticationTimeoutMs: number;
-  /** `auth.authenticate` and `auth.refresh` attempts per client IP. */
+  /** `auth.authenticate` attempts per client IP; `auth.refresh` takes the `refresh` bucket. */
   readonly authenticationAttempts: RateLimitPolicy;
   /** A device record not seen for this long stops counting toward the device quota. */
   readonly deviceTtlMs: number;
@@ -388,7 +388,7 @@ export class Connection {
     const parsed = parseClientMessage(text, { maxBytes: this.#deps.maxMessageBytes });
     // Every frame takes a signaling token, malformed ones too (ADR 0011).
     const requestId = parsed.ok ? parsed.message.requestId : parsed.requestId;
-    if (!(await this.#limit('signaling', this.id, requestId))) return;
+    if (!(await this.#limit('signaling', requestId))) return;
     if (!parsed.ok) return this.#error(parsed.code, parsed.requestId);
     const message = parsed.message;
     this.#deps.metrics.count('blindsignal_messages_total', { type: message.type });
@@ -412,7 +412,7 @@ export class Connection {
         // Only a leave that changes presence takes a token, as only it fans out.
         if (
           this.#joined.has(message.payload.namespace) &&
-          !(await this.#limit('presence', this.id, message.requestId))
+          !(await this.#limit('presence', message.requestId))
         ) {
           return;
         }
@@ -498,9 +498,23 @@ export class Connection {
     return this.#allow(key, this.#deps.authenticationAttempts, requestId);
   }
 
-  /** Takes a token from the application's bucket for the category, keyed by `id`. */
-  #limit(category: ApplicationRateLimit, id: string, requestId?: string): Promise<boolean> {
-    return this.#allow(`${category}:${id}`, this.#limits.rateLimits[category], requestId);
+  /**
+   * Takes a token from the application's bucket for the category: per device once authenticated,
+   * so a reconnection starts no new bucket, and per connection before (ADR 0011). `sessionId`
+   * gives each participant of a session a bucket of its own.
+   */
+  #limit(category: ApplicationRateLimit, requestId?: string, sessionId?: string): Promise<boolean> {
+    const context = this.#context;
+    const owner =
+      context === undefined
+        ? this.id
+        : JSON.stringify([
+            ...(sessionId === undefined ? [] : [sessionId]),
+            context.appId,
+            context.userId,
+            context.deviceId,
+          ]);
+    return this.#allow(`${category}:${owner}`, this.#limits.rateLimits[category], requestId);
   }
 
   /**
@@ -536,7 +550,8 @@ export class Connection {
   async #refresh(message: ClientMessage & { type: 'auth.refresh' }): Promise<void> {
     const { requestId } = message;
     const current = this.#context as ConnectionContext;
-    if (!(await this.#allowAuthentication(requestId))) return;
+    // Per device, not per IP: a connected client never spends the bucket of others behind its IP.
+    if (!(await this.#limit('refresh', requestId))) return;
     // A rejected refresh keeps the current token; only terminal codes close (docs/protocol.md §9).
     const verified = await this.#deps.verifier.verify(
       message.payload.token,
@@ -602,7 +617,7 @@ export class Connection {
       return this.#error('quota_exceeded', requestId);
     }
     // A join fans out to every device of the namespace; a repeated one renews the lease only.
-    if (joining && !(await this.#limit('presence', this.id, requestId))) return;
+    if (joining && !(await this.#limit('presence', requestId))) return;
     if (joining) {
       const unsubscribe = await this.#deps.coordination.subscribe(
         presenceTopic(namespace),
@@ -631,7 +646,7 @@ export class Connection {
   async #discover(message: ClientMessage & { type: 'discovery.request' }): Promise<void> {
     const { requestId, payload } = message;
     const { namespace } = payload;
-    if (!(await this.#limit('discovery', this.id, requestId))) return;
+    if (!(await this.#limit('discovery', requestId))) return;
     if (!this.#authorized(namespace)) return this.#error('not_authorized', requestId);
     if (!this.#joined.has(namespace)) return this.#error('not_joined', requestId);
     const present = await this.#deps.coordination.listPresence(namespace);
@@ -644,7 +659,7 @@ export class Connection {
   async #createSession(message: ClientMessage & { type: 'session.create' }): Promise<void> {
     const { requestId, payload } = message;
     const { namespace, userId, deviceId } = payload;
-    if (!(await this.#limit('session_create', this.id, requestId))) return;
+    if (!(await this.#limit('session_create', requestId))) return;
     if (!this.#permits(namespace, 'session.create'))
       return this.#error('not_authorized', requestId);
     const self = this.#context as ConnectionContext;
@@ -784,7 +799,7 @@ export class Connection {
   async #createPairing(message: ClientMessage & { type: 'pairing.create' }): Promise<void> {
     const { requestId, payload } = message;
     const { namespace } = payload;
-    if (!(await this.#limit('pairing', this.id, requestId))) return;
+    if (!(await this.#limit('pairing', requestId))) return;
     const self = this.#context as ConnectionContext;
     if (!self.pairing?.includes(namespace) || self.keyThumbprint === undefined) {
       return this.#error('not_authorized', requestId);
@@ -926,7 +941,7 @@ export class Connection {
     }
     // Keyed by session, after the check, so only an active session's participants make buckets.
     const category = type === 'rtc.ice_candidate' ? 'rtc_ice_candidate' : 'rtc';
-    if (!(await this.#limit(category, session.id, requestId))) return;
+    if (!(await this.#limit(category, requestId, session.id))) return;
     // The parsed payload holds only the schema's fields: no requestId, no sender, no extra keys.
     const relayed = { type, payload } as Deliver['message'];
     await this.#notify(this.#peerOf(session), { type: 'deliver', message: relayed });

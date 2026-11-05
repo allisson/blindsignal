@@ -68,7 +68,7 @@ Application payloads are not an asset of the server: they never reach it (spec �
 | Plaintext signaling | SDK refuses `ws://` except on loopback; TLS everywhere else | spec §16 |
 | Cross-site WebSocket use from a hostile page | Token required on every connection; `Origin` allowlist as defense in depth | spec §16 |
 | Pre-authentication flooding | Per-IP connection and authentication limits, unauthenticated connection cap, authentication deadline, HTTP `429` at the upgrade | spec §8.4, ADR 0011 |
-| Post-authentication flooding or resource exhaustion | Token buckets per connection and session, application and device quotas, maximum message size, bounded per-connection queues and send buffers | ADR 0011, ADR 0013 |
+| Post-authentication flooding or resource exhaustion | Token buckets per device and per session participant, application and device quotas, maximum message size, bounded per-connection queues and send buffers | ADR 0011, ADR 0013 |
 | WebSocket pings or pongs used to renew leases outside the rate limits, or to fill the send buffer | Only the pong to the server's own ping renews leases; the server answers pings itself, and terminates a connection past its send buffer limit | ADR 0011, ADR 0013 |
 | Too many connections for one instance or its platform | Connections capped per instance, and closed before a maximum lifetime | ADR 0029, ADR 0030 |
 | Forged forwarding headers to evade IP limits | Headers honored only from configured trusted proxies | ADR 0011 |

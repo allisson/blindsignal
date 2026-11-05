@@ -1,11 +1,11 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { ApplicationRecord, CoordinationAdapter } from '@blindsignal/core';
 import { MAX_MESSAGE_BYTES } from '@blindsignal/protocol';
 import { WebSocketServer, type ServerOptions, type WebSocket } from 'ws';
 import type { PreAuthentication } from './config.ts';
-import { clientIp, type ProxyTrust } from './domain/client-ip.ts';
+import { clientIp, ipKey, type ProxyTrust } from './domain/client-ip.ts';
 import { isOriginAllowed, type AllowedOrigins } from './domain/origin.ts';
 import { Connection, type ConnectionDependencies } from './handlers/connection.ts';
 
@@ -43,7 +43,7 @@ export function connectionLifetime(maxMs: number, random: () => number = Math.ra
  */
 export class SignalingServer {
   readonly #options: SignalingServerOptions;
-  readonly #http = createServer((request, response) => this.#serveHttp(request, response));
+  readonly #http: Server;
   readonly #wss: WebSocketServer;
   readonly #connections = new Set<Connection>();
   readonly #alive = new WeakSet<WebSocket>();
@@ -59,6 +59,17 @@ export class SignalingServer {
 
   constructor(options: SignalingServerOptions) {
     this.#options = options;
+    // Node's defaults let a client take a minute to send its headers, a socket that sends none
+    // included, and five minutes to send a request; it checks them every 30 s unless told otherwise.
+    const { headersTimeoutMs } = options.preAuthentication;
+    this.#http = createServer(
+      {
+        headersTimeout: headersTimeoutMs,
+        requestTimeout: headersTimeoutMs,
+        connectionsCheckingInterval: Math.min(1000, headersTimeoutMs),
+      },
+      (request, response) => this.#serveHttp(request, response),
+    );
     const maxBytes = options.connection.maxMessageBytes ?? MAX_MESSAGE_BYTES;
     // shortcut: frames up to twice the limit reach the parser, which answers message_too_large;
     // larger ones are cut by ws with 1009 before being buffered (docs/protocol.md §9).
@@ -171,41 +182,45 @@ export class SignalingServer {
       request.headers,
       this.#options.proxyTrust,
     );
-    const { maxUnauthenticatedPerIp, maxUnauthenticated, connectionAttempts } =
+    const { maxUnauthenticatedPerIp, maxUnauthenticated, connectionAttempts, ipv6PrefixLength } =
       this.#options.preAuthentication;
-    const fromIp = this.#unauthenticated.get(ip) ?? 0;
+    // What per-IP limits count by: an IPv6 address by its prefix, as one host is given a /64.
+    const key = ipKey(ip, ipv6PrefixLength);
+    const fromIp = this.#unauthenticated.get(key) ?? 0;
     if (fromIp >= maxUnauthenticatedPerIp || this.#unauthenticatedTotal >= maxUnauthenticated) {
       return refuse(socket, 429);
     }
     // Counted from now, so concurrent upgrades cannot all pass the cap; released once, when the
     // connection authenticates or the socket closes, whichever comes first.
-    this.#unauthenticated.set(ip, fromIp + 1);
+    this.#unauthenticated.set(key, fromIp + 1);
     this.#unauthenticatedTotal++;
     let counted = true;
     const authenticated = () => {
       if (!counted) return;
       counted = false;
       this.#unauthenticatedTotal--;
-      const left = (this.#unauthenticated.get(ip) ?? 1) - 1;
-      if (left === 0) this.#unauthenticated.delete(ip);
-      else this.#unauthenticated.set(ip, left);
+      const left = (this.#unauthenticated.get(key) ?? 1) - 1;
+      if (left === 0) this.#unauthenticated.delete(key);
+      else this.#unauthenticated.set(key, left);
     };
     socket.once('close', authenticated);
     this.#options.coordination
-      .consumeRateLimit(`connection_attempt:${ip}`, connectionAttempts)
+      .consumeRateLimit(`connection_attempt:${key}`, connectionAttempts)
       .then((decision) => {
         if (!decision.allowed) {
           return refuse(socket, 429, Math.ceil(decision.retryAfterMs / 1000));
         }
-        this.#wss.handleUpgrade(request, socket, head, (ws) => this.#accept(ws, ip, authenticated));
+        this.#wss.handleUpgrade(request, socket, head, (ws) =>
+          this.#accept(ws, ip, key, authenticated),
+        );
       })
       .catch(() => socket.destroy());
   }
 
-  #accept(ws: WebSocket, ip: string, authenticated: () => void): void {
+  #accept(ws: WebSocket, ip: string, key: string, authenticated: () => void): void {
     const connection = new Connection(
       {
-        clientIp: ip,
+        clientIp: key,
         send: (message) => ws.send(JSON.stringify(message)),
         close: (code) => ws.close(code),
         authenticated,

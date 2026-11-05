@@ -64,6 +64,7 @@ const applicationEntry = z
         session_create: rateLimitPolicy,
         pairing: rateLimitPolicy,
         presence: rateLimitPolicy,
+        refresh: rateLimitPolicy,
         signaling: rateLimitPolicy,
         rtc: rateLimitPolicy,
         rtc_ice_candidate: rateLimitPolicy,

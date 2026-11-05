@@ -44,6 +44,7 @@ export type ApplicationRateLimit =
   | 'session_create'
   | 'pairing'
   | 'presence'
+  | 'refresh'
   | 'signaling'
   | 'rtc'
   | 'rtc_ice_candidate';

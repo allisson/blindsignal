@@ -68,3 +68,34 @@ export function clientIp(
   }
   return client;
 }
+
+/** The 16-bit groups of an IPv6 address, an embedded IPv4 address included. */
+function groups(address: string): number[] {
+  const parse = (part: string) =>
+    part === ''
+      ? []
+      : part.split(':').flatMap((group) => {
+          if (!group.includes('.')) return [parseInt(group, 16)];
+          const [a = 0, b = 0, c = 0, d = 0] = group.split('.').map(Number);
+          return [(a << 8) | b, (c << 8) | d];
+        });
+  const [head = '', tail] = address.split('::');
+  const left = parse(head);
+  const right = tail === undefined ? [] : parse(tail);
+  return [...left, ...Array<number>(8 - left.length - right.length).fill(0), ...right];
+}
+
+/**
+ * What per-IP limits count by (ADR 0011): an IPv4 address as is, and an IPv6 one by its first
+ * `prefixLength` bits, as `2001:db8:0:1:0:0:0:0/64`. A host is given a whole /64, so counting
+ * each address would let it pass every per-IP limit.
+ */
+export function ipKey(ip: string, prefixLength: number): string {
+  if (prefixLength >= 128 || isIP(ip) !== 6) return ip;
+  // A zone (`fe80::1%eth0`) ends the last group, which a prefix below 128 masks out.
+  const masked = groups(ip).map((group, index) => {
+    const bits = Math.min(16, Math.max(0, prefixLength - index * 16));
+    return group & ((0xffff << (16 - bits)) & 0xffff);
+  });
+  return `${masked.map((group) => group.toString(16)).join(':')}/${prefixLength}`;
+}

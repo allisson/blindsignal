@@ -42,14 +42,18 @@ Initial values are set through load testing (spec §8.2). Amended by the Phase 1
 |---|---|
 | Connection attempts | Client IP |
 | Concurrent unauthenticated connections | Client IP, and global |
-| Authentication attempts (`auth.authenticate`, `auth.refresh`) | Client IP |
-| Discovery requests | Connection |
-| Session creation | Connection |
-| Signaling messages, every type | Connection |
-| `rtc.*` messages | Session |
-| `rtc.ice_candidate` | Session, in its own bucket |
-| Pairing attempts | Connection (ADR 0042) |
-| Presence changes (`namespace.join`, `namespace.leave`) | Connection |
+| Authentication attempts (`auth.authenticate`) | Client IP |
+| Token refreshes (`auth.refresh`) | Device |
+| Discovery requests | Device |
+| Session creation | Device |
+| Signaling messages, every type | Device; connection before authentication |
+| `rtc.*` messages | Session and sending device |
+| `rtc.ice_candidate` | Session and sending device, in its own bucket |
+| Pairing attempts | Device (ADR 0042) |
+| Presence changes (`namespace.join`, `namespace.leave`) | Device |
+
+Amended by the Phase 12 abuse review: the keys above were the connection, the session, and the
+client IP for `auth.refresh`; see "rate limits" below.
 
 - **Token bucket:** each category has a configurable rate and burst. A message takes one token
   from every bucket that applies to it.
@@ -83,6 +87,27 @@ Initial values are set through load testing (spec §8.2). Amended by the Phase 1
   examples use, and presence events still report every change.
 - **`pairingApprovers`** (`BLINDSIGNAL_MAX_PAIRING_APPROVERS`, default 10) bounds the devices one
   `pairing.create` reaches (ADR 0042).
+
+## Amended by the Phase 12 abuse review: rate limits
+
+- **Buckets after authentication are per device,** keyed by application, user, and device ID, so a
+  reconnection starts no new bucket; the IDs come from a verified token, so no client names
+  another device's bucket. The tabs of one device share them, as only one is connected at a time
+  (ADR 0008). Before authentication, the signaling bucket stays per connection, bounded by the
+  authentication deadline and the per-IP attempts.
+- **`auth.refresh` takes a `refresh` bucket per device** (`BLINDSIGNAL_RATE_LIMIT_REFRESH`, default
+  `0.1,5`, overridable as `rateLimits.refresh`) instead of the per-IP authentication bucket, which
+  a connected client could otherwise spend for every client behind its IP. The default is a
+  starting value until load testing sets it (ADR 0049).
+- **Each participant of a session has its own `rtc` and `rtc_ice_candidate` buckets,** so one peer
+  cannot spend the other's. A session's total rate is twice the policy.
+- **Per-IP limits count an IPv6 client by its prefix** (`BLINDSIGNAL_IPV6_PREFIX_LENGTH`, default
+  64), since one host is commonly given a whole /64; `128` counts each address. IPv4 addresses are
+  counted as they are. Logs keep the whole address.
+- **A request's headers have a deadline before the upgrade:**
+  `BLINDSIGNAL_HTTP_HEADERS_TIMEOUT_SECONDS`, default 10, from the socket's opening, a socket that
+  sends nothing included, checked every second. Node's defaults, 60 seconds checked every 30, let
+  a slow client hold a socket that no cap counts yet.
 
 ## Client IP
 

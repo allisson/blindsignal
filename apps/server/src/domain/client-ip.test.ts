@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clientIp, parseTrustedProxies, type ForwardedHeader } from './client-ip.ts';
+import { clientIp, ipKey, parseTrustedProxies, type ForwardedHeader } from './client-ip.ts';
 
 function trust(proxies: string, header: ForwardedHeader = 'x-forwarded-for') {
   const parsed = parseTrustedProxies(proxies);
@@ -101,5 +101,26 @@ describe('clientIp', () => {
       const headers = { 'x-forwarded-for': '6.6.6.6' };
       expect(clientIp('10.0.0.1', headers, cloudflare)).toBe('10.0.0.1');
     });
+  });
+});
+
+describe('ipKey', () => {
+  it.each([
+    ['203.0.113.7', 64, '203.0.113.7'],
+    ['2001:db8:0:1:2:3:4:5', 64, '2001:db8:0:1:0:0:0:0/64'],
+    ['2001:db8:0:1::5', 64, '2001:db8:0:1:0:0:0:0/64'],
+    ['::1', 64, '0:0:0:0:0:0:0:0/64'],
+    ['2001:db8::', 64, '2001:db8:0:0:0:0:0:0/64'],
+    ['2001:db8:abcd:12ff::1', 56, '2001:db8:abcd:1200:0:0:0:0/56'],
+    ['2001:db8:abcd:12ff::1', 1, '0:0:0:0:0:0:0:0/1'],
+    ['ffff:db8::1', 1, '8000:0:0:0:0:0:0:0/1'],
+    ['2001:db8:0:1:2:3:4:5', 112, '2001:db8:0:1:2:3:4:0/112'],
+    ['64:ff9b::198.51.100.255', 120, '64:ff9b:0:0:0:0:c633:6400/120'],
+    ['fe80::1%eth0', 64, 'fe80:0:0:0:0:0:0:0/64'],
+    ['2001:db8::5', 128, '2001:db8::5'],
+    // No peer address: the socket is already gone.
+    ['', 64, ''],
+  ])('keys %s by /%i as %s', (ip, prefix, key) => {
+    expect(ipKey(ip, prefix)).toBe(key);
   });
 });

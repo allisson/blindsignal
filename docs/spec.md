@@ -392,7 +392,7 @@ Initial rate-limit categories:
 - Pairing attempts.
 - ICE candidate message rates.
 
-Before authentication completes, the server does not yet know the connection's application or device, so application and device limits cannot apply. Connection-attempt and authentication-attempt limits are therefore keyed by source IP address and enforced globally.
+Before authentication completes, the server does not yet know the connection's application or device, so application and device limits cannot apply. Connection-attempt and authentication-attempt limits are therefore keyed by source IP address, an IPv6 one by its prefix, and enforced globally. After authentication, limits are keyed by device, so a reconnection does not reset them, and token refreshes take a bucket of their own.
 
 Behind a reverse proxy, load balancer, or tunnel (§14.2, §14.3), the TCP peer address is the proxy's, not the client's. The server must derive the client IP from forwarding headers (such as `X-Forwarded-For` or `CF-Connecting-IP`) only when the request comes from an explicitly configured trusted proxy, and must otherwise use the TCP peer address. Forwarding headers from untrusted peers must be ignored, since clients can forge them.
 

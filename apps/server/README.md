@@ -78,7 +78,9 @@ names the variable, never its value.
 | `BLINDSIGNAL_MAX_UNAUTHENTICATED` | `1000` | Concurrent unauthenticated connections in all; more get HTTP `429` at the upgrade. |
 | `BLINDSIGNAL_MAX_CONNECTIONS` | `0` (none) | Open connections on this instance, authenticated or not; more get HTTP `503` at the upgrade. Set it at or below the platform's concurrency per instance, such as Cloud Run's (ADR 0030). |
 | `BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS` | `5,20` | Connection attempts per client IP, as `rate,burst`; more get HTTP `429` with `Retry-After`. |
-| `BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION` | `1,10` | `auth.authenticate` and `auth.refresh` per client IP, as `rate,burst`; more get `rate_limited`. Devices on one development machine share `127.0.0.1`: tests with many of them raise this and `BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS`, as `examples/minimal-app/playwright.config.ts` does. |
+| `BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION` | `1,10` | `auth.authenticate` per client IP, as `rate,burst`; more get `rate_limited`. `auth.refresh` takes the application's `refresh` bucket instead. Devices on one development machine share `127.0.0.1`: tests with many of them raise this and `BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS`, as `examples/minimal-app/playwright.config.ts` does. |
+| `BLINDSIGNAL_IPV6_PREFIX_LENGTH` | `64` | The per-IP limits above count an IPv6 client by this prefix, from `1` to `128`; `128` counts each address. Logs keep the whole address (ADR 0011). |
+| `BLINDSIGNAL_HTTP_HEADERS_TIMEOUT_SECONDS` | `10` | A request, the upgrade's included, whose headers have not all arrived this long after its socket opened is closed; Node's default is 60 (ADR 0011). |
 | `BLINDSIGNAL_MAX_QUEUED_MESSAGES` | `1024` | Frames and events waiting on one connection, at least `2`; reading pauses at half, and a full queue closes with `1013` (ADR 0013). |
 | `BLINDSIGNAL_MAX_BUFFERED_BYTES` | `1048576` | Bytes waiting in one connection's send buffer, at least `65536`; more close with `1013`, and above half of it the `rtc.*` a peer relays are dropped (ADR 0013). |
 | `BLINDSIGNAL_ABUSE_ALERT_THRESHOLD` | `0` (off) | An application's `rate_limited` and `quota_exceeded` errors within one window that raise an abuse alert (ADR 0016). |
@@ -107,14 +109,16 @@ major release (ADR 0049); `docs/load-report.md` has each run's results. A rate l
 | `BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE` | `2,10` | `rateLimits.session_create` |
 | `BLINDSIGNAL_RATE_LIMIT_PAIRING` | `0.1,3` | `rateLimits.pairing` |
 | `BLINDSIGNAL_RATE_LIMIT_PRESENCE` | `1,10` | `rateLimits.presence` |
+| `BLINDSIGNAL_RATE_LIMIT_REFRESH` | `0.1,5` | `rateLimits.refresh` |
 | `BLINDSIGNAL_RATE_LIMIT_SIGNALING` | `50,100` | `rateLimits.signaling` |
 | `BLINDSIGNAL_RATE_LIMIT_RTC` | `10,30` | `rateLimits.rtc` |
 | `BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE` | `20,50` | `rateLimits.rtc_ice_candidate` |
 
 Every quota and rate limit is enforced. Signaling, discovery, session creation, the
-`namespace.join` and `namespace.leave` that change presence, and `pairing.create` are counted per
-connection, and `rtc.*` per session; every frame takes a signaling token, malformed ones and those
-sent before authentication too, under the server default until the application is known. A
+`namespace.join` and `namespace.leave` that change presence, `pairing.create`, and `auth.refresh`
+are counted per device, so a reconnection starts no new bucket, and `rtc.*` per session and
+sending device; every frame takes a signaling token, malformed ones and those sent before
+authentication too, under the server default and per connection until the device is known. A
 message above a limit gets `rate_limited` with `retryAfterMs` and is dropped; the connection stays
 open. A connection reads its application's limits at `auth.authenticate` and each `auth.refresh`,
 so a reloaded registry's limits apply from its next refresh. A requester holds one `pending`

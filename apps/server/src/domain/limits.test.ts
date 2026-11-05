@@ -18,6 +18,7 @@ const defaults: Limits = {
     session_create: policy(1, 3),
     pairing: policy(1, 1),
     presence: policy(1, 4),
+    refresh: policy(0.1, 5),
     signaling: policy(10, 20),
     rtc: policy(5, 10),
     rtc_ice_candidate: policy(5, 15),

@@ -42,8 +42,8 @@ proof with.
   approving device, its claims against the new device, and its `exp`, then issues tokens with the
   namespace. Revoking a pairing is leaving the namespace out of the next token, or revoking the
   device.
-- **`pairing.create` takes a token from the `pairing` bucket,** per connection, which an
-  application may override (ADR 0011).
+- **`pairing.create` takes a token from the `pairing` bucket,** per device since the Phase 12
+  abuse review (per connection before), which an application may override (ADR 0011).
 - **A request reaches at most `pairingApprovers` devices** (amended by the Phase 12 abuse review):
   `BLINDSIGNAL_MAX_PAIRING_APPROVERS`, default 10, which an application may override in
   `quotas`. The server lists only the user's devices present in the namespace, and asks the first
