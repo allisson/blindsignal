@@ -20,9 +20,20 @@ its `exports` pointed at the TypeScript sources and every package was `"private"
   - `apps/server/src/sdk-package.test.ts` packs both, installs them where no workspace link
     resolves them, type-checks an application with a bundler and with Node's resolution, and
     imports them.
-- **A maintainer publishes them by hand** after the release's pull request merges and its tag is
-  pushed: `pnpm --filter @blindsignal/protocol publish`, then `@blindsignal/sdk`. The protocol
-  goes first, since the SDK depends on its exact version. Both take the SDK's version.
+- **CI publishes them from each `sdk-v<x.y.z>` tag,** through `.github/workflows/npm-publish.yml`,
+  with npm's trusted publishing: npm trusts that workflow in the `npm` environment through OIDC,
+  so no npm token exists, and each version carries a provenance attestation. Both packages take
+  the SDK's version.
+  - The job fails unless the tagged commit is on `main` and both `package.json` files hold the
+    tag's version.
+  - `pnpm pack` builds each tarball, applying `publishConfig` and the protocol's version, and
+    `npm publish` uploads it. The protocol goes first, since the SDK depends on its exact version.
+  - A rerun skips a version already published, so a run that failed between the two packages
+    completes.
+  - Each package's npm settings name this repository, `npm-publish.yml`, and the `npm`
+    environment as its trusted publisher, allowed to `npm publish` but not to manage dist-tags,
+    and its publishing access is "Require two-factor authentication and disallow bypass 2fa
+    tokens". `0.1.0` was published by hand, before the workflow existed.
 - **The server image is published to Docker Hub, as `allisson/blindsignal`,** by
   `.github/workflows/docker-push.yml`, for `linux/amd64` and `linux/arm64`, each built on a
   native runner and joined into one manifest list:
@@ -35,15 +46,22 @@ its `exports` pointed at the TypeScript sources and every package was `"private"
   `version` in `server.listening`, both from `apps/server/package.json`, so an operator sees which
   release each instance runs during a rolling upgrade.
 - **A release is tagged on a commit of `main` that passed CI.** The release's pull request sets
-  the version and writes the `CHANGELOG.md` entry (ADR 0043); the tags and the npm publication
-  follow its merge.
+  the version and writes the `CHANGELOG.md` entry (ADR 0043); pushing the tags after its merge
+  publishes the image and the packages.
 
 ## Considered options
 
 - **GitHub Container Registry.** Rejected: the maintainer's other projects publish to Docker Hub,
   where operators look first.
-- **Publishing to npm from CI with provenance.** Deferred: it needs an npm token or trusted
-  publishing configured for the scope; until then, by hand, from a clean checkout of the tag.
+- **Publishing to npm by hand.** Done for `0.1.0`, then replaced: it needs the maintainer's
+  one-time password on each release, and a published version cannot show which commit built it.
+- **An npm automation token in a repository secret.** Rejected: a long-lived credential that can
+  publish, where trusted publishing needs none.
+- **`pnpm publish` in CI.** Rejected: npm documents its own client's OIDC exchange; `pnpm pack`
+  keeps pnpm's packing, which `apps/server/src/sdk-package.test.ts` checks.
+- **A required reviewer on the `npm` environment, or npm's staged publishing** (`npm stage
+  publish`, each version waiting for the maintainer's two-factor approval on npm). Rejected:
+  pushing the tag is already the maintainer's approval of the release.
 - **`exports` pointing at `dist/` in the workspace too.** Rejected: every test, type check, and
   example would need a build first.
 - **Signing the image.** Deferred: the build's default provenance attestation is attached; a
@@ -57,5 +75,9 @@ its `exports` pointed at the TypeScript sources and every package was `"private"
   build the image from a checkout.
 - Every merge to `main` pushes a `main` image: the secrets must exist before this workflow
   reaches `main`, or its runs fail.
+- An `sdk-v` tag pushed before both packages name the workflow as their trusted publisher fails to
+  publish; rerunning the job after configuring them completes the release. npm marks a new
+  trusted publisher as pending until a publication through it, within a deadline it shows; one
+  configured long before a release may need configuring again.
 - `pnpm build` and `pnpm pack` leave `dist/` in both packages; it is ignored by git.
 - `apps/server/package.json` stays `private`, but its version is the server's release.
