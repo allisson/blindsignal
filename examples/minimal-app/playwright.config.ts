@@ -33,9 +33,13 @@ export default defineConfig({
   testDir: 'tests',
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? 'github' : 'list',
-  // CI retries a failed test once, and keeps the trace of each failed attempt (ADR 0047).
+  // CI retries a failed test once, and keeps the trace of each failed attempt; tracing stays off
+  // locally, where it slows macOS WebKit past the test timeout (ADR 0047).
   retries: process.env.CI ? 1 : 0,
-  use: { baseURL: `http://127.0.0.1:${appPort}`, trace: 'retain-on-failure' },
+  use: {
+    baseURL: `http://127.0.0.1:${appPort}`,
+    trace: process.env.CI ? 'retain-on-failure' : 'off',
+  },
   projects: [
     {
       name: 'chromium',
