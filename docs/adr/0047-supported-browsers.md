@@ -33,6 +33,10 @@ Running the Playwright suites in Playwright's WebKit 27.2 showed three things:
   the traces as the `playwright-traces` artifact, for 7 days, whether the job passed or not. Locally,
   a failed test is neither retried nor traced, unless the run passes `--trace on`: tracing slows
   macOS WebKit past the test timeout, which made the relay, pairing, and proof tests fail there.
+- **The suites press a button below a device list with Enter, instead of clicking it.** The list
+  changes as devices come and go, other tests' devices included, and a click lands where the
+  button was when Playwright measured it: a trace showed a Send click missing after the list
+  above it shrank. Pressing focuses the button and does not depend on where it is.
 - **iOS and direct connections in Safari are untested:** no automated test covers them, and
   `docs/external-testing.md` is where a run with a Safari device would cover them.
 - **`examples/backend-issuer` leaves `Secure` out of its session cookie only for a plain-HTTP
@@ -50,6 +54,10 @@ Running the Playwright suites in Playwright's WebKit 27.2 showed three things:
 - **No retry in CI, and a rerun of the job on each flaky failure.** Rejected: the Firefox
   DataChannel test failed intermittently on CI and never in 50 local runs, and without a trace each
   rerun left no record of why.
+- **Moving the device list below the controls.** Rejected: a Connect button inside the list
+  still moves when an entry above it leaves.
+- **A namespace per test,** so that no other test's device joins the list. Rejected: the demo
+  pages and the registry name one namespace, and a test's own devices still change the list.
 - **Skipping the minimal app in WebKit.** Rejected: sign-in, pairing, and `refresh()` pass there;
   only the message exchange needs a relay the suite does not start.
 

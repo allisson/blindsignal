@@ -39,9 +39,11 @@ function skipDirect(info: TestInfo) {
   test.skip(info.project.name === 'webkit', 'WebKit cannot connect over host candidates');
 }
 
+// Buttons are pressed, not clicked: the device list above them changes as other tests' devices
+// come and go, and a click lands where a button was, not where it is (ADR 0047).
 async function send(page: Page, text: string) {
   await page.getByLabel('Message').fill(text);
-  await page.getByRole('button', { name: 'Send' }).click();
+  await page.getByRole('button', { name: 'Send' }).press('Enter');
 }
 
 test('two browsers open a DataChannel, exchange messages, and close', async ({ browser }, info) => {
@@ -51,7 +53,7 @@ test('two browsers open a DataChannel, exchange messages, and close', async ({ b
 
   await alice.page
     .getByRole('button', { name: `Connect to bob/phone-${info.project.name}` })
-    .click();
+    .press('Enter');
   for (const { page } of [alice, bob]) {
     await expect(page.locator('#channel')).toHaveText('open');
     await expect(page.locator('#connection-type')).toHaveText('direct');
@@ -71,7 +73,7 @@ test('two browsers open a DataChannel, exchange messages, and close', async ({ b
     expect(sent.filter((frame) => frame.includes('hello'))).toEqual([]);
   }
 
-  await alice.page.getByRole('button', { name: 'Close' }).click();
+  await alice.page.getByRole('button', { name: 'Close' }).press('Enter');
   for (const { page } of [alice, bob]) await expect(page.locator('#channel')).toHaveText('closed');
 });
 
@@ -90,7 +92,7 @@ test('two applications on one server keep their devices and protocols apart', as
   ];
 
   for (const [alice] of [notes, chat]) {
-    await alice!.page.getByRole('button', { name: `Connect to bob/${phone}` }).click();
+    await alice!.page.getByRole('button', { name: `Connect to bob/${phone}` }).press('Enter');
   }
   for (const { page } of [...notes, ...chat]) {
     await expect(page.locator('#channel')).toHaveText('open');
@@ -135,7 +137,7 @@ test('two browsers bound to device keys connect, and keep their keys across a re
 
   await alice.page
     .getByRole('button', { name: `Connect to bob/pop-phone-${info.project.name}` })
-    .click();
+    .press('Enter');
   for (const { page } of [alice, bob]) await expect(page.locator('#channel')).toHaveText('open');
 });
 
@@ -169,7 +171,7 @@ test("a new device is approved by its user's device in the namespace", async ({
   const laptop = await open(browser, user, 'laptop', { pop: '' });
   const tablet = await open(browser, user, 'tablet', { pop: '', pairing: '' });
 
-  await tablet.page.getByRole('button', { name: 'Ask to pair' }).click();
+  await tablet.page.getByRole('button', { name: 'Ask to pair' }).press('Enter');
   await expect(tablet.page.locator('#pairing')).toHaveText('approved');
   await expect(laptop.page.locator('#log')).toContainText(`approved ${user}/tablet`);
 
@@ -213,7 +215,9 @@ for (const [transport, port] of [
     const alice = await open(browser, 'alice', `relay-laptop-${suffix}`, { relay: '' }, port);
     const bob = await open(browser, 'bob', `relay-phone-${suffix}`, { relay: '' }, port);
 
-    await alice.page.getByRole('button', { name: `Connect to bob/relay-phone-${suffix}` }).click();
+    await alice.page
+      .getByRole('button', { name: `Connect to bob/relay-phone-${suffix}` })
+      .press('Enter');
     for (const { page } of [alice, bob]) {
       await expect(page.locator('#channel')).toHaveText('open');
       await expect(page.locator('#connection-type')).toHaveText('relay');
@@ -242,7 +246,7 @@ test('two browsers without direct candidates fall back to the relay', async ({
   const alice = await open(browser, 'alice', `laptop-${suffix}`);
   const bob = await open(browser, 'bob', `phone-${suffix}`);
 
-  await alice.page.getByRole('button', { name: `Connect to bob/phone-${suffix}` }).click();
+  await alice.page.getByRole('button', { name: `Connect to bob/phone-${suffix}` }).press('Enter');
   for (const { page } of [alice, bob]) {
     await expect(page.locator('#channel')).toHaveText('open');
     await expect(page.locator('#connection-type')).toHaveText('relay');
@@ -262,7 +266,7 @@ test('two browsers connect directly while TURN is unreachable', async ({ browser
   const alice = await open(browser, 'alice', `laptop-${suffix}`, {}, 8790);
   const bob = await open(browser, 'bob', `phone-${suffix}`, {}, 8790);
 
-  await alice.page.getByRole('button', { name: `Connect to bob/phone-${suffix}` }).click();
+  await alice.page.getByRole('button', { name: `Connect to bob/phone-${suffix}` }).press('Enter');
   for (const { page } of [alice, bob]) {
     await expect(page.locator('#channel')).toHaveText('open');
     await expect(page.locator('#connection-type')).toHaveText('direct');
@@ -282,7 +286,7 @@ test('a session forced to an unreachable TURN server closes', async ({ browser }
   const alice = await open(browser, 'alice', `laptop-${suffix}`, query, 8790);
   const bob = await open(browser, 'bob', `phone-${suffix}`, query, 8790);
 
-  await alice.page.getByRole('button', { name: `Connect to bob/phone-${suffix}` }).click();
+  await alice.page.getByRole('button', { name: `Connect to bob/phone-${suffix}` }).press('Enter');
   for (const { page } of [alice, bob]) {
     await expect(page.locator('#channel')).toHaveText('connecting');
   }

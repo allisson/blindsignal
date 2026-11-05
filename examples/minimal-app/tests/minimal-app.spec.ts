@@ -25,7 +25,9 @@ test("a user's new device is paired by the first, then they exchange a message",
   const tablet = await signIn(browser, user);
   await expect(tablet.page.locator('#pair')).toBeVisible();
   await tablet.page.getByRole('button', { name: 'Ask to pair' }).click();
-  await laptop.page.getByRole('button', { name: `Approve ${tablet.deviceId}` }).click();
+  // Buttons below the device list are pressed, not clicked: the list changes as devices come and
+  // go, and a click lands where a button was, not where it is (ADR 0047).
+  await laptop.page.getByRole('button', { name: `Approve ${tablet.deviceId}` }).press('Enter');
   await expect(tablet.page.locator('#pair')).toBeHidden();
   await expect(tablet.page.locator('#state')).toHaveText('connected');
   // Joined now: the laptop sees it arrive, and the tablet finds the laptop.
@@ -35,11 +37,11 @@ test("a user's new device is paired by the first, then they exchange a message",
   // Playwright's WebKit connects only through a TURN relay, which this suite has none of (ADR 0047).
   if (info.project.name === 'webkit') return;
 
-  await tablet.page.getByRole('button', { name: `Connect to ${laptop.deviceId}` }).click();
+  await tablet.page.getByRole('button', { name: `Connect to ${laptop.deviceId}` }).press('Enter');
   await expect(laptop.page.locator('#log')).toContainText(`connected to ${tablet.deviceId}`);
   await expect(tablet.page.locator('#log')).toContainText(`connected to ${laptop.deviceId}`);
   await tablet.page.getByLabel('Message').fill('hello laptop');
-  await tablet.page.getByRole('button', { name: 'Send' }).click();
+  await tablet.page.getByRole('button', { name: 'Send' }).press('Enter');
   await expect(laptop.page.locator('#log')).toContainText(`${tablet.deviceId}: hello laptop`);
   // The message travels only over the DataChannel, never through the signaling server.
   for (const { sent } of [laptop, tablet]) {
@@ -92,7 +94,7 @@ test('a device ID that names an element of the page leaves the page whole', asyn
   await named.getByLabel('User').fill(user);
   await named.getByRole('button', { name: 'Sign in' }).click();
   await named.getByRole('button', { name: 'Ask to pair' }).click();
-  await laptop.page.getByRole('button', { name: 'Approve state' }).click();
+  await laptop.page.getByRole('button', { name: 'Approve state' }).press('Enter');
 
   const connect = laptop.page.getByRole('button', { name: 'Connect to state' });
   await expect(connect).toBeVisible();
