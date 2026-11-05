@@ -62,6 +62,9 @@ repository; never expose it.
       them; set `BLINDSIGNAL_ABUSE_ALERT_THRESHOLD` to turn the abuse alert on (ADR 0016).
 - [ ] Quotas and rate limits stay at the defaults the load tests validated
       (`docs/load-report.md`), or an application's registry entry overrides them.
+- [ ] A rollout expects what the load tests measured (`docs/load-report.md`): with PostgreSQL,
+      new devices of one application enroll one at a time, about 190 per second there, and
+      bursts of far more than 100 sessions at once go over several instances.
 
 Registering, suspending, and revoking applications and devices is in
 `docs/application-lifecycle.md`.

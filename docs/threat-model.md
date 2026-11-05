@@ -177,6 +177,11 @@ Application payloads are not an asset of the server: they never reach it (spec Â
     checked before a token names the application, so one application's clients can take an
     instance's connections from the others. Each application's `connections` quota bounds it
     across instances, set below what they hold together (ADR 0011, `docs/deployment.md`).
+15. **New devices of one application enroll one at a time with PostgreSQL,** about 190 per second
+    in the load tests, since each takes the application's lock to count its devices against the
+    quotas (ADR 0010). A rollout of many new devices at once waits, with HTTP `429` from the
+    unauthenticated cap until each enrolls; devices already enrolled reconnect without the lock
+    (`docs/load-report.md`).
 
 ## 6. Out of scope
 
