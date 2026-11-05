@@ -33,7 +33,9 @@ export default defineConfig({
   testDir: 'tests',
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? 'github' : 'list',
-  use: { baseURL: `http://127.0.0.1:${appPort}` },
+  // CI retries a failed test once, and keeps the trace of each failed attempt (ADR 0047).
+  retries: process.env.CI ? 1 : 0,
+  use: { baseURL: `http://127.0.0.1:${appPort}`, trace: 'retain-on-failure' },
   projects: [
     {
       name: 'chromium',
