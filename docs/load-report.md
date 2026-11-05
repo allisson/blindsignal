@@ -37,22 +37,28 @@ Valkey.
 | `BLINDSIGNAL_MAX_UNAUTHENTICATED` `1000` | Kept: every HTTP `429` came from it, since no device made more attempts than its per-IP buckets allow, and the SDK's backoff brought every device back within 13 s of a restart. |
 | `BLINDSIGNAL_RATE_LIMIT_CONNECTION_ATTEMPTS` `5,20`, `BLINDSIGNAL_RATE_LIMIT_AUTHENTICATION` `1,10` | Kept: a device's reconnection took at most 5 attempts, under each burst. |
 | `BLINDSIGNAL_RATE_LIMIT_DISCOVERY` `2,10`, `BLINDSIGNAL_RATE_LIMIT_SESSION_CREATE` `2,10`, `BLINDSIGNAL_RATE_LIMIT_SIGNALING` `50,100` | Kept: no `rate_limited`. |
-| `BLINDSIGNAL_RATE_LIMIT_RTC` `10,30`, `BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE` `20,50` | Kept: no `rate_limited` with 10 candidates each way. Both sides share a session's bucket: 25 candidates each way sent at once passed, and 26 lost their excess to `rate_limited`. |
+| `BLINDSIGNAL_RATE_LIMIT_RTC` `10,30`, `BLINDSIGNAL_RATE_LIMIT_RTC_ICE_CANDIDATE` `20,50` | Kept: no `rate_limited` with 10 candidates each way. Both sides shared a session's bucket: 25 candidates each way sent at once passed, and 26 lost their excess to `rate_limited`. Since #127 each participant has its own buckets (ADR 0011); not measured again. |
 | `BLINDSIGNAL_HEARTBEAT_INTERVAL_SECONDS` `30`, `BLINDSIGNAL_PRESENCE_LEASE_SECONDS` `90` | Kept: no connection closed over 65 s. |
 | `BLINDSIGNAL_MAX_QUEUED_MESSAGES` `1024`, `BLINDSIGNAL_MAX_BUFFERED_BYTES` `1048576` | Kept: no connection closed with `1013` during the sessions. |
 | `BLINDSIGNAL_MAX_SESSIONS_PER_APP` `10000`, `BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE` `16`, `BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE` `100`, `BLINDSIGNAL_RATE_LIMIT_PAIRING` `0.1,3` | Not reached: 2,500 sessions, one per device, one namespace, no pairing. |
 
-Findings:
+Findings, each fixed or accepted:
 
 - **New devices enroll one at a time per application with PostgreSQL,** about 190 per second on
   this machine, so the first connection of 10,000 new devices took 52 s, with HTTP `429` retries
   meanwhile. The enrollment counts the application's devices in its transaction, which grows with
-  them.
+  them. **Accepted** (threat model §5, risk 15): devices already enrolled reconnect without the
+  lock, the SDK's backoff brings the new ones in, and `docs/deployment.md` says to expect it on a
+  rollout.
 - **A device with more than 25 candidates loses some** when it sends them at once, since both
   sides share the session's `rtc.ice_candidate` bucket; how many a browser gathers grows with its
-  network interfaces and TURN URLs.
+  network interfaces and TURN URLs. **Fixed** in #127: each participant has its own
+  `rtc_ice_candidate` bucket, a burst of 50 per side (ADR 0011); the next run measures it.
 - **The event loop stalls for about a second** under 55,000 relays at once on one instance; on two
-  instances, each relaying through Valkey, it stays under 33 ms.
+  instances, each relaying through Valkey, it stays under 33 ms. **Accepted:** 2,500 negotiations
+  started in one instant is a burst no deployment sees, and 100 at once relay with a p99 of 31 ms;
+  a deployment that expects more spreads them over several instances (`docs/deployment.md`).
 - **On one host, the restart's reconnections cannot all use IPv4:** the old connections keep about
   10,000 loopback ports in `TIME_WAIT`, of about 16,000, so the script reconnects over IPv6, and a
-  run waits for the previous one's `TIME_WAIT` sockets to expire.
+  run waits for the previous one's `TIME_WAIT` sockets to expire. **Accepted:** a limit of the
+  test, with the client and the instances on one host, not of the server (ADR 0049).
