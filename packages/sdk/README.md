@@ -83,7 +83,7 @@ if (device) {
 | `backoff` | `{ baseMs: 1000, maxMs: 30000 }` | `BackoffOptions`: reconnect and refresh retry delays, with full jitter. |
 | `backoffResetMs` | `30000` | Time connected after which the reconnect count resets. |
 | `heartbeat` | `{ intervalMs: 25000, timeoutMs: 10000 }` | `HeartbeatOptions`: `connection.ping` interval and pong timeout. |
-| `maxIceRestarts` | `3` | ICE restarts in a row before a failed connection closes. |
+| `maxIceRestarts` | `3` | ICE restarts in a row before a failed connection closes. In Firefox, a connection that fails before its DataChannel opens ends the session instead (ADR 0018). |
 | `connectTimeoutMs` | `30000` | Time to connect after each offer/answer exchange before the connection counts as failed (ADR 0018). |
 | `createSocket`, `createPeerConnection` | browser globals | Replaced in tests; see [Testing](#testing). |
 

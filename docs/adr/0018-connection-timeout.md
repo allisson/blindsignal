@@ -37,3 +37,9 @@ bounds the time a peer connection may take to connect.
 - A session that never connects closes after at most `connectTimeoutMs × (maxIceRestarts + 1)`,
   2 minutes by default, and the peer gets `closed_by_peer`.
 - A connection that is slow but would have connected may be restarted, and lose its progress.
+- In Firefox, an ICE restart cannot save a connection that fails before its DataChannel opens:
+  Firefox closes the pending channel as the connection fails, which closes the session, and a
+  channel created after the restart never opens, although ICE reconnects. The application creates
+  a new session. The occasional Firefox failure of
+  `examples/browser-demo/tests/datachannel.spec.ts:49` in CI ends this way, after ICE fails on the
+  runner for a reason not found; the retry covers it.
