@@ -31,7 +31,8 @@ Running the Playwright suites in Playwright's WebKit 27.2 showed three things:
 - **CI retries a failed Playwright test once, and keeps the trace of each failed attempt.** A test
   that passes on its retry is reported as flaky and does not fail the job. The `browser` job uploads
   the traces as the `playwright-traces` artifact, for 7 days, whether the job passed or not. Locally,
-  a failed test is not retried, and its trace stays in the suite's `test-results/`.
+  a failed test is neither retried nor traced, unless the run passes `--trace on`: tracing slows
+  macOS WebKit past the test timeout, which made the relay, pairing, and proof tests fail there.
 - **iOS and direct connections in Safari are untested:** no automated test covers them, and
   `docs/external-testing.md` is where a run with a Safari device would cover them.
 - **`examples/backend-issuer` leaves `Secure` out of its session cookie only for a plain-HTTP
