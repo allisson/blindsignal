@@ -96,7 +96,7 @@ are published to npm, from CI with provenance, and the image to Docker Hub, as `
 released (ADR 0050);
 `docs/onboarding.md` takes an application team from registration to production, and
 `docs/deployment.md` an operator from choosing a topology to upgrading it. Phase 13 has started: `README.md` introduces the project, `docs/README.md` indexes the
-documentation by audience, and `CONTRIBUTING.md` holds the setup, commands, checks, and conventions. The
+documentation by audience, and `CONTRIBUTING.md` holds the setup, commands, checks, and conventions; a test fails on a broken relative link or anchor in any Markdown file. The
 workspace uses
 the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended

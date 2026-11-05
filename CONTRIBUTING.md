@@ -92,6 +92,9 @@ touches the SDK, the server's signaling, or an example.
 
 - Code, identifiers, comments, docs, and commit messages are in English.
 - Use the terms of [`GLOSSARY.md`](GLOSSARY.md) in code, docs, and messages.
+- A test fails on a relative Markdown link whose file, or whose heading in a Markdown file, does
+  not exist (`apps/server/src/markdown-links.test.ts`). Anchors follow GitHub's: the heading in
+  lowercase, punctuation dropped, and spaces turned into hyphens.
 - Package dependencies follow [ADR 0002](docs/adr/0002-package-boundaries.md), which the lint
   enforces. A tool outside [ADR 0001](docs/adr/0001-typescript-node-toolchain.md) and the ADRs that
   extend it needs a new ADR.
