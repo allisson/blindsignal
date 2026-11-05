@@ -1,0 +1,57 @@
+name: npm packages
+
+# @blindsignal/protocol and @blindsignal/sdk on npm, from each `sdk-v<x.y.z>` tag (ADR 0050).
+# npm trusts this workflow and its `npm` environment through OIDC: no token, and provenance is
+# attached on its own.
+on:
+  push:
+    tags: ['sdk-v*']
+
+# Actions are pinned by commit, and Dependabot proposes their updates (ADR 0048).
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # A release is tagged on a commit of main, and both packages take the tag's version.
+      - env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          version="${TAG#sdk-v}"
+          for name in protocol sdk; do
+            actual="$(node -p "require('./packages/$name/package.json').version")"
+            if [ "$actual" != "$version" ]; then
+              echo "::error::packages/$name is $actual, but the tag is $TAG"
+              exit 1
+            fi
+          done
+          echo "VERSION=$version" >>"$GITHUB_ENV"
+      - run: pnpm install --frozen-lockfile
+      # pnpm packs with publishConfig and the protocol's version; npm publishes through OIDC. The
+      # protocol goes first, since the SDK depends on its exact version. A rerun skips what the
+      # failed run already published.
+      - run: |
+          mkdir "$RUNNER_TEMP/packs"
+          for name in protocol sdk; do
+            if [ -n "$(npm view "@blindsignal/$name@$VERSION" version 2>/dev/null)" ]; then
+              echo "@blindsignal/$name@$VERSION is already published"
+              continue
+            fi
+            pnpm --filter "@blindsignal/$name" pack --pack-destination "$RUNNER_TEMP/packs"
+            npm publish "$RUNNER_TEMP/packs/blindsignal-$name-$VERSION.tgz" --access public
+          done
