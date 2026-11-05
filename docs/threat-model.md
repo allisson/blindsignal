@@ -160,8 +160,9 @@ Application payloads are not an asset of the server: they never reach it (spec Â
    load balancer an application can stay under it on every instance.
 9. **The unauthenticated-connection caps are per instance** (`apps/server/README.md`): each
    instance behind a load balancer admits its own share.
-10. **A device record past its TTL may stay in memory** until its application's next new device
-    or a restart; it no longer counts toward any quota (ADR 0012).
+10. **A device record past its TTL stays stored** until the next sweep, up to
+    `BLINDSIGNAL_DEVICE_SWEEP_INTERVAL_SECONDS` (default 3600) later; it no longer counts toward
+    any quota (ADR 0012).
 11. **A TURN credential cannot be revoked before it expires, and its allocations outlive it.** A
     stolen one opens allocations for at most the configured lifetime, and each relays for as long
     as the thief refreshes it, within the TURN server's quotas; restarting the TURN server ends
