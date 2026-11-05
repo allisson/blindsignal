@@ -3,6 +3,11 @@
 `@blindsignal/sdk` and `@blindsignal/protocol`, which share its version, follow semantic
 versioning (`docs/adr/0043-semantic-versioning.md`). Each release is tagged `sdk-v<x.y.z>`.
 
+## 0.1.1
+
+No change to the API or its behavior: the first version published from CI, with a provenance
+attestation (ADR 0050).
+
 ## 0.1.0
 
 The first publication. It speaks protocol major `1` (`docs/protocol.md`).
