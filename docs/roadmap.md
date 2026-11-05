@@ -605,7 +605,7 @@ for, and keep every document accurate against the code.
 - [x] Review the integration guides against the code: `docs/onboarding.md`,
   `docs/token-issuance.md`, `docs/application-lifecycle.md`, `docs/application-e2ee.md`,
   `docs/tailscale.md`, `packages/sdk/README.md`, and the READMEs of `examples/`.
-- [ ] Review the operation guides against the code: `docs/deployment.md`, `docs/self-hosted.md`,
+- [x] Review the operation guides against the code: `docs/deployment.md`, `docs/self-hosted.md`,
   `docs/vps.md`, `docs/cloud-run.md`, `docs/supabase.md`, `docs/turn-operations.md`,
   `docs/secrets-and-keys.md`, `docs/backup-and-recovery.md`, `docs/external-testing.md`, and
   `apps/server/README.md`.
