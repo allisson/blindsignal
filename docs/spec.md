@@ -1,6 +1,6 @@
 # BlindSignal — Technical Specification
 
-**Status:** Draft  
+**Status:** Implemented, released in `0.1.0`  
 **Architecture:** Application-agnostic, access-controlled P2P connectivity infrastructure  
 **Initial target:** Browser / PWA
 

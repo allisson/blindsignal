@@ -609,7 +609,7 @@ for, and keep every document accurate against the code.
   `docs/vps.md`, `docs/cloud-run.md`, `docs/supabase.md`, `docs/turn-operations.md`,
   `docs/secrets-and-keys.md`, `docs/backup-and-recovery.md`, `docs/external-testing.md`, and
   `apps/server/README.md`.
-- [ ] Review `AGENTS.md`, `GLOSSARY.md`, and `docs/threat-model.md`.
+- [x] Review `AGENTS.md`, `GLOSSARY.md`, and `docs/threat-model.md`.
 
 A review checks each document against the code (environment variables, commands, message names,
 defaults), its links, and what is duplicated or out of date; it rewrites prose only where it
@@ -701,11 +701,11 @@ a session that never connects (ADR 0018), and `docs/turn-operations.md` is the T
 guide. A cross-network test through a TURN server reachable from other networks is deferred, with
 no date (ADR 0017). Session authorization and proof-of-possession, post-MVP tasks of Phase 5, are done (ADR 0040,
 ADR 0041); pairing is done: the server serves it and the SDK asks for and answers it (ADR 0042).
-Phase 11 has started: `examples/backend-issuer` issues tokens with its own key, documents the
+Phase 11 is complete: `examples/backend-issuer` issues tokens with its own key, documents the
 registry and JWKS setup, and grants pairings (`docs/token-issuance.md`); two applications sharing
 the server's instances reach nothing of each other, and exchange their own payload formats;
 `docs/application-e2ee.md` states what applications must do for end-to-end encryption, and
-`docs/integration-feedback.md` what the examples taught about integrating. Phase 12 has started:
+`docs/integration-feedback.md` what the examples taught about integrating. Phase 12 is complete:
 the SDK and the server follow semantic versioning, joined by the protocol major (ADR 0043), and
 a server keeps the previous protocol major while old SDKs can still run (ADR 0044), clients
 accept error codes and end reasons that a later release adds (ADR 0045), and the SDK's public API
@@ -716,5 +716,7 @@ none open either; load tests validate the quota and rate-limit defaults before e
 major release too (ADR 0049, `docs/load-report.md`), and their findings are fixed or accepted;
 the SDK README documents every export, and a test keeps it so (ADR 0046);
 `docs/onboarding.md` takes an application team from registration to production, and
-`docs/deployment.md` an operator from choosing a topology to upgrading it. Phase 13 has started: `README.md` introduces the project, `docs/README.md` indexes the
-documentation by audience, and `CONTRIBUTING.md` holds the setup, commands, checks, and conventions; a test fails on a broken relative link or anchor in any Markdown file.
+`docs/deployment.md` an operator from choosing a topology to upgrading it. Phase 13 is complete: `README.md` introduces the project, `docs/README.md` indexes the
+documentation by audience, and `CONTRIBUTING.md` holds the setup, commands, checks, and conventions; a test fails on a broken relative link or anchor in any Markdown file; and the
+spec, the protocol, the guides, `AGENTS.md`, `GLOSSARY.md`, and the threat model are reviewed
+against the code.

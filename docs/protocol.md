@@ -1,6 +1,6 @@
 # BlindSignal signaling protocol
 
-**Status:** Draft, protocol version 1  
+**Status:** Protocol version 1, released in `0.1.0`  
 **Reference:** `docs/spec.md` §11, §13; `docs/adr/0003-one-to-one-sessions.md`;
 `docs/adr/0004-sessions-bound-to-connections.md`; `docs/adr/0006-token-profile-and-device-identity.md`; `docs/adr/0007-namespace-authorization.md`; `docs/adr/0008-duplicate-connections.md`; `docs/adr/0009-ice-configuration.md`; `docs/adr/0011-quotas-and-rate-limits.md`; `docs/adr/0013-bounded-queues-and-backpressure.md`; `docs/adr/0014-maximum-session-duration.md`; `docs/adr/0041-proof-of-possession.md`; `docs/adr/0042-pairing.md`
 

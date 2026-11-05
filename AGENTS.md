@@ -43,62 +43,13 @@ the roadmap, or an ADR in the same change.
 
 ## Current status
 
-Phase 4 (browser SDK and local WebRTC) is complete: `packages/sdk` authenticates, reconnects,
-discovers devices, and opens a DataChannel per session, and `examples/browser-demo` runs it in
-Chromium and Firefox under Playwright, against the Phase 3 signaling server in `apps/server`. The
-MVP subsets of Phases 5 and 6 are complete too: namespace authorization from token claims
-(ADR 0007), device revocation, and the quotas and rate limits of ADR 0011. Phase 7 is complete:
-browsers on separate networks connect through Cloudflare Quick Tunnels (`docs/external-testing.md`,
-`docs/connectivity-report.md`), which completes the MVP. The post-MVP tasks of Phase 6 are done:
-bounded queues and backpressure (ADR 0013), the maximum session duration (ADR 0014),
-per-application usage metrics (ADR 0015), and abuse alerts with operator-driven suspension
-(ADR 0016). Phase 8 (TURN support) is complete: the server issues TURN credentials (ADR 0017),
-browsers relay through a test Coturn, the SDK closes a session that never connects (ADR 0018), and
-`docs/turn-operations.md` documents operating Coturn; see the roadmap's "After the MVP". Phase 9
-has started: with `BLINDSIGNAL_DATABASE_URL` set, the server keeps device records and the last
-accepted registry in PostgreSQL (`adapters/storage/postgresql`, ADR 0020, ADR 0021), and
-with `BLINDSIGNAL_REDIS_URL` set too, instances share coordination through Redis or Valkey
-(`adapters/coordination/redis`, ADR 0022, ADR 0023), and a registry reload reaches every
-instance (ADR 0024); a session whose peer's instance fails ends once the peer reconnects
-(ADR 0026). PostgreSQL works behind a transaction-mode pooler, such as Supabase's, and its tables
-hide from every role but their owner (ADR 0027). Phase 10 has started: `/metrics` reports
-whether PostgreSQL and Redis answer, while readiness stays independent of them (ADR 0028); a
-maximum connection lifetime keeps connections under a hosting platform's request timeout
-(ADR 0029), a cap bounds the connections of each instance (ADR 0030), and a shutdown fails
-readiness before closing connections and ends within a deadline (ADR 0031); `examples/self-hosted/`
-runs it on one host behind Caddy (ADR 0032), and CI runs the production image read-only
-before every merge (ADR 0033); `docs/secrets-and-keys.md` and `docs/application-lifecycle.md` are the
-operator's procedures (ADR 0034), and `docs/backup-and-recovery.md` the backups (ADR 0035); `docs/vps.md` adds a firewall and
-Coturn on the same host (ADR 0036); logs take a level, crashes are logged as JSON, and `/metrics`
-reports the process (ADR 0037); metrics go through OpenTelemetry, pushed over OTLP when an endpoint
-is set (ADR 0038); `docs/cloud-run.md` configures Cloud Run, not yet tested there (ADR 0039). Of Phase 5's post-MVP
-tasks, session authorization is done: the token's `permissions` claim narrows `session.create` and
-`session.accept` per namespace (ADR 0040), and proof-of-possession is done: a token bound to a
-device key with `cnf.jkt` needs a proof that the SDK's non-extractable `DeviceKey` signs
-(ADR 0041); pairing is done: a new device asks its user's present devices with the SDK's
-`requestPairing()`, and one approves with a JWT its `DeviceKey` signs, for the backend to grant the
-namespace (ADR 0042). Phase 11 has started: `examples/backend-issuer` is an application backend
-that issues tokens with its own key and grants pairings, and `examples/minimal-app` is a page on
-it whose devices sign in, pair, and open a DataChannel; two applications on shared instances are
-isolated from each other, and the browser demo's `notes` and `chat` exchange their own payload
-formats; `docs/application-e2ee.md` states what applications must do for end-to-end encryption, and `docs/integration-feedback.md`
-what the examples taught about integrating. Phase 12 has started: the SDK and the server follow
-semantic versioning, joined by the protocol major (ADR 0043), and a server keeps the previous
-protocol major while old SDKs can still run (ADR 0044); clients accept error codes and end
-reasons that a later release adds (ADR 0045), and the SDK's public API is reviewed, with
-`refresh()` on demand (ADR 0046); the SDK names its supported browsers, and CI runs WebKit too
-(ADR 0047); the security review left no blocking finding open, and repeats before every minor
-and major release, with Dependabot, pinned actions, and `pnpm audit --prod` in CI (ADR 0048), and
-the abuse review left none open either; load tests validate the quota and rate-limit defaults
-before every minor and major release (ADR 0049), and their findings are fixed or accepted; the
-SDK README documents every export, and a test keeps it so (ADR 0046); the SDK and the protocol
-are published to npm, from CI with provenance, and the image to Docker Hub, as `allisson/blindsignal`, and `0.1.0` is
-released (ADR 0050);
-`docs/onboarding.md` takes an application team from registration to production, and
-`docs/deployment.md` an operator from choosing a topology to upgrading it. Phase 13 has started: `README.md` introduces the project, `docs/README.md` indexes the
-documentation by audience, and `CONTRIBUTING.md` holds the setup, commands, checks, and conventions; a test fails on a broken relative link or anchor in any Markdown file. The
-workspace uses
-the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
+Every phase of `docs/roadmap.md` is complete: the MVP of spec §22 (Phases 0 to 7), TURN support,
+persistence and distributed coordination, production readiness, the reference integrations, the
+stable release, with `0.1.0` of the SDK, the protocol, and the server published (ADR 0050), and the
+documentation (Phase 13). The roadmap lists each phase's tasks and the ADR behind each decision;
+`docs/README.md` indexes the documents.
+
+The workspace uses the toolchain in `docs/adr/0001-typescript-node-toolchain.md`
 (TypeScript on Node.js LTS, pnpm workspaces, Zod 4, `jose`, `ws`, Vitest, Playwright), extended
 for Phase 9 by `docs/adr/0019-persistence-dependencies.md` (`pg`, `redis`, Valkey) and for Phase 10
 by `docs/adr/0038-opentelemetry-metrics.md` (the OpenTelemetry metrics SDK and its exporters). Do
