@@ -37,6 +37,10 @@ Running the Playwright suites in Playwright's WebKit 27.2 showed three things:
   changes as devices come and go, other tests' devices included, and a click lands where the
   button was when Playwright measured it: a trace showed a Send click missing after the list
   above it shrank. Pressing focuses the button and does not depend on where it is.
+- **`test:browser` runs the two suites one after the other.** Run together, the browser demo's
+  Coturn container creates a Docker network while the minimal app's tests load pages, and Chromium
+  aborts the page's modules with `ERR_NETWORK_CHANGED`: three traces showed the app never running
+  and Sign in staying disabled.
 - **iOS and direct connections in Safari are untested:** no automated test covers them, and
   `docs/external-testing.md` is where a run with a Safari device would cover them.
 - **`examples/backend-issuer` leaves `Secure` out of its session cookie only for a plain-HTTP
