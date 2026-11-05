@@ -13,8 +13,11 @@ an optional maximum on active sessions and ends them with the existing `timeout`
   `0` (no limit); an application's registry entry sets its own under
   `quotas.sessionDurationSeconds` (ADR 0005), a positive number of seconds.
 - **Counted from `session.accept`.** A pending session is already bounded by the negotiation
-  timeout. The duration comes from the accepting connection's limits, read at its last
-  authentication or refresh; both devices belong to the same application.
+  timeout. The duration comes from the requester's limits, read at its last authentication or
+  refresh, and travels to the target in the `session.request` event, so both copies end together
+  (amended by the Phase 12 abuse review: each side used its own limits, which a refresh after a
+  registry reload could set apart). An event from an instance of the previous minor version
+  carries none, and the target uses its own.
 - **Ends with `session.terminated` reason `timeout`, sent to both participants,** like the
   negotiation timeout. The session's quota slots are freed.
 - **Enforced through the SDK.** The server cannot sever a DataChannel (spec §6.4). The SDK closes
@@ -36,5 +39,5 @@ an optional maximum on active sessions and ends them with the existing `timeout`
   default.
 - An application cannot tell a negotiation timeout from a duration timeout by the reason alone;
   the session's state when it ended (`pending` or `active`) tells them apart.
-- A registry reload changes the duration of sessions accepted after the accepting connection's
-  next refresh, not of sessions already active.
+- A registry reload changes the duration of sessions created after the requester's next refresh,
+  not of sessions already created.

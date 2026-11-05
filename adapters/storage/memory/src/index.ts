@@ -4,6 +4,7 @@ import type {
   DeviceIdentity,
   DeviceRecord,
   DeviceRepository,
+  DeviceLimits,
   DeviceTouchResult,
 } from '@blindsignal/core';
 
@@ -47,7 +48,7 @@ export class InMemoryDeviceRepository implements DeviceRepository {
   touch(
     device: DeviceIdentity,
     now: Date,
-    { maxDevices, ttlMs }: { readonly maxDevices: number; readonly ttlMs: number },
+    { maxDevices, maxDevicesPerUser, ttlMs }: DeviceLimits,
   ): Promise<DeviceTouchResult> {
     const { appId, userId, deviceId } = device;
     let records = this.#byApp.get(appId);
@@ -64,7 +65,11 @@ export class InMemoryDeviceRepository implements DeviceRepository {
     }
     // A new device: expired records are dropped first, so they never count toward the quota.
     for (const [other, record] of records) if (!isLive(record)) records.delete(other);
-    if (records.size >= maxDevices) return Promise.resolve({ ok: false, reason: 'quota_exceeded' });
+    let own = 0;
+    for (const record of records.values()) if (record.userId === userId) own++;
+    if (records.size >= maxDevices || own >= maxDevicesPerUser) {
+      return Promise.resolve({ ok: false, reason: 'quota_exceeded' });
+    }
     const record = { appId, userId, deviceId, firstSeenAt: now, lastAuthenticatedAt: now };
     records.set(key, record);
     return Promise.resolve({ ok: true, record });

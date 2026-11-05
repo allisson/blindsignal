@@ -27,17 +27,19 @@ export type DeviceTouchResult =
   | { readonly ok: true; readonly record: DeviceRecord }
   | { readonly ok: false; readonly reason: 'quota_exceeded' };
 
+export interface DeviceLimits {
+  readonly maxDevices: number;
+  readonly maxDevicesPerUser: number;
+  readonly ttlMs: number;
+}
+
 export interface DeviceRepository {
   /**
    * Creates the record or updates `lastAuthenticatedAt`, in one atomic call. A new record is
-   * refused when the application already has `maxDevices` live records; records not touched
-   * within `ttlMs` are expired and do not count.
+   * refused when the application already has `maxDevices` live records, or its user
+   * `maxDevicesPerUser`; records not touched within `ttlMs` are expired and do not count.
    */
-  touch(
-    device: DeviceIdentity,
-    now: Date,
-    limits: { readonly maxDevices: number; readonly ttlMs: number },
-  ): Promise<DeviceTouchResult>;
+  touch(device: DeviceIdentity, now: Date, limits: DeviceLimits): Promise<DeviceTouchResult>;
   /** Deletes every record not touched within `ttlMs`; returns how many (ADR 0012). */
   deleteExpired(now: Date, ttlMs: number): Promise<number>;
 }

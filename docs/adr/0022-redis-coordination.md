@@ -32,7 +32,9 @@ Phase 9 task.
   `ttlMs`, and acquiring again renews them. The server renews the connection's slot and its
   sessions' slots on every heartbeat, with the presence lease's duration
   (`BLINDSIGNAL_PRESENCE_LEASE_SECONDS`), so an instance that stops leaves no slot held once its
-  leases run out. A slot that expired and was taken meanwhile is not renewed.
+  leases run out. A slot that expired and was taken meanwhile is not renewed: the connection
+  closes with `quota_exceeded`, or the session ends with `timeout` (amended by the Phase 12 abuse
+  review; before, the connection kept running outside the quota).
 - **Events are JSON, delivered at most once (contract change).** `publish` sends
   `JSON.stringify(event)` on a channel per topic; each instance holds one subscriber connection
   for all its topics, and every subscriber receives a copy. An event published while an instance

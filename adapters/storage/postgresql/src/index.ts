@@ -3,6 +3,7 @@ import type {
   ApplicationRepository,
   DeviceIdentity,
   DeviceRepository,
+  DeviceLimits,
   DeviceTouchResult,
   StorageAdapter,
 } from '@blindsignal/core';
@@ -168,7 +169,7 @@ export class PostgreSQLDeviceRepository implements DeviceRepository {
   async touch(
     device: DeviceIdentity,
     now: Date,
-    { maxDevices, ttlMs }: { readonly maxDevices: number; readonly ttlMs: number },
+    { maxDevices, maxDevicesPerUser, ttlMs }: DeviceLimits,
   ): Promise<DeviceTouchResult> {
     const { appId, userId, deviceId } = device;
     const cutoff = new Date(now.getTime() - ttlMs);
@@ -199,11 +200,15 @@ export class PostgreSQLDeviceRepository implements DeviceRepository {
       // The same device may have enrolled while this call waited for the lock.
       const raced = await client.query<DeviceRow>(RENEW, renew);
       if (raced.rows[0] !== undefined) return ok(raced.rows[0]);
-      const { rows } = await client.query<{ count: number }>(
-        'SELECT count(*)::integer AS count FROM devices WHERE app_id = $1',
-        [appId],
+      const { rows } = await client.query<{ count: number; own: number }>(
+        `SELECT count(*)::integer AS count, (count(*) FILTER (WHERE user_id = $2))::integer AS own
+         FROM devices WHERE app_id = $1`,
+        [appId, userId],
       );
-      if ((rows[0]?.count ?? 0) >= maxDevices) return { ok: false, reason: 'quota_exceeded' };
+      const { count = 0, own = 0 } = rows[0] ?? {};
+      if (count >= maxDevices || own >= maxDevicesPerUser) {
+        return { ok: false, reason: 'quota_exceeded' };
+      }
       const inserted = await client.query<DeviceRow>(
         `INSERT INTO devices (app_id, user_id, device_id, first_seen_at, last_authenticated_at)
          VALUES ($1, $2, $3, $4, $4) RETURNING first_seen_at, last_authenticated_at`,

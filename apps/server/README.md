@@ -100,6 +100,7 @@ major release (ADR 0049); `docs/load-report.md` has each run's results. A rate l
 |---|---|---|
 | `BLINDSIGNAL_MAX_CONNECTIONS_PER_APP` | `10000` | `quotas.connections` |
 | `BLINDSIGNAL_MAX_DEVICES_PER_APP` | `10000` | `quotas.devices` |
+| `BLINDSIGNAL_MAX_DEVICES_PER_USER` | `100` | `quotas.devicesPerUser` |
 | `BLINDSIGNAL_MAX_SESSIONS_PER_APP` | `10000` | `quotas.sessions` |
 | `BLINDSIGNAL_MAX_SESSIONS_PER_DEVICE` | `16` | `quotas.sessionsPerDevice` |
 | `BLINDSIGNAL_MAX_NAMESPACES_PER_DEVICE` | `100` | `quotas.namespacesPerDevice` |

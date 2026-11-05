@@ -222,7 +222,7 @@ disconnect; `active` → `ended` on close, disconnect, revocation, or the maximu
 | `closed_by_peer` | The other participant sent `session.close`. |
 | `peer_disconnected` | The other participant's connection closed. |
 | `peer_revoked` | The other participant's device was revoked (spec §6.4). |
-| `timeout` | The session stayed `pending` past the negotiation timeout, or `active` past the maximum session duration (ADR 0014). |
+| `timeout` | The session stayed `pending` past the negotiation timeout, or `active` past the maximum session duration (ADR 0014), or lost a quota slot its participants did not renew in time (ADR 0022). |
 | `namespace_unauthorized` | A participant's `auth.refresh` removed the session's namespace (sent to both). |
 
 Application suspension and revocation send no `session.terminated`: every connection of the

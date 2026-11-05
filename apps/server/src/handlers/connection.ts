@@ -290,8 +290,9 @@ export class Connection {
   /**
    * The transport saw the client alive: renews the presence leases (docs/protocol.md §8) and the
    * quota slots of the connection and its sessions (ADR 0022). A slot that expired meanwhile and
-   * was taken is not renewed: the quota counts the newer holder. A session whose peer's connection
-   * no longer holds its device's claim ends, as when the peer's instance fails (ADR 0026).
+   * was taken is not renewed: the quota counts the newer holder, so the connection closes with
+   * `quota_exceeded`, or the session ends with `timeout`. A session whose peer's connection no
+   * longer holds its device's claim ends, as when the peer's instance fails (ADR 0026).
    */
   heartbeat(): Promise<void> {
     return this.#enqueue(async () => {
@@ -303,7 +304,9 @@ export class Connection {
         return this.#error('superseded', undefined, true);
       }
       for (const namespace of this.#joined.keys()) await this.#acquirePresence(namespace);
-      await this.#acquireConnectionSlot();
+      if (!(await this.#acquireConnectionSlot())) {
+        return this.#error('quota_exceeded', undefined, true);
+      }
       for (const session of this.#sessions.all()) {
         const peer = this.#requested(session) ? session.target : session.requester;
         if ((await this.#deps.coordination.connectionOf(peer.device)) !== peer.connectionId) {
@@ -314,7 +317,9 @@ export class Connection {
         const slots = sessionSlots(requester.device, target.device, this.#limits.quotas);
         const pending =
           session.state === 'pending' ? [pendingSlot(requester.device, target.device)] : [];
-        await this.#acquireSessionSlots(session.id, [...slots, ...pending]);
+        if (!(await this.#acquireSessionSlots(session.id, [...slots, ...pending]))) {
+          await this.#terminate(session, 'timeout', true);
+        }
       }
     });
   }
@@ -577,6 +582,11 @@ export class Connection {
     for (const namespace of [...this.#joined.keys()]) {
       if (!this.#authorized(namespace)) await this.#leave(namespace);
     }
+    // A lower quota keeps the namespaces joined first.
+    const { namespacesPerDevice } = this.#limits.quotas;
+    for (const namespace of [...this.#joined.keys()].slice(namespacesPerDevice)) {
+      await this.#leave(namespace);
+    }
     // And the pairing requests it no longer lets this device make (ADR 0042).
     const pairable = context.pairing ?? [];
     const withdrawn = this.#pairings.takeAll(
@@ -690,6 +700,7 @@ export class Connection {
       namespace,
       requester,
       target: { connectionId: targetId, device: target },
+      durationMs: this.#durationMs(),
     };
     this.#open(session);
     this.#deps.metrics.count('blindsignal_sessions_created_total');
@@ -703,13 +714,14 @@ export class Connection {
   /** Keeps this connection's copy of a new session, which times out while still pending. */
   #open(session: Omit<Session, 'state'>): void {
     this.#sessions.create(
-      session.namespace,
-      session.requester,
-      session.target,
+      session,
       this.#deps.negotiationTimeoutMs,
       (expired) => void this.#enqueue(() => this.#terminate(expired, 'timeout', true)),
-      session.id,
     );
+  }
+
+  #durationMs(): number {
+    return this.#limits.quotas.sessionDurationSeconds * 1000;
   }
 
   /** The other participant's connection changed the session; updates this copy to match. */
@@ -732,7 +744,7 @@ export class Connection {
         const rejected = { type: 'session.rejected', sessionId: session.id } as const;
         return this.#notify(session.requester.connectionId, rejected);
       }
-      this.#open(session);
+      this.#open({ ...session, durationMs: session.durationMs ?? this.#durationMs() });
       const { userId, deviceId } = session.requester.device;
       const payload = { sessionId: session.id, namespace: session.namespace, userId, deviceId };
       return this.#send({ type: 'session.request', payload });
@@ -749,8 +761,7 @@ export class Connection {
       return this.#dropped('stale');
     }
     if (event.type === 'session.accepted') {
-      const durationMs = this.#limits.quotas.sessionDurationSeconds * 1000;
-      const pendingMs = this.#sessions.activate(sessionId, durationMs) as number;
+      const pendingMs = this.#sessions.activate(sessionId) as number;
       await this.#releasePending(session);
       // Only the requester receives the event, so each session is observed once (ADR 0038).
       this.#deps.metrics.observe('blindsignal_session_acceptance_seconds', pendingMs / 1000);
@@ -783,8 +794,7 @@ export class Connection {
     this.#ack(requestId);
     if (type === 'session.close') return this.#terminate(session, 'closed_by_peer');
     if (type === 'session.accept') {
-      // The accepting connection's limits: both devices belong to the same application.
-      this.#sessions.activate(sessionId, this.#limits.quotas.sessionDurationSeconds * 1000);
+      this.#sessions.activate(sessionId);
       await this.#releasePending(session);
       return this.#notify(session.requester.connectionId, { type: 'session.accepted', sessionId });
     }
@@ -1058,6 +1068,7 @@ export class Connection {
     const result = await this.#deps.devices.touch(identityOf(device), new Date(), {
       ttlMs: this.#deps.deviceTtlMs,
       maxDevices: this.#limits.quotas.devices,
+      maxDevicesPerUser: this.#limits.quotas.devicesPerUser,
     });
     return result.ok;
   }

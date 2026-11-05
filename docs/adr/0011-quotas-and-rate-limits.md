@@ -15,6 +15,7 @@ Initial values are set through load testing (spec §8.2). Amended by the Phase 1
 |---|---|---|
 | Application | Concurrent connections | `auth.authenticate` |
 | Application | Registered devices (live records, ADR 0010) | `auth.authenticate` of a new device |
+| User | Registered devices (`devicesPerUser`) | `auth.authenticate` of a new device |
 | Application | Concurrent sessions | `session.create` |
 | Device | Concurrent sessions | `session.create`, for both devices |
 | Device | Joined namespaces | `namespace.join` |
@@ -108,6 +109,25 @@ client IP for `auth.refresh`; see "rate limits" below.
   `BLINDSIGNAL_HTTP_HEADERS_TIMEOUT_SECONDS`, default 10, from the socket's opening, a socket that
   sends nothing included, checked every second. Node's defaults, 60 seconds checked every 30, let
   a slow client hold a socket that no cap counts yet.
+
+## Amended by the Phase 12 abuse review: quotas and duration
+
+- **One user's devices have a quota of their own,** `devicesPerUser`
+  (`BLINDSIGNAL_MAX_DEVICES_PER_USER`, default 100), within the application's `devices`, so one
+  user cannot fill the application's quota for the device TTL. Live records count, under the same
+  lock as the application's (ADR 0010). The default is a starting value until load testing sets
+  it (ADR 0049).
+- **A heartbeat that cannot renew a slot gives up what it held:** the connection closes with
+  `quota_exceeded` when its slot was taken meanwhile, and a session ends with `timeout`, for both
+  sides, when one of its slots was (ADR 0022).
+- **`auth.refresh` applies a lower `namespacesPerDevice`:** the connection leaves the namespaces it
+  joined last, beyond the quota, as it leaves the ones its token no longer authorizes.
+- **A lower `connections`, `sessions`, or `sessionsPerDevice` trims nothing:** renewing a slot it
+  already holds ignores the limit, and the quota applies again as connections and sessions end.
+- **The instance cap stays shared by every application:** `BLINDSIGNAL_MAX_CONNECTIONS` is checked
+  at the upgrade, before a token names the application. An application's `connections` quota is
+  what bounds it, across instances; `docs/deployment.md` sets it below what the instances hold
+  together (threat model §5, risk 14).
 
 ## Client IP
 

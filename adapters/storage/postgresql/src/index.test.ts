@@ -57,7 +57,7 @@ describe.skipIf(url === undefined)('PostgreSQL storage', () => {
     const { devices } = await adapter();
     const results = await Promise.all(
       Array.from({ length: 20 }, (_, i) =>
-        devices.touch(device(`u${i}`), now, { maxDevices: 5, ttlMs: 1000 }),
+        devices.touch(device(`u${i}`), now, { maxDevices: 5, maxDevicesPerUser: 5, ttlMs: 1000 }),
       ),
     );
     expect(results.filter((result) => result.ok)).toHaveLength(5);
@@ -69,7 +69,7 @@ describe.skipIf(url === undefined)('PostgreSQL storage', () => {
     const { devices } = new PostgreSQLStorageAdapter(pool);
     const results = await Promise.all(
       Array.from({ length: 5 }, () =>
-        devices.touch(device('u1'), now, { maxDevices: 1, ttlMs: 1000 }),
+        devices.touch(device('u1'), now, { maxDevices: 1, maxDevicesPerUser: 1, ttlMs: 1000 }),
       ),
     );
     expect(results.every((result) => result.ok)).toBe(true);
@@ -135,7 +135,11 @@ describe.skipIf(url === undefined)('PostgreSQL storage', () => {
     const pool = await isolated();
     const storage = new PostgreSQLStorageAdapter(pool);
     await migrate(pool);
-    await storage.devices.touch(device('u1'), now, { maxDevices: 10, ttlMs: 60_000 });
+    await storage.devices.touch(device('u1'), now, {
+      maxDevices: 10,
+      maxDevicesPerUser: 10,
+      ttlMs: 60_000,
+    });
     // Stands for a role a provider's API runs as, with every privilege on the tables.
     const role = `test_${randomUUID().replaceAll('-', '')}`;
     await pool.query(`CREATE ROLE ${role} NOLOGIN`);

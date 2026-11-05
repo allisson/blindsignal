@@ -24,6 +24,8 @@ export type IssuerKeys =
 export interface Quotas {
   readonly connections: number;
   readonly devices: number;
+  /** Live device records of one user, within the application's `devices` (ADR 0011). */
+  readonly devicesPerUser: number;
   readonly sessions: number;
   readonly sessionsPerDevice: number;
   readonly namespacesPerDevice: number;
