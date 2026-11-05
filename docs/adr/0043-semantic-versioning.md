@@ -44,8 +44,8 @@ other, and what counts as a breaking change in each.
 
 ## Consequences
 
-- Nothing is published yet: the `package.json` versions stay `0.0.0` until publishing the SDK and
-  the server image (roadmap Phase 12) sets the first `0.1.0`.
+- The first release, `0.1.0`, sets the `package.json` versions of the SDK, the protocol, and the
+  server; ADR 0050 publishes the SDK and the protocol to npm and the image to Docker Hub.
 - A server can upgrade without an SDK release, and the reverse, while both speak one protocol
   major.
 - A pull request that changes the SDK's API or the server's operator surface says whether it is

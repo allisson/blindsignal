@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
@@ -13,6 +14,13 @@ import {
   type PushMetricExporter,
   type ResourceMetrics,
 } from '@opentelemetry/sdk-metrics';
+
+/** The server's release (ADR 0043), from the package.json that the image carries too. */
+export const SERVER_VERSION = (
+  JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+    version: string;
+  }
+).version;
 
 /** In increasing severity. */
 export const levels = ['info', 'warn', 'error'] as const;
@@ -155,6 +163,7 @@ export class Metrics {
       // Each process is its own instance, so a backend keeps the instances' series apart.
       resource: resourceFromAttributes({
         'service.name': 'blindsignal',
+        'service.version': SERVER_VERSION,
         'service.instance.id': crypto.randomUUID(),
       }),
       readers,

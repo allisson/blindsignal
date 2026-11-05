@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { connect, createServer as createTcpServer, type Socket } from 'node:net';
@@ -149,6 +150,17 @@ describe('shutdown (ADR 0031)', { timeout: 30_000 }, () => {
 });
 
 describe('startup', { timeout: 30_000 }, () => {
+  it('logs the release it runs when it listens (ADR 0043)', async () => {
+    const { version } = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version: string };
+    const { child, entries, exited } = await launch({});
+    child.kill('SIGTERM');
+    expect(await exited).toBe(0);
+    expect(version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(entries.find((entry) => entry.event === 'server.listening')?.version).toBe(version);
+  });
+
   it('reloads the registry on a SIGHUP that arrives before the reload is wired (ADR 0005)', async () => {
     // The startup timeout passes too, after the server listens, and must not end it.
     const { child, entries, exited } = start({ BLINDSIGNAL_STARTUP_TIMEOUT_SECONDS: '1' }, [

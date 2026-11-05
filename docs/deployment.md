@@ -72,6 +72,9 @@ Registering, suspending, and revoking applications and devices is in
 ## Upgrading
 
 The server follows semantic versioning (ADR 0043), and ADR 0044 sets what an upgrade may assume.
+Each release is tagged `server-v<x.y.z>`, described in `apps/server/CHANGELOG.md`, and published
+as `allisson/blindsignal:<x.y.z>` (ADR 0050); `server.listening` logs the version each instance
+runs.
 Each guide has the commands for its platform: `docs/self-hosted.md#operations`,
 `docs/cloud-run.md#releases-and-registry-changes`.
 

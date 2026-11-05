@@ -27,6 +27,7 @@ import {
   logCrash,
   Metrics,
   OTLPExporter,
+  SERVER_VERSION,
   serveMetrics,
   watchProcess,
 } from './telemetry.ts';
@@ -278,7 +279,11 @@ async function main(): Promise<void> {
   }
   // Only now: a SIGTERM before the handlers above would kill the process without draining it.
   clearTimeout(startup);
-  logger.log('info', 'server.listening', { port, adminPort: admin.port });
+  logger.log('info', 'server.listening', {
+    port,
+    adminPort: admin.port,
+    version: SERVER_VERSION,
+  });
 }
 
 main().catch((error: unknown) => {

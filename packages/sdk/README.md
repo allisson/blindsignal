@@ -11,15 +11,20 @@ complete use: a page whose backend issues bound tokens and grants pairings.
 
 ## Installation
 
-The SDK is not on npm yet: its first release is `0.1.0` (`docs/adr/0043-semantic-versioning.md`).
-Until then, a package in this workspace depends on it as the examples do:
+```sh
+npm install @blindsignal/sdk
+```
+
+The package ships JavaScript and types in `dist/`, and depends on `@blindsignal/protocol` of the
+same version. Releases follow semantic versioning (`docs/adr/0043-semantic-versioning.md`), and
+`packages/sdk/CHANGELOG.md` in the repository describes each.
+
+In this workspace, a package depends on it as the examples do, and its `exports` point at the
+TypeScript sources, which the examples serve to the browser as they are:
 
 ```json
 { "dependencies": { "@blindsignal/sdk": "workspace:*" } }
 ```
-
-Its `exports` point at the TypeScript sources, which the examples serve to the browser as they
-are; `pnpm build` writes the JavaScript and the types to `dist/`.
 
 ## Browser support
 

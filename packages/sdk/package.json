@@ -1,15 +1,38 @@
 {
   "name": "@blindsignal/sdk",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Browser SDK for BlindSignal: authenticated signaling for WebRTC DataChannels.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/allisson/blindsignal.git",
+    "directory": "packages/sdk"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
     "./testing": "./src/testing/fake-peer.ts"
   },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./testing": {
+        "types": "./dist/testing/fake-peer.d.ts",
+        "default": "./dist/testing/fake-peer.js"
+      }
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "rm -rf dist && tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@blindsignal/protocol": "workspace:*"

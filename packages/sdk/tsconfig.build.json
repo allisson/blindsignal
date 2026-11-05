@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
-  // Members tagged @internal stay out of the published types and of semver (ADR 0046).
-  "compilerOptions": { "stripInternal": true },
+  // Members tagged @internal stay out of the published types and of semver (ADR 0046). The
+  // package ships no sources, so no source maps either.
+  "compilerOptions": { "stripInternal": true, "sourceMap": false },
   "exclude": ["src/**/*.test.ts", "src/testing/fake-socket.ts"]
 }

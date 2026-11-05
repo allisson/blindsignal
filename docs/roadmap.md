@@ -568,6 +568,8 @@ Operating TURN is not required to complete the initial local MVP.
 - [x] Define support and upgrade policy: ADR 0044.
 - [x] Fix or accept the open findings of the security and abuse reviews (`docs/security-review.md`)
   and of the load tests (`docs/load-report.md`).
+- [ ] Publish the first release, `0.1.0`: the SDK and the protocol to npm, and the server image to
+  Docker Hub (ADR 0050).
 
 ### Deliverables
 
