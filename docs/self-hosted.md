@@ -14,8 +14,9 @@ the decisions behind them are in `docs/adr/0032-self-hosted-compose.md`.
 
 ## Setup
 
-1. Clone the repository on the host and enter `examples/self-hosted/`. The image is built from the
-   repository.
+1. Clone the repository on the host, check out the release tag (`git checkout server-v0.1.0`), and
+   enter `examples/self-hosted/`. The image is built from that checkout; the same release is
+   published as `allisson/blindsignal` (ADR 0050).
 2. Create `.env` from the example, readable by you only, and fill it in:
 
    ```sh

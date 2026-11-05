@@ -1,12 +1,31 @@
 {
   "name": "@blindsignal/protocol",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Message schemas of the BlindSignal signaling protocol.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/allisson/blindsignal.git",
+    "directory": "packages/protocol"
+  },
   "type": "module",
   "exports": "./src/index.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "rm -rf dist && tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "zod": "^4.6.7"

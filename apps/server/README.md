@@ -185,7 +185,7 @@ otherwise the error's name, with its `code` when it has one (ADR 0037).
 Metrics go through the OpenTelemetry SDK (ADR 0038). `GET /metrics` on the admin port serves
 them, process-local, in the Prometheus text format; a counter appears once first incremented.
 With `OTEL_EXPORTER_OTLP_ENDPOINT` set they are also pushed over OTLP/HTTP, with `service.name`
-`blindsignal` and a `service.instance.id` per process; a failed push logs
+`blindsignal`, the release as `service.version`, and a `service.instance.id` per process; a failed push logs
 `telemetry.export_failed`, and on `SIGTERM` the server pushes once more within the shutdown's
 deadline. The series: messages by type, authentications by result, errors by code, sessions created and
 terminated, pairings by result, registry reloads, connections closed by backpressure, open connections, and sessions

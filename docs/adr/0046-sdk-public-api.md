@@ -60,6 +60,6 @@ places where the API was larger than intended:
 ## Consequences
 
 - The minimal app calls `refresh()` after a grant, and then joins the namespace.
-- The packaging that publication needs (`exports` pointing at the build, `private`) is left to
-  roadmap Phase 12's publishing task.
+- The packaging that publication needs (`exports` pointing at the build, `private`) is ADR 0050's:
+  `publishConfig.exports` points the published package at `dist/`.
 - A future member the client calls but applications must not is tagged `@internal`.

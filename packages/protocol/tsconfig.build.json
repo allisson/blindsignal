@@ -1,4 +1,6 @@
 {
   "extends": "./tsconfig.json",
+  // The package ships no sources, so no source maps either.
+  "compilerOptions": { "sourceMap": false },
   "exclude": ["src/**/*.test.ts"]
 }

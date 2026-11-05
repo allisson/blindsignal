@@ -27,13 +27,14 @@ push, it shipped npm and the core package's test helpers, and no check ran the i
   migrations against PostgreSQL, the server read-only and without capabilities until healthy and
   ready, `blindsignal_dependency_up` for PostgreSQL, and `docker stop` ending with status 0 within
   the 10-second grace period (ADR 0031). It also validates `examples/self-hosted/compose.yaml`.
-- **The image is not published yet.** Operators build it from a commit of `main` and push it to
-  their own registry; a managed platform such as Cloud Run pulls from its own registry anyway.
+- **The image is published to Docker Hub as `allisson/blindsignal`** (amended by ADR 0050: it
+  was not published until a release scheme existed). Operators can still build it from a checkout
+  and push it to their own registry.
 
 ## Considered options
 
-- **Publishing to GitHub Container Registry.** Deferred: it needs a release and versioning scheme,
-  and a decision on signing and provenance, before anyone depends on its tags.
+- **Publishing to GitHub Container Registry.** Deferred until a release and versioning scheme
+  existed; ADR 0050 publishes to Docker Hub instead.
 - **A distroless base.** Rejected for now: it ties the Node version to another release cadence,
   and its lack of a shell leaves operators no way to inspect a running container.
 - **An Alpine base.** Rejected: musl builds of Node are not an official tier-1 target.

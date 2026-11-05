@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import {
   AggregationTemporality,
@@ -14,6 +15,12 @@ import {
   serveMetrics,
   watchProcess,
 } from './telemetry.ts';
+
+const release = (
+  JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+    version: string;
+  }
+).version;
 
 describe('jsonLogger', () => {
   it('writes one JSON object per line with time, level, and event first', () => {
@@ -161,6 +168,7 @@ describe('Metrics', () => {
       expect(names).toContain('blindsignal_sessions_created_total');
       const attributes = exported?.resource.attributes ?? {};
       expect(attributes['service.name']).toBe('blindsignal');
+      expect(attributes['service.version']).toBe(release);
       expect(attributes['service.instance.id']).toMatch(/^[0-9a-f-]{36}$/);
     } finally {
       await metrics.shutdown();

@@ -33,6 +33,7 @@ server. Initial target: browser / PWA.
 - `docs/integration-feedback.md`: what the Phase 11 examples taught, fixed, documented, and open.
 - `docs/security-review.md`: each security review's findings and their state; `SECURITY.md`, how to report one.
 - `docs/load-report.md`: each load test run against the server defaults (ADR 0049).
+- `packages/sdk/CHANGELOG.md`, `apps/server/CHANGELOG.md`: each release of the SDK and the server.
 
 Read the relevant spec sections before changing behavior. When code and spec disagree, stop and
 raise it; do not silently diverge. A change that alters a documented contract updates the spec,
@@ -88,7 +89,9 @@ reasons that a later release adds (ADR 0045), and the SDK's public API is review
 and major release, with Dependabot, pinned actions, and `pnpm audit --prod` in CI (ADR 0048), and
 the abuse review left none open either; load tests validate the quota and rate-limit defaults
 before every minor and major release (ADR 0049), and their findings are fixed or accepted; the
-SDK README documents every export, and a test keeps it so (ADR 0046);
+SDK README documents every export, and a test keeps it so (ADR 0046); the SDK and the protocol
+are packed for npm and the image is pushed to Docker Hub, with `0.1.0` the first release
+(ADR 0050);
 `docs/onboarding.md` takes an application team from registration to production, and
 `docs/deployment.md` an operator from choosing a topology to upgrading it. The
 workspace uses

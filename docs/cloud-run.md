@@ -42,8 +42,15 @@ The examples use `PROJECT_ID`, `REGION`, and a service account `blindsignal@PROJ
 
 ## Image
 
-The image is not published to a registry (ADR 0033); build it from a checkout of the release and
-push it to Artifact Registry. Cloud Run runs `linux/amd64`:
+Each release is published as `allisson/blindsignal:VERSION` on Docker Hub, for `linux/amd64` and
+`linux/arm64` (ADR 0050). Copy it to Artifact Registry, so a deployment does not depend on Docker
+Hub:
+
+```sh
+docker buildx imagetools create -t REGION-docker.pkg.dev/PROJECT_ID/blindsignal/server:VERSION allisson/blindsignal:VERSION
+```
+
+Or build it from a checkout of the release tag, `server-vVERSION`; Cloud Run runs `linux/amd64`:
 
 ```sh
 docker build --platform linux/amd64 -t REGION-docker.pkg.dev/PROJECT_ID/blindsignal/server:VERSION .
@@ -167,7 +174,7 @@ service, and set `BLINDSIGNAL_TRUSTED_PROXIES` to the front end's range only.
 A new revision starts new instances; Cloud Run sends `SIGTERM` to the old ones, which close their
 connections with `1001`, and the SDK reconnects to the new revision.
 
-- **Release:** build and push the image, run the migration job with it, then `gcloud run deploy`
+- **Release:** copy or build the image, run the migration job with it, then `gcloud run deploy`
   with the new image.
 - **Registry change:** add a secret version, then deploy with the new version number in
   `--set-secrets` (`docs/application-lifecycle.md`).
