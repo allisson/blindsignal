@@ -6,7 +6,7 @@ backend is `examples/backend-issuer`, imported as is; `server.ts` adds the page.
 A device signs in, enrolls its `DeviceKey`, and connects with tokens bound to that key. A user's
 first device joins the namespace `example:<user>`. A later device may only ask to be paired: it
 presses **Ask to pair**, one of the user's devices presses **Approve**, and the new device takes
-the approval to the backend, then reconnects with a token that holds the namespace. Devices in the
+the approval to the backend, then refreshes its token, which now holds the namespace. Devices in the
 namespace list each other, and **Connect to** opens a DataChannel for messages.
 
 `public/app.ts` is the whole client. The page loads the SDK from its
