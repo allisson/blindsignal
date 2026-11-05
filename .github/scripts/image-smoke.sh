@@ -28,9 +28,10 @@ docker run --rm --entrypoint sh "$image" -c '! command -v npm' >/dev/null || fai
   '(' -name '*.test.ts' -o -name testing ')' -print)" ] || fail 'tests are in the image'
 
 docker network create "$name" >/dev/null
+# Over TCP: the image's entrypoint first runs a socket-only server for initialization, then restarts.
 docker run -d --name "$name-postgres" --network "$name" \
   -e POSTGRES_USER=blindsignal -e POSTGRES_PASSWORD=smoke-password -e POSTGRES_DB=blindsignal \
-  --health-cmd 'pg_isready -U blindsignal -d blindsignal' --health-interval 1s \
+  --health-cmd 'pg_isready -h 127.0.0.1 -U blindsignal -d blindsignal' --health-interval 1s \
   postgres:18.6-alpine >/dev/null
 until [ "$(docker inspect -f '{{.State.Health.Status}}' "$name-postgres")" = healthy ]; do sleep 1; done
 

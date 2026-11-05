@@ -45,7 +45,7 @@ services:
       POSTGRES_PASSWORD: blindsignal-test-password-never-in-production
       POSTGRES_DB: blindsignal
     healthcheck:
-      test: [CMD, pg_isready, -U, blindsignal, -d, blindsignal]
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, blindsignal, -d, blindsignal]
       interval: 2s
       retries: 15
     ports:
