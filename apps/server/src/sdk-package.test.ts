@@ -93,7 +93,8 @@ describe('the published packages', () => {
     expect(session).not.toMatch(/\bactivate\(/);
   });
 
-  it('type-check and load in an application outside the workspace', () => {
+  // Two tsc runs and a node process: seconds on a CI runner.
+  it('type-check and load in an application outside the workspace', { timeout: 60_000 }, () => {
     writeFileSync(
       join(root, 'app.ts'),
       [
