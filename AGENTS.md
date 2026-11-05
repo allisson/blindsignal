@@ -90,8 +90,8 @@ and major release, with Dependabot, pinned actions, and `pnpm audit --prod` in C
 the abuse review left none open either; load tests validate the quota and rate-limit defaults
 before every minor and major release (ADR 0049), and their findings are fixed or accepted; the
 SDK README documents every export, and a test keeps it so (ADR 0046); the SDK and the protocol
-are packed for npm and the image is pushed to Docker Hub, with `0.1.0` the first release
-(ADR 0050);
+are published to npm and the image to Docker Hub, as `allisson/blindsignal`, and `0.1.0` is
+released (ADR 0050);
 `docs/onboarding.md` takes an application team from registration to production, and
 `docs/deployment.md` an operator from choosing a topology to upgrading it. The
 workspace uses
