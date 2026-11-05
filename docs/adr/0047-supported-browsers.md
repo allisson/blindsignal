@@ -28,6 +28,10 @@ Running the Playwright suites in Playwright's WebKit 27.2 showed three things:
 - **CI runs the Playwright suites in Chromium, Firefox, and WebKit.** In WebKit, a test that needs
   host candidates is skipped, and a test that opens a DataChannel runs only with the TURN relay,
   which CI starts. Each skip states its reason in the test.
+- **CI retries a failed Playwright test once, and keeps the trace of each failed attempt.** A test
+  that passes on its retry is reported as flaky and does not fail the job. The `browser` job uploads
+  the traces as the `playwright-traces` artifact, for 7 days, whether the job passed or not. Locally,
+  a failed test is not retried, and its trace stays in the suite's `test-results/`.
 - **iOS and direct connections in Safari are untested:** no automated test covers them, and
   `docs/external-testing.md` is where a run with a Safari device would cover them.
 - **`examples/backend-issuer` leaves `Secure` out of its session cookie only for a plain-HTTP
@@ -42,6 +46,9 @@ Running the Playwright suites in Playwright's WebKit 27.2 showed three things:
   CI keeps them passing.
 - **The minimal app's tests over HTTPS,** with a self-signed certificate. Rejected: more setup,
   and a page on HTTPS cannot open the `ws://localhost` signaling server the suite runs.
+- **No retry in CI, and a rerun of the job on each flaky failure.** Rejected: the Firefox
+  DataChannel test failed intermittently on CI and never in 50 local runs, and without a trace each
+  rerun left no record of why.
 - **Skipping the minimal app in WebKit.** Rejected: sign-in, pairing, and `refresh()` pass there;
   only the message exchange needs a relay the suite does not start.
 
@@ -51,3 +58,6 @@ Running the Playwright suites in Playwright's WebKit 27.2 showed three things:
 - CI's `browser` job installs WebKit too, and the job runs longer.
 - A Linux runner's WebKit may behave unlike macOS's, where these results come from; a skip it
   needs is added with its reason.
+- A flaky test no longer blocks a merge: the job's summary and the artifact show it, and it stays
+  to be fixed. The traces hold the suites' WebSocket frames, whose tokens are signed by the public
+  development issuer or by a key generated for the run, never by a production key.
