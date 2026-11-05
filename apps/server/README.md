@@ -214,8 +214,8 @@ and errors down by application (`app_id`), once a token is verified
 (`docs/adr/0015-application-usage-metrics.md`).
 
 An application whose `rate_limited` and `quota_exceeded` errors reach
-`BLINDSIGNAL_ABUSE_ALERT_THRESHOLD` within one window logs `application.abuse_suspected` (`warn`)
-and counts `blindsignal_abuse_alerts_total{app_id}`, once per window. The server does not suspend
+`BLINDSIGNAL_ABUSE_ALERT_THRESHOLD` within one window logs `application.abuse_suspected` (`warn`,
+with the `connectionId` whose rejection reached it) and counts `blindsignal_abuse_alerts_total{app_id}`, once per window. The server does not suspend
 it: set `status: "suspended"` in the registry and send `SIGHUP` (ADR 0005, ADR 0016).
 
 With TURN configured, `blindsignal_turn_credentials_issued_total{app_id}` counts the credentials

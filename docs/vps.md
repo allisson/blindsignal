@@ -66,7 +66,11 @@ own; start it after Caddy has obtained the certificate.
    ```sh
    BLINDSIGNAL_TURN_URLS=turn:signal.example.com:3478?transport=udp,turn:signal.example.com:3478?transport=tcp,turns:signal.example.com:5349?transport=tcp
    BLINDSIGNAL_TURN_SECRET=<the secret>
+   BLINDSIGNAL_TURN_PUBLIC_IP=<this host's public addresses, space-separated>
    ```
+
+   The relay never reaches the addresses in `BLINDSIGNAL_TURN_PUBLIC_IP`, and Coturn does not
+   start without it: `curl -4 https://ifconfig.co`, and `curl -6` too if the host has IPv6.
 
 2. Review `turnserver.conf`: set `external-ip` if the VPS sits behind NAT, as on AWS or Google
    Cloud, where its interface has a private address; and adjust `user-quota`, `total-quota`, and

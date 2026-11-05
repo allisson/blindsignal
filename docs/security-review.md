@@ -98,6 +98,9 @@ ADR 0013, ADR 0016, and ADR 0017.
 | SDK ↔ server | One user can fill its application's device quota for the 30 days of the device TTL | `devicesPerUser`, `BLINDSIGNAL_MAX_DEVICES_PER_USER`, default 100 (ADR 0011) |
 | SDK ↔ server | A session's duration timer uses the requester's limits only | The requester sets one duration, which the target arms too (ADR 0014) |
 | SDK ↔ server | A heartbeat whose renewal fails, or a lower `namespacesPerDevice`, does not trim what the connection holds | The connection closes, or the session ends; `auth.refresh` leaves the namespaces beyond the quota (ADR 0011, ADR 0022) |
+| Operator ↔ server | The abuse alert does not name the connection | It names the connection whose rejection reached the threshold (ADR 0016) |
+| Device ↔ device | A TURN username is its expiry and application ID only, so the credentials of one application minted in the same second are the same, and share its `user-quota` | The username carries a random value too (ADR 0017) |
+| Device ↔ device | `denied-peer-ip` does not deny the TURN host's own public address | Denied in `docs/turn-operations.md`; `examples/self-hosted/` requires `BLINDSIGNAL_TURN_PUBLIC_IP` (ADR 0017, ADR 0036) |
 
 ### Non-blocking, accepted
 
@@ -108,8 +111,4 @@ ADR 0013, ADR 0016, and ADR 0017.
 
 ### Non-blocking, open
 
-| Boundary | Finding |
-|---|---|
-| Operator ↔ server | The abuse alert does not name the connection |
-| Device ↔ device | A TURN username is its expiry and application ID only, so the credentials of one application minted in the same second are the same, and share its `user-quota` |
-| Device ↔ device | `denied-peer-ip` does not deny the TURN host's own public address |
+None.

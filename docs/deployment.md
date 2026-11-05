@@ -53,6 +53,8 @@ repository; never expose it.
       (ADR 0035). Outside a private network of its own, Redis takes a password over
       `rediss://`.
 - [ ] OTLP credentials in `OTEL_EXPORTER_OTLP_HEADERS` go only to an `https://` endpoint.
+- [ ] With TURN, `denied-peer-ip` covers the ranges of `docs/turn-operations.md` and the TURN
+      host's own public addresses.
 - [ ] Each secret has an owner and a rotation (`docs/secrets-and-keys.md`).
 - [ ] Logs with a client IP are kept 14 days at most (ADR 0012): `BLINDSIGNAL_LOG_LEVEL=warn`
       writes none, or the log store deletes them.

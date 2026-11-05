@@ -99,6 +99,7 @@ services:
     environment:
       BLINDSIGNAL_DOMAIN: ${BLINDSIGNAL_DOMAIN}
       BLINDSIGNAL_TURN_SECRET: ${BLINDSIGNAL_TURN_SECRET:-}
+      BLINDSIGNAL_TURN_PUBLIC_IP: ${BLINDSIGNAL_TURN_PUBLIC_IP:-}
     volumes:
       - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
       - caddy-data:/caddy:ro
@@ -107,12 +108,14 @@ services:
     command:
       - >-
         [ -n "$$BLINDSIGNAL_TURN_SECRET" ] || { echo 'set BLINDSIGNAL_TURN_SECRET in .env'; exit 1; };
+        [ -n "$$BLINDSIGNAL_TURN_PUBLIC_IP" ] || { echo 'set BLINDSIGNAL_TURN_PUBLIC_IP in .env'; exit 1; };
         cert=$$(find /caddy -name "$$BLINDSIGNAL_DOMAIN.crt" | head -1);
         [ -n "$$cert" ] || { echo 'waiting for the certificate from Caddy'; sleep 10; exit 1; };
         umask 077 && {
         cat /etc/coturn/turnserver.conf;
         echo "static-auth-secret=$$BLINDSIGNAL_TURN_SECRET";
         echo "realm=$$BLINDSIGNAL_DOMAIN";
+        for ip in $$BLINDSIGNAL_TURN_PUBLIC_IP; do echo "denied-peer-ip=$$ip"; done;
         echo "cert=$$cert";
         echo "pkey=$${cert%.crt}.key"; } >/tmp/turnserver.conf &&
         exec turnserver -c /tmp/turnserver.conf

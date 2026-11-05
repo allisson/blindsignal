@@ -16,7 +16,8 @@ suspend, through the registry (ADR 0005).
   pre-authentication limits, keyed by client IP.
 - **Fixed windows per application.** When an application's rejections within one window reach
   `BLINDSIGNAL_ABUSE_ALERT_THRESHOLD`, the server logs `application.abuse_suspected` (`warn`, with
-  the application ID) and counts `blindsignal_abuse_alerts_total{app_id}`, once per window. The
+  the application ID, and the ID of the connection whose rejection reached the threshold, which
+  `connection.opened` ties to a client IP; amended by the Phase 12 abuse review) and counts `blindsignal_abuse_alerts_total{app_id}`, once per window. The
   window is `BLINDSIGNAL_ABUSE_ALERT_WINDOW_SECONDS` (default 60). The threshold defaults to `0`,
   which turns alerts off, until load testing shows what normal usage looks like (spec §8.2).
 - **Suspension stays with the operator:** `status: "suspended"` in the registry and `SIGHUP`,
@@ -41,5 +42,7 @@ suspend, through the registry (ADR 0005).
   would need a new ADR, together with a retryable suspension code.
 - Windows are per process: behind a load balancer, each instance counts its own share, so the
   threshold applies per instance until Phase 9 coordinates instances.
+- The alert names one connection, the one whose rejection reached the threshold: the likeliest
+  to be the one rejected most, not certainly it.
 - Abuse by one device is answered by its rate limits and by device revocation (ADR 0005), not by
   suspending its application.
