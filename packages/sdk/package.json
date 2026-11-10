@@ -38,6 +38,6 @@
     "@blindsignal/protocol": "workspace:*"
   },
   "devDependencies": {
-    "jose": "^6.2.14"
+    "jose": "^6.2.15"
   }
 }
