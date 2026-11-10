@@ -1,7 +1,7 @@
 # The server runs its TypeScript sources through Node's type stripping, as in development
 # (ADR 0001): the workspace packages export `src/index.ts`, so there is no build step.
 # Both stages pin the base by digest; Dependabot proposes its updates (ADR 0033).
-FROM node:26.13.0-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39 AS deps
+FROM node:26.13.0-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS deps
 WORKDIR /app
 # Node 26 no longer bundles corepack; install the pinned pnpm (package.json `packageManager`).
 RUN npm install --global pnpm@12.16.1
@@ -15,7 +15,7 @@ COPY adapters/coordination/memory/package.json adapters/coordination/memory/
 COPY adapters/coordination/redis/package.json adapters/coordination/redis/
 RUN pnpm install --frozen-lockfile --prod --filter '@blindsignal/server...'
 
-FROM node:26.13.0-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39
+FROM node:26.13.0-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072
 ENV NODE_ENV=production
 # The server needs no package manager at runtime.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
